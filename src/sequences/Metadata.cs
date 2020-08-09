@@ -138,7 +138,7 @@ namespace WinCompose
         }
 
         private static readonly XmlFile m_xml
-            = new XmlFile(Path.Combine(Utils.AppDataDir, "metadata.xml"));
+            = new XmlFile(Path.Combine(Utils.DataDir, "metadata.xml"));
 
         private static MetadataDB m_dict = new MetadataDB();
     }

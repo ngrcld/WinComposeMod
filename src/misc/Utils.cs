@@ -31,38 +31,8 @@ namespace WinCompose
             }
         }
 
-        public static string AppDataDir
-        {
-            get
-            {
-                var appdata = Environment.SpecialFolder.ApplicationData;
-                var appdatadir = Path.Combine(Environment.GetFolderPath(appdata),
-                                              "WinCompose");
-                return IsInstalled ? appdatadir : ExecutableDir;
-            }
-        }
-
         public static string DataDir
-            => Path.Combine(ExecutableDir, IsInstalled ? "res" :
-                                           IsDebugging ? "../../rules" : "rules");
-
-        public static string UserDir
-            => Environment.ExpandEnvironmentVariables("%USERPROFILE%");
-
-        public static bool IsInstalled
-            => File.Exists(Path.Combine(ExecutableDir, "unins000.dat"));
-
-        public static bool IsDebugging
-            => File.Exists(Path.ChangeExtension(ExecutableName, ".pdb"));
-
-        private static string ExecutableName
-            => Uri.UnescapeDataString(new UriBuilder(ExecutableCodeBase).Path);
-
-        private static string ExecutableCodeBase
-            => Assembly.GetExecutingAssembly().GetName().CodeBase;
-
-        private static string ExecutableDir
-            => Path.GetDirectoryName(ExecutableName);
+            => Path.GetDirectoryName(Uri.UnescapeDataString(new UriBuilder(Assembly.GetExecutingAssembly().GetName().CodeBase).Path));
     }
 }
 

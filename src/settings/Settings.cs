@@ -40,7 +40,7 @@ namespace WinCompose
 
         static Settings()
         {
-            m_ini_file = new IniFile(Path.Combine(Utils.AppDataDir, "settings.ini"));
+            m_ini_file = new IniFile(Path.Combine(Utils.DataDir, "settings.ini"));
 
             // Add a save handler to our EntryLocation attributes
             foreach (var v in typeof(Settings).GetProperties())
@@ -271,38 +271,20 @@ namespace WinCompose
                 m_sequences.LoadResource("3rdparty.xcompose.rules");
             if (UseEmojiRules.Value)
             {
-                m_sequences.LoadFile(Path.Combine(Utils.DataDir, "Emoji.txt"));
-                m_sequences.LoadFile(Path.Combine(Utils.DataDir, "WinCompose.txt"));
+                m_sequences.LoadFile(Path.Combine(Utils.DataDir, "SequencesEmoji.txt"));
+                m_sequences.LoadFile(Path.Combine(Utils.DataDir, "SequencesWinCompose.txt"));
             }
 
-            m_sequences.LoadFile(Path.Combine(Utils.UserDir, ".XCompose"));
-            m_sequences.LoadFile(Path.Combine(Utils.UserDir, ".XCompose.txt"));
+            m_sequences.LoadFile(Path.Combine(Utils.DataDir, "SequencesUser.txt"));
         }
 
         /// <summary>
         /// Find the preferred application for .txt files and launch it to
-        /// open .XCompose. If the file does not exist, try .XCompose.txt
-        /// instead. If it doesn’t exist either, create .XCompose ourselves.
+        /// open SequencesUser.txt
         /// </summary>
         public static void EditCustomRulesFile()
         {
-            // Ensure the rules file exists.
-            string user_file = Path.Combine(Utils.UserDir, ".XCompose");
-            if (!File.Exists(user_file))
-            {
-                string alt_file = Path.Combine(Utils.UserDir, ".XCompose.txt");
-                string default_file = Path.Combine(Utils.DataDir, "DefaultUserSequencesClaudio.txt");
-                if (File.Exists(alt_file))
-                {
-                    user_file = alt_file;
-                }
-                else if (File.Exists(default_file))
-                {
-                    var text = File.ReadAllText(default_file);
-                    var replacedText = text.Replace("%DataDir%", Utils.DataDir);
-                    File.WriteAllText(user_file, replacedText, Encoding.UTF8);
-                }
-            }
+            string user_file = Path.Combine(Utils.DataDir, "SequencesUser.txt");
 
             // Find the preferred application for .txt files
             HRESULT ret;

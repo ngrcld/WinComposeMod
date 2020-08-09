@@ -44,7 +44,7 @@ namespace WinCompose
         {
             try
             {
-                Utils.EnsureDirectory(Utils.AppDataDir);
+                Utils.EnsureDirectory(Utils.DataDir);
                 var xs = new XmlSerializer(typeof(T));
                 using (TextWriter tw = new StreamWriter(FullPath))
                     xs.Serialize(tw, o);

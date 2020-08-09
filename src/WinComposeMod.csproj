@@ -224,9 +224,9 @@
     <Resource Include="res\key_compose_big.png" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="rules\Emoji.txt" />
-    <Resource Include="rules\WinCompose.txt" />
-    <Resource Include="rules\DefaultUserSequences.txt" />
+    <Resource Include="rules\SequencesEmoji.txt" />
+    <Resource Include="rules\SequencesWinCompose.txt" />
+    <Resource Include="rules\SequencesUser.txt" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="language.csproj">
@@ -257,5 +257,6 @@
   <Target Name="AfterBuild">
     <Exec Command="..\bin_InsertIcons\$(Configuration)\InsertIcons.exe $(OutputPath)\$(TargetName).exe &quot;res\icon_normal.ico;res\icon_sequences.ico;res\icon_settings.ico&quot;" />
     <Exec Command="del $(OutputPath)\*.pdb" />
+    <Exec Command="copy rules\* $(OutputPath)\" />
   </Target>
 </Project>
