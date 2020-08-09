@@ -12,7 +12,8 @@
     <AssemblyName>InsertIcons</AssemblyName>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
-    <ProjectTypeGuids></ProjectTypeGuids>
+    <ProjectTypeGuids>
+    </ProjectTypeGuids>
     <BaseIntermediateOutputPath>..\obj_InsertIcons\</BaseIntermediateOutputPath>
   </PropertyGroup>
   <PropertyGroup>
@@ -43,6 +44,7 @@
     <Reference Include="System.Drawing" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="GlobalSuppressions.cs" />
     <Compile Include="InsertIcons\lib\Mono.Security\Cryptography\CryptoConvert.cs" />
     <Compile Include="InsertIcons\lib\Mono.Security\StrongName.cs" />
     <Compile Include="InsertIcons\Program.cs" />
@@ -65,8 +67,9 @@
     <Content Include="InsertIcons\lib\ResourceLib\License.txt" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="app.config" />
-    <None Include="README.md" />
+    <None Include="InsertIcons\app.config" />
+    <None Include="InsertIcons\LICENSE" />
+    <None Include="InsertIcons\README.md" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
