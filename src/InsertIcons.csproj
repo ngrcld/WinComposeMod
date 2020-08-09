@@ -1,0 +1,82 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>8.0.30703</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{C037D608-57FD-4ACD-AAC1-BFAD1767B11B}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>InsertIcons</RootNamespace>
+    <AssemblyName>InsertIcons</AssemblyName>
+    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <ProjectTypeGuids></ProjectTypeGuids>
+    <BaseIntermediateOutputPath>..\obj_InsertIcons\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject>InsertIcons.Program</StartupObject>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>..\bin_InsertIcons\$(Configuration)\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <OutputPath>..\bin_InsertIcons\$(Configuration)\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="InsertIcons\lib\Mono.Security\Cryptography\CryptoConvert.cs" />
+    <Compile Include="InsertIcons\lib\Mono.Security\StrongName.cs" />
+    <Compile Include="InsertIcons\Program.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\DeviceIndependentBitmap.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\DirectoryResource.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\Gdi32.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\IconDirectoryResource.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\IconFile.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\IconFileIcon.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\IconImageResource.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\IconResource.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\Kernel32.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\Resource.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\ResourceId.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\ResourceInfo.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\ResourceUtil.cs" />
+    <Compile Include="InsertIcons\lib\ResourceLib\User32.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="InsertIcons\lib\ResourceLib\License.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.config" />
+    <None Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Properties\" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>

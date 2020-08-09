@@ -1,0 +1,258 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AutodetectLanguage" xml:space="preserve">
+    <value>自動偵測</value>
+  </data>
+  <data name="KeyLMenu" xml:space="preserve">
+    <value>左 Alt 鍵</value>
+  </data>
+  <data name="KeyRMenu" xml:space="preserve">
+    <value>右 Alt 鍵</value>
+  </data>
+  <data name="KeyLControl" xml:space="preserve">
+    <value>左 Control 鍵</value>
+  </data>
+  <data name="KeyRControl" xml:space="preserve">
+    <value>右 Control 鍵</value>
+  </data>
+  <data name="KeyLWin" xml:space="preserve">
+    <value>左 Windows 鍵</value>
+  </data>
+  <data name="KeyRWin" xml:space="preserve">
+    <value>右 Windows 鍵</value>
+  </data>
+  <data name="KeyCapital" xml:space="preserve">
+    <value>Caps Lock 鍵</value>
+  </data>
+  <data name="KeyNumLock" xml:space="preserve">
+    <value>Num Lock 鍵</value>
+  </data>
+  <data name="KeyPause" xml:space="preserve">
+    <value>Pause 鍵</value>
+  </data>
+  <data name="KeyApps" xml:space="preserve">
+    <value>彈出選單鍵</value>
+  </data>
+  <data name="KeyEscape" xml:space="preserve">
+    <value>Esc 鍵</value>
+  </data>
+  <data name="KeyConvert" xml:space="preserve">
+    <value>Conversion 鍵(日文)</value>
+  </data>
+  <data name="KeyNonConvert" xml:space="preserve">
+    <value>Non-conversion 鍵(日文)</value>
+  </data>
+  <data name="KeyScroll" xml:space="preserve">
+    <value>Scroll Lock 鍵</value>
+  </data>
+  <data name="KeySpace" xml:space="preserve">
+    <value>空格鍵</value>
+  </data>
+  <data name="KeyReturn" xml:space="preserve">
+    <value>Enter 鍵</value>
+  </data>
+  <data name="DebugWindow" xml:space="preserve">
+    <value>&quot;調試&quot; 視窗</value>
+  </data>
+  <data name="ShowSequences" xml:space="preserve">
+    <value>顯示序列…</value>
+  </data>
+  <data name="Disable" xml:space="preserve">
+    <value>禁用</value>
+  </data>
+  <data name="Restart" xml:space="preserve">
+    <value>重新啟動</value>
+  </data>
+  <data name="VisitWebsite" xml:space="preserve">
+    <value>訪問網站</value>
+  </data>
+  <data name="Exit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+  <data name="UnicodeCharacters" xml:space="preserve">
+    <value>Unicode 字元</value>
+  </data>
+  <data name="Sequences" xml:space="preserve">
+    <value>序列</value>
+  </data>
+  <data name="Search" xml:space="preserve">
+    <value>搜尋篩選:</value>
+  </data>
+  <data name="ComposeKey" xml:space="preserve">
+    <value>Compose 金鑰:</value>
+  </data>
+  <data name="ComposeKeyToolTip" xml:space="preserve">
+    <value>選擇應充當 Compose 鍵的鍵。</value>
+  </data>
+  <data name="UnicodeInput" xml:space="preserve">
+    <value>進階 Unicode 輸入</value>
+  </data>
+  <data name="InvalidSequences" xml:space="preserve">
+    <value>關於無效序列</value>
+  </data>
+  <data name="CaseInsensitive" xml:space="preserve">
+    <value>返回到不區分大小寫的匹配</value>
+  </data>
+  <data name="CaseInsensitiveToolTip" xml:space="preserve">
+    <value>如果輸入的序列不存在，但有一個只因大小寫不同，則自動校正它。</value>
+  </data>
+  <data name="DiscardOnInvalid" xml:space="preserve">
+    <value>放棄所有鍵入的字元</value>
+  </data>
+  <data name="DiscardOnInvalidToolTip" xml:space="preserve">
+    <value>如果輸入的序列不存在，請放棄所有鍵入的字元。預設行為是輸出字元，就像未使用撰寫鍵一樣。</value>
+  </data>
+  <data name="BeepOnInvalid" xml:space="preserve">
+    <value>發出蜂鳴聲</value>
+  </data>
+  <data name="BeepOnInvalidToolTip" xml:space="preserve">
+    <value>如果輸入的序列不存在，則發出系統聲音。</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>介面語言:</value>
+  </data>
+  <data name="LanguageToolTip" xml:space="preserve">
+    <value>選擇 WinCompose 用於介面的語言。預設情況下使用作業系統語言。</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>關閉</value>
+  </data>
+  <data name="Emoji" xml:space="preserve">
+    <value>Emoji</value>
+  </data>
+  <data name="Apply" xml:space="preserve">
+    <value>應用</value>
+  </data>
+  <data name="KeepOriginalKey" xml:space="preserve">
+    <value>保持原始的撰寫關鍵行為</value>
+  </data>
+  <data name="KeepOriginalKeyToolTip" xml:space="preserve">
+    <value>這告訴 WinCompose  要盡最大努力保留原始金鑰的行為。例如:即使 Alt 用作撰寫鍵, Alt-Tab 快捷方式仍然有效。</value>
+  </data>
+  <data name="InsertZwsp" xml:space="preserve">
+    <value>在 Office 應用中插入零寬度空格</value>
+  </data>
+  <data name="InsertZwspToolTip" xml:space="preserve">
+    <value>當輸入某些 Unicode 字元時，Microsoft Office 應用程式有時會動態更改文檔字體。此功能在 Unicode 字元之後插入一個不可見的字元來解決錯誤。</value>
+  </data>
+  <data name="EmulateCapsLock" xml:space="preserve">
+    <value>使用兩個 Shift 鍵類比大寫鎖</value>
+  </data>
+</root>

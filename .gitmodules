@@ -1,0 +1,21 @@
+[submodule "src/3rdparty/libx11"]
+	path = src/3rdparty/libx11
+	url = https://anongit.freedesktop.org/git/xorg/lib/libX11.git
+[submodule "src/3rdparty/unicode-emoji"]
+	path = src/3rdparty/unicode-emoji
+	url = ../../samhocevar/unicode-emoji.git
+[submodule "src/3rdparty/unicode-translation"]
+	path = src/3rdparty/unicode-translation
+	url = ../../samhocevar/unicode-translation.git
+[submodule "src/3rdparty/xcompose"]
+	path = src/3rdparty/xcompose
+	url = ../../samhocevar/fork-xcompose.git
+[submodule "src/3rdparty/xorgproto"]
+	path = src/3rdparty/xorgproto
+	url = git://anongit.freedesktop.org/git/xorg/proto/xorgproto
+[submodule "src/3rdparty/wpf-notify-icon"]
+	path = src/3rdparty/wpf-notify-icon
+	url = ../../samhocevar/fork-wpf-notify-icon.git
+[submodule "src/3rdparty/innosetup"]
+	path = src/3rdparty/innosetup
+	url = ../../jrsoftware/issrc.git
