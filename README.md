@@ -11,7 +11,7 @@ In this modified version, the <kbd>⎄ Compose</kbd> key must be kept pressed to
 
 This modified version is optimized for the Italian keyboard.
 
-Compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free)
+Written in C#, compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free)
 
 Default special characters and strings:
 
