@@ -1,0 +1,262 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   CATYPE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.8  $
+;          $Date:   30 May 2009 15:06:52  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/CaType.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+
+#NextId LOCK "CATYPE.MMH"
+
+
+;---[UsedInDoco-msidbCustomActionType]---
+;----------------------------------------------------------------------------
+;--- Constants: Basic CA Types ----------------------------------------------
+;----------------------------------------------------------------------------
+#define msidbCustomActionTypeDll            0x0001  ;;Target = entry point name
+#define msidbCustomActionTypeExe            0x0002  ;;Target = command line args
+#define msidbCustomActionTypeTextData       0x0003  ;;Target = text string to be formatted and set into property
+#define msidbCustomActionTypeJScript        0x0005  ;;Target = entry point name, null if none to call
+#define msidbCustomActionTypeVBScript       0x0006  ;;Target = entry point name, null if none to call
+#define msidbCustomActionTypeInstall        0x0007  ;;Target = property list for nested engine initialization
+
+
+;----------------------------------------------------------------------------
+;--- Constants: "Source" column info ----------------------------------------
+;----------------------------------------------------------------------------
+#define msidbCustomActionTypeBinaryData     0x0000  ;;Source = Binary.Name, data stored in stream
+#define msidbCustomActionTypeSourceFile     0x0010  ;;Source = File.File, file part of installation
+#define msidbCustomActionTypeDirectory      0x0020  ;;Source = Directory.Directory, folder containing existing file
+#define msidbCustomActionTypeProperty       0x0030  ;;Source = Property.Property, full path to executable
+
+
+;----------------------------------------------------------------------------
+;--- Define basic attributes (use MS names) ---------------------------------
+;----------------------------------------------------------------------------
+#define msidbCustomActionTypeContinue       0x0040   ;;Ignore return code
+#define msidbCustomActionTypeAsync          0x0080   ;;Don't wait
+#define msidbCustomActionTypeRollback       0x0100   ;;Execute only upon an installation rollback (rollback custom action)
+#define msidbCustomActionTypeCommit         0x0200   ;;Execute only upon install commit (commit custom action)
+#define msidbCustomActionTypeFirstSequence  0x0100
+#define msidbCustomActionTypeOncePerProcess 0x0200
+#define msidbCustomActionTypeClientRepeat   0x0300
+#define msidbCustomActionTypeInScript       0x0400   ;;Deferred
+#define msidbCustomActionTypeNoImpersonate  0x0800   ;;No user impersonation. Run in system context.
+#define msidbCustomActionType64BitScript    0x1000
+#define msidbCustomActionTypeHideTarget     0x2000
+#define msidbCustomActionTypeTSAware        0x4000
+#define msidbCustomActionTypePatchUninstall 0x8000   ;;CA runs only when a patch is being uninstalled
+
+
+;----------------------------------------------------------------------------
+;--- The BASIC Custom Action Types that MAKEMSI defines/uses ----------------
+;----------------------------------------------------------------------------
+#define CATYPE_JSCRIPT_IN_BINARY_TABLE            +<$msidbCustomActionTypeJScript>  SOURCE_BINARY
+#define CATYPE_JSCRIPT_IN_CA_TABLE                +<$msidbCustomActionTypeJScript>  +<$msidbCustomActionTypeDirectory>
+#define CATYPE_VBSCRIPT_IN_BINARY_TABLE           +<$msidbCustomActionTypeVBScript> SOURCE_BINARY
+#define CATYPE_VBSCRIPT_IN_CA_TABLE               +<$msidbCustomActionTypeVBScript> +<$msidbCustomActionTypeDirectory>
+#define CATYPE_DLL_IN_BINARY_TABLE                +<$msidbCustomActionTypeDll>      SOURCE_BINARY
+#define CATYPE_DLL_FROM_INSTALLED_FILE            +<$msidbCustomActionTypeDll>      SOURCE_INSTALLED_FILE
+#define CATYPE_EXE_IN_BINARY_TABLE                +<$msidbCustomActionTypeExe>      SOURCE_BINARY
+;#define CATYPE_EXE_SPECIFIED_BY_PROPERTY          +<$msidbCustomActionTypeExe>      SOURCE_PROPERTY
+#define CATYPE_EXE_IN_FILEYSTEM_WITH_WORKDIR      +<$msidbCustomActionTypeExe>      SOURCE_DIRECTORY
+#define CATYPE_PROPERTY_SET_WITH_FORMATTED_TEXT   +<$msidbCustomActionTypeTextData> SOURCE_PROPERTY
+#define CATYPE_DIRECTORY_SET_WITH_FORMATTED_TEXT  +<$msidbCustomActionTypeTextData> SOURCE_DIRECTORY
+#define CATYPE_DISPLAY_ERROR_AND_ABORT            +<$msidbCustomActionTypeTextData> +<$msidbCustomActionTypeSourceFile>
+
+
+
+;----------------------------------------------------------------------------
+;--- Define all valid attributes (and meaning) for the CA "TYPE" parameter --
+;----------------------------------------------------------------------------
+#define CaTypeAttribute.SOURCE_BINARY         +<$msidbCustomActionTypeBinaryData>
+#define CaTypeAttribute.SOURCE_INSTALLED_FILE +<$msidbCustomActionTypeSourceFile>
+#define CaTypeAttribute.SOURCE_PROPERTY       +<$msidbCustomActionTypeProperty>
+#define CaTypeAttribute.SOURCE_DIRECTORY      +<$msidbCustomActionTypeDirectory>
+#define CaTypeAttribute.DEFERRED              +<$msidbCustomActionTypeInScript>
+#define CaTypeAttribute.IMMEDIATE             -<$msidbCustomActionTypeInScript>
+#define CaTypeAttribute.ASYNC                 +<$msidbCustomActionTypeAsync>
+#define CaTypeAttribute.SYNC                  -<$msidbCustomActionTypeAsync>
+#define CaTypeAttribute.AnyRc                 +<$msidbCustomActionTypeContinue>
+#define CaTypeAttribute.Rc0                   -<$msidbCustomActionTypeContinue>
+#define CaTypeAttribute.SYSTEM                +<$msidbCustomActionTypeNoImpersonate>
+#define CaTypeAttribute.IMPERSONATE           -<$msidbCustomActionTypeNoImpersonate>
+#define CaTypeAttribute.ROLLBACK              +<$msidbCustomActionTypeRollback>
+#define CaTypeAttribute.COMMIT                +<$msidbCustomActionTypeCommit>
+#define CaTypeAttribute.FirstSequence         +<$msidbCustomActionTypeFirstSequence>
+#define CaTypeAttribute.OncePerProcess        +<$msidbCustomActionTypeOncePerProcess>
+#define CaTypeAttribute.ClientRepeat          +<$msidbCustomActionTypeClientRepeat>
+#define CaTypeAttribute.64BitScript           +<$msidbCustomActionType64BitScript>
+#define CaTypeAttribute.HideTarget            +<$msidbCustomActionTypeHideTarget>
+#define CaTypeAttribute.TSAware               +<$msidbCustomActionTypeTSAware>
+#define CaTypeAttribute.PatchUninstall        +<$msidbCustomActionTypePatchUninstall>
+;---[UsedInDoco-msidbCustomActionType]---
+
+
+;----------------------------------------------------------------------------
+;--- Process CA type attributes (Handles TYPE parameter) -------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'CaType.Rexx2ProcessCaAttributes' NoPack
+    ;--- Initialize the TYPE ------------------------------------------------
+    @@Type   = '00000000'x
+
+    ;--- Set up attributes to be processed ----------------------------------
+    @@Attributes = {$AttributeVar}                              ;;Basic attributes 6 = VBS etc
+    <$@@Rexx2SupplyBackwardsToOldCaAttributes {$?}>
+    @@Attributes = @@Attributes || ' ' || @@OldAttr;            ;;Add overrides from old keywords
+    @@Attributes = @@Attributes || ' ' || {$TypeAttributesVar}; ;;Now add any supplied with TYPE parameter (overrides all others)
+
+    ;--- Process all the attributes in left to right order ------------------
+    do  while @@Attributes <> ""
+        ;--- Get next attribute ---------------------------------------------
+        parse var @@Attributes @@ThisAttribute @@Attributes;
+
+        ;--- If not a hex value then convert from "alias" -------------------
+        @@SetOrReset = left(@@ThisAttribute, 1)
+        if  @@SetOrReset <> '-' & @@SetOrReset <> '+' & @@SetOrReset <> '=' then
+        do
+            ;--- This is an attribute which must exist (pre-defined) --------
+            @@Alias = @@ThisAttribute;
+            @@Mac   = 'CaTypeAttribute.' || @@Alias;
+            if  Defined(@@Mac) = 'N' then
+                error('The custom action attribute "' || @@Alias || '" is unknown!');
+            @@ThisAttribute = ReplaceMacros( MacroGet(@@Mac) );
+
+            ;--- Validate the value the macro contained ---------------------
+            @@SetOrReset = left(@@ThisAttribute, 1)
+            if  @@SetOrReset <> '-' & @@SetOrReset <> '+' & @@SetOrReset <> '=' then
+                error('The custom action attribute "' || @@Alias || '" is incorrectly defined!', 'The macro "' || @@Mac || '" contained "' || @@ThisAttribute || '".');
+        end;
+
+        ;--- Extract the number and ensure its valid and HEX! ---------------
+        @@Number    = substr(@@ThisAttribute, 2);
+        @@HexPrefix = translate(left(@@Number, 2));
+        if  @@HexPrefix = '0X' then
+        do
+            ;--- It is HEX, extract the digits ------------------------------
+            @@HexDigits = substr(@@Number, 3);
+            if  datatype(@@HexDigits, 'X') = 0 then
+                error('The hexadecimal CA attribute "' || @@Number || '" should be made up only of', 'digits "0-9" and "A-F".');
+        end
+        else
+        do
+            ;--- If its not hex then it must be decimal! --------------------
+            if  datatype(@@Number, 'W') = 0 then
+                error('The decimal CA attribute "' || @@Number || '" should be made up only of digits "0-9".');
+            @@HexDigits = d2x(@@Number);            ;;Convert the decimal number to hex
+        end;
+
+        ;--- Create Packed copy ---------------------------------------------
+        @@Packed = x2C( right(@@HexDigits, 8, '0') );
+
+        ;--- Process the bit(s) ---------------------------------------------
+        if  @@SetOrReset = '=' then
+            ;--- Set to this specific value! --------------------------------
+            @@Type = @@Packed;                       ;;Completely override!
+        else
+        do
+            ;--- Set or reset? ----------------------------------------------
+            if  @@SetOrReset = '-' then
+                @@Type = BitAnd(@@Type, BitXor('FFFFFFFF'x, @@Packed)) ;;ReSet bit
+            else
+                @@Type = BitOr(@@Type, @@Packed)                       ;;Set bit
+        end
+    end;
+
+    ;--- Seperate out Extended bits -----------------------------------------
+    {$TypeVar}   = c2x( BitAnd(right(@@Type, 2), '7FFF'x) );
+    {$TypeExVar} = c2x( BitAnd(@@Type,       'FFFF8000'x) );
+
+    ;--- If ANY high bits used then we must be prepared for them ------------
+    if  {$TypeExVar} == '00000000' then
+        @@ExUsed = 'N';
+    else
+    do
+        ;--- High bits used -------------------------------------------------
+        @@ExUsed = 'Y';
+        #if  ['<$TABLES_DEFINE.CustomAction.ExtendedType $$UPPER>' = 'N']
+            ;--- Can't use extended bits if we haven't defined the column! ---
+            call error "The 'ExtendedType' column of the 'CustomAction' table is not defined.",,"You can't used extended custom action types..."
+        #end if
+    end;
+
+    ;--- Return the type as a VB literal hex value --------------------------
+    {$TypeVar} = '&H' || {$TypeVar};
+    if  @@ExUsed = 'N' then
+        {$TypeExVar} = '';
+    else
+    do
+        ;--- Handle VBSCRIPT bug with "8000" (prevent interpretaion as -32767) ---
+        ;{$TypeExVar} = '&H' || {$TypeExVar};
+        if  {$TypeExVar} = '8000' then
+            {$TypeExVar} = '-&H8000'              ;;http://groups.google.com/group/microsoft.public.scripting.wsh/browse_thread/thread/20116a5f811c9793
+        else
+            {$TypeExVar} = '&H' || {$TypeExVar};  ;;All other values OK
+    end
+    ;;call say "ExUsed = " || @@ExUsed
+    ;;call say "   TypeVar   = " || {$TypeVar}
+    ;;call say "   TypeExVar = " || {$TypeExVar}
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Handle old attributes --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? CATYPE_ALLOW_OBSOLETE_PARAMETERS     Y
+#DefineRexx '@@Rexx2SupplyBackwardsToOldCaAttributes'
+    ;--- Initialization -----------------------------------------------------
+    @@OldAttr = ''
+
+    #if ['<$CATYPE_ALLOW_OBSOLETE_PARAMETERS>' = 'Y']
+        ;--- Set attributes based on older parameters -----------------------
+        if  '{$Rc0=^Y^ $$UPPER}' = 'N' then
+            @@OldAttr = @@OldAttr || ' AnyRc';
+        else
+            @@OldAttr = @@OldAttr || ' Rc0';
+        if  '{$Sync=^Y^ $$UPPER}' = 'N' then
+            @@OldAttr = @@OldAttr || ' Async';
+        else
+            @@OldAttr = @@OldAttr || ' Sync';
+        if  '{$RollBack=^N^ $$UPPER}' = 'Y' then
+            @@OldAttr = @@OldAttr || ' Rollback';
+        if  '{$Commit=^N^ $$UPPER}' = 'Y' then
+            @@OldAttr = @@OldAttr || ' Commit';
+        if  '{$Deferred=^Y^ $$UPPER}' <> 'N' then
+            @@OldAttr = @@OldAttr || ' Deferred';
+        else
+            @@OldAttr = @@OldAttr || ' Immediate';
+        if  '{$Impersonate=^Y^ $$UPPER}' = 'N' then
+            @@OldAttr = @@OldAttr || ' SYSTEM';
+        else
+            @@OldAttr = @@OldAttr || ' IMPERSONATE';
+    #elseif
+        ;--- Don't allow the older parameters -------------------------------
+        if  '{$Rc0=^^ $IsPassed}' = 'Y' then
+            error('The "Rc0" parameter is no longer supported (use "TYPE").');
+        if  '{$Sync=^^ $IsPassed}' = 'Y' then
+            error('The "Sync" parameter is no longer supported (use "TYPE").');
+        if  '{$Rollback=^^ $IsPassed}' = 'Y' then
+            error('The "Rollback" parameter is no longer supported (use "TYPE").');
+        if  '{$Commit=^^ $IsPassed}' = 'Y' then
+            error('The "Commit" parameter is no longer supported (use "TYPE").');
+        if  '{$Deferred=^^ $IsPassed}' = 'Y' then
+            error('The "Deferred" parameter is no longer supported (use "TYPE").');
+        if  '{$Impersonate=^^ $IsPassed}' = 'Y' then
+            error('The "Impersonate" parameter is no longer supported (use "TYPE").');
+    #endif
+#DefineRexx
+
+
+
+
+#NextId UNLOCK "CATYPE.MMH"
+

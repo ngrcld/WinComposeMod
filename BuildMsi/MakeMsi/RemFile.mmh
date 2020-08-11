@@ -1,0 +1,119 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   REMFILE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   24 Mar 2015 18:35:26  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/RemFile.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "REMFILE"
+
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_REMFILE_INSTALLMODE      UNINSTALL
+#define? DEFAULT_REMFILE_ROWKEY_PREFIX    Rf
+
+
+;--- Available Install Modes (mappings) -------------------------------------
+#RexxVar @@INSTALLMODE_INSTALL                = 'msidbRemoveFileInstallModeOnInstall'
+#RexxVar @@INSTALLMODE_UNINSTALL              = 'msidbRemoveFileInstallModeOnRemove'
+#RexxVar @@INSTALLMODE_INSTALL_AND_UNINSTALL  = 'msidbRemoveFileInstallModeOnBoth'
+
+
+;--- VBS constants ----------------------------------------------------------
+#( '<?NewLine>'
+   #define RemFileVbsVariables
+   const msidbRemoveFileInstallModeOnInstall = 1
+   const msidbRemoveFileInstallModeOnRemove  = 2
+   const msidbRemoveFileInstallModeOnBoth    = 3
+#)
+
+
+;----------------------------------------------------------------------------
+;--- RemoveFile macro -------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   ;--- Define macro --------------------------------------------------------
+   #define RemoveFile
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Call rexx code ------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4RemoveFile {$?}>^
+
+   ;--- Add entry to "RemoveFile" table -------------------------------------
+   <??@@Vbs4Dir><?RestartLine>
+   <$TABLE "RemoveFile">
+   #(
+       <$Row
+               FileKey=^<??@@RowKey>^
+            Component_="<??@@Component>"
+              FileName="<??@@FileMask>"
+           InstallMode="<??@@VbsModeConstant>"
+           DirProperty="<??@@DirKey>"
+       >
+   #)
+   <$/TABLE>
+#)
+#RexxVar @@RowKeyCnt = 0        ;;Incremented for each GENERATED registry key
+#DefineRexx '@@Rexx4RemoveFile'
+   ;--- File Mask -----------------------------------------------------------
+   @@FileMask = '{$#1=^^}'             ;;By default removes folder (if empty)
+
+   ;--- What should the row's key be? ---------------------------------------
+   @@RowKey     = '{$RowKey=^^}'        ;;Key into REMFILE table
+   if  @@RowKey = '' then
+   do
+       ;--- User did not supply a registry key (generate one) ---------------
+       @@RowKeyCnt = @@RowKeyCnt + 1
+       if  @@RowKeyCnt > 999 then
+           @@RowKey = '<$DEFAULT_REMFILE_ROWKEY_PREFIX>' || @@RowKeyCnt;
+       else
+           @@RowKey = '<$DEFAULT_REMFILE_ROWKEY_PREFIX>' || right(@@RowKeyCnt, 3, '0');
+       @@RowKey = @@RowKey || RxGeneratedKeySuffix;
+   end;
+
+   ;--- Registry for which component? ---------------------------------------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- Defaulting ------------------------------------------------------
+       <$Rexx4ValidateInComponent>
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+
+   ;--- Install Mode --------------------------------------------------------
+   @@Mode = '{$Mode=@<$DEFAULT_REMFILE_INSTALLMODE>@}';
+   <$Rexx2ConvertRemoveFileMode ModeVar='@@Mode' ConstVar='@@VbsModeConstant'>
+
+   ;--- Create the directory for the REMFILE -------------------------------
+   <$Rexx4MakeDirectoryTree DIR=^{$DIR}^>;
+   @@Vbs4Dir = DTVBS;
+   @@DirKey  = DT_KEYNAME;
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!}
+#DefineRexx
+
+#DefineRexx 'Rexx2ConvertRemoveFileMode'
+   @@Key = '@@INSTALLMODE_' || {$ModeVar};
+   if  symbol(@@Key) <> 'VAR' then
+       error('The remove file mode of "' || @@Mode || '" is unknown');
+   else
+       {$ConstVar} = value(@@Key);
+#DefineRexx
+
+
+
+#NextId UNLOCK "REMFILE"

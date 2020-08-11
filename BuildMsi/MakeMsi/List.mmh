@@ -1,0 +1,86 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   LIST.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   26 Oct 2005 18:33:00  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/List.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- Create namespace -------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "LIST.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Determine the handle (stem name plus '.') ------------------------------
+;----------------------------------------------------------------------------
+#define? LIST_DEFAULT_CATEGORY  @@L_
+#RexxVar @@RxDefaultCategory  = '<$LIST_DEFAULT_CATEGORY>'
+#DefineRexx 'List.Rexx.GetHandle'
+    ;{$HandleVar} = {$CategoryVar=^@@RxDefaultCategory^} || {$NameVar} || '.'
+    {$HandleVar} = {$CategoryVar=^@@RxDefaultCategory^} || c2x(translate({$NameVar})) || '.'
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Clear List -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'List.Rexx.ClearGivenHandle'
+    ;--- Clear it -----------------------------------------------------------
+    interpret 'drop ' || {$HandleVar}
+#DefineRexx
+#DefineRexx 'List.Rexx.Clear'
+    ;--- Work out what variable needs clearing ------------------------------
+    <$List.Rexx.GetHandle HandleVar="@@Handle2Clear" {$?}>
+
+    ;--- Clear it -----------------------------------------------------------
+    <$List.Rexx.ClearGivenHandle HandleVar="@@Handle2Clear">
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Is an item in the list -------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'List.Rexx.IsInListGivenHandle'
+    if  symbol({$HandleVar} || c2x({$ItemVar})) = 'VAR' then
+        {$AnswerVar} = 'Y';
+    else
+        {$AnswerVar} = 'N';
+#DefineRexx
+#DefineRexx 'List.Rexx.IsInList'
+    ;--- Work out what variable needs clearing ------------------------------
+    <$List.Rexx.GetHandle HandleVar="@@Handle2Check" {$?}>
+
+    ;--- Clear it -----------------------------------------------------------
+    ;<$List.Rexx.List.Rexx.IsInListGivenHandle AnswerVar=^{$AnswerVar}^ HandleVar="@@Handle2Clear">
+    <$List.Rexx.List.Rexx.IsInListGivenHandle AnswerVar=^{$AnswerVar}^ HandleVar="@@Handle2Check">
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Add item to the list ---------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'List.Rexx.AddToListGivenHandle'
+    call value {$HandleVar} || c2x({$ItemVar}), '';
+#DefineRexx
+#DefineRexx 'List.Rexx.AddToList'
+    ;--- Work out what variable needs clearing ------------------------------
+    <$List.Rexx.GetHandle HandleVar="@@Handle2Add" {$?}>
+
+    ;--- Clear it -----------------------------------------------------------
+    ;<$List.Rexx.List.Rexx.AddToListGivenHandle HandleVar="@@Handle2Clear">
+    <$List.Rexx.List.Rexx.AddToListGivenHandle HandleVar="@@Handle2Add">
+#DefineRexx
+
+
+#NextId UNLOCK "LIST.MMH"

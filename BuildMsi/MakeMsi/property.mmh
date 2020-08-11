@@ -1,0 +1,388 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   PROPERTY.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.26  $
+;          $Date:   16 Oct 2009 09:59:16  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/property.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "Property.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options for "Property" -------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainPropertyRelatedOptions]---
+#define? DEFAULT_PROPERTY_PERSIST_HOW                             ;;HK?? VERSION UI_REMOVE
+#define? PROPERTY_PERSIST_ROOT_LOCATION               <$MAKEMSI_BASE_REGISTRY_KEY>\PersistingProperties
+#define? PROPERTY_PERSIST_PRODUCT_LOCATION            <$PROPERTY_PERSIST_ROOT_LOCATION>\<$ProdInfo.Productname>
+#define? PROPERTY_PERSIST_PRODUCT_VERSION_LOCATION    <$PROPERTY_PERSIST_PRODUCT_LOCATION>\<$ProductVersion>
+#define? PROPERTY_PERSIST_SHARED_ROOT_LOCATION        <$PROPERTY_PERSIST_ROOT_LOCATION>\$Shared$              ;;You could redefine to include your company details (to ensure uniqueness)
+#define? PROPERTY_PERSIST_DOCUMENT_REGISTRY_IN_HTML   N             ;;Show in HTML report (Y/N)?
+#define? PROPERTY_PERSIST_COMPONENT_ATTRIBUTES        LocalOnly
+#define? PROPERTY_PERSIST_COMPONENT_PERMANENT         N             ;;Do values survive an uninstall? (1) "N" = NO (2) "A" or "Y" = via "permanent" component attribute or (3) "G" = Don't register GUID (won't repair though)
+#define? DEFAULT_PROPERTY_PERSIST_OPTIONS4COMPONENT                 ;;Any options for autocreated components
+#define? PROPERTYCA_DEFAULT_TYPE_ATTRIBUTES                         ;;You'll probably never need to change...
+;---[4DocoMainPropertyRelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Options for "PropertyCa" -----------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_PROPERTY_CA_SEQTABLE  InstallExecuteSequence
+
+
+;----------------------------------------------------------------------------
+;--- Variables/Constants to place into VBS ----------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define PropertyVbsVariables
+   <?NewLine>
+   dim @@PlCntr                ;;PropertyList counter
+   dim @@PropValue             ;;Use by "Property" command to hold the value
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Set PROPERTY -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Property
+
+   ;--- Check Parameters ----------------------------------------------------
+   {$!KEYWORDS}             ;;Don't Expect any keywords!
+   {$!:#1,Value,*Value,PERSIST,PersistHow,Options4Component}
+
+   ;--- Now Generate code ---------------------------------------------------
+   <$UpdateMmLocation>
+   #evaluate ^^ ^<$@@Rexx4Property {$?}>^
+   <??@@Vbs><?RestartLine>
+#)
+#DefineRexx '@@Rexx4Property'
+    ;--- Initialization -----------------------------------------------------
+    @@Persist = '{$Persist='N' $$UPPER}';
+
+    ;--- Get property name and make sure it looks valid ---------------------
+    @@PropertyName = '{$#1}';
+    <$Rexx2CheckMsiId IdVar="@@PropertyName" What="property name">
+
+    ;--- Get the value we need ----------------------------------------------
+    if  '{$*Value='' $$IsPassed}' = 'Y' then
+    do
+       ;--- Value is an expression ------------------------------------------
+       {$*Value=^^ $$RxVar:@@Value}            ;;The data!
+       if @@Value = '' then
+          error('No VBS expression was passed for the property "' || @@PropertyName || '"!');
+       @@Vbs = '@@PropValue = ' || @@Value || d2c(10);
+       @@Src = 'VB EXPRESSION: ' || @@Value;
+   end;
+   else
+   do
+       ;--- Value is a literal ----------------------------------------------
+       {$Value=^^ $$RxVar:@@Value}            ;;The data!
+       @@Vbs = '@@PropValue = "' || ReplaceString(@@Value, '"', '""') || '"' || d2c(10);
+       @@Src = 'LITERAL: ' || @@Value;
+   end;
+
+   ;--- Debug ---------------------------------------------------------------
+   #if  ['<$DBG_PROPERTY>' <> 'N']
+        <$DBG_SAY> 'Property command for: ' || @@PropertyName;
+        <$DBG_INC>
+        <$DBG_SAY> 'Value comes from a ' || @@Src;
+   #endif
+
+   ;--- Start Property TABLE ------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$Table "Property">'
+
+   ;--- We either want to delete OR set the property ------------------------
+   @@Vbs = @@Vbs || '   if @@PropValue = "" then' || d2c(10)
+   @@Vbs = @@Vbs ||         '<' || "$RowsDelete WHERE=^`Property` = '" || @@PropertyName || "'^>" ;;Value = "" (delete property)
+   @@Vbs = @@Vbs || '   else' || d2c(10)
+   @@Vbs = @@Vbs ||         '<' || '$Row'              ;;Value <> "" (set property)
+   @@Vbs = @@Vbs ||            ' Property="' || @@PropertyName   || '"'
+   @@Vbs = @@Vbs ||            ' *Value="@@PropValue"'
+   @@Vbs = @@Vbs ||         '>'
+   @@Vbs = @@Vbs || '   end if' || d2c(10)
+
+   ;--- End Property TABLE --------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$/Table>'
+
+   ;--- Want to persist the property? ---------------------------------------
+   if   @@Persist = 'Y' then
+   do
+        ;--- Set Persist defaults (override with "PersistHow" parameter) ----
+        @@Hkey           = 'LOCAL_MACHINE';
+        @@Key            = '<$PROPERTY_PERSIST_PRODUCT_VERSION_LOCATION>'
+        @@CompAttributes = '<$PROPERTY_PERSIST_COMPONENT_ATTRIBUTES>'
+        @@CompPermanent  = translate('<$PROPERTY_PERSIST_COMPONENT_PERMANENT>');
+        @@PersistHow     = '{$PersistHow=^<$DEFAULT_PROPERTY_PERSIST_HOW>^}';
+
+        ;--- Persist debug --------------------------------------------------
+        #if  ['<$DBG_PROPERTY>' <> 'N']
+            <$DBG_SAY> 'Value will persist...';
+            <$DBG_INC>
+            <$DBG_SAY> 'HOW: ' || @@PersistHow;
+            <$DBG_SAY> 'TO : ' || @@Hkey || '\' || @@Key;
+            <$DBG_DEC>
+        #endif
+
+        ;--- Handle any persist attributes ----------------------------------
+        @@OptNameMac = '';
+        do  while @@PersistHow <> ''
+            ;--- Get the next attribute -------------------------------------
+            parse var @@PersistHow @@Attribute ' ' @@PersistHow;
+            @@AttributeU = translate(@@Attribute);
+
+            ;--- UI_KEEP|UI_REMOVE HKLM|HKCU|HK?? ---------------------------
+            select
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               when @@AttributeU = 'LOCAL_MACHINE' | @@AttributeU = 'CURRENT_USER'  | @@AttributeU = 'HK??' then
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                    @@Hkey = @@Attribute;
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               when @@AttributeU = 'FOREVER' then
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                    @@CompPermanent = 'A';
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               when @@AttributeU = 'FOREVER(G)' then
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                    @@CompPermanent = 'G';
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               when @@AttributeU = 'UNINSTALL' then
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                    @@CompPermanent = 'N';
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               when @@AttributeU = 'PRODUCT' then
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               do
+                    ;--- All versions of the product share the information ---
+                    @@Key        = '<$PROPERTY_PERSIST_PRODUCT_LOCATION>'
+                    @@OptNameMac = 'PROPERTY_PERSIST_REGNAME_FOR_PRODUCT_' || @@PropertyName
+               end;
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               when @@AttributeU = 'VERSION' then
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               do
+                    ;--- This information is specific to this version of the product ---
+                    @@Key        = '<$PROPERTY_PERSIST_PRODUCT_VERSION_LOCATION>'
+                    @@OptNameMac = 'PROPERTY_PERSIST_REGNAME_FOR_VERSION_' || @@PropertyName
+               end
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               when left(@@AttributeU,7) = 'SHARED:' then
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               do
+                    ;--- Property shared by multiple products (get name space) ---
+                    @@NameSpace = substr(@@Attribute, 8)
+                    if  @@NameSpace = '' then
+                        call error 'You said you wanted to define a shared namespace for property persistance but you didn''t supply a namespace!';
+
+                    ;--- Work out name of optional "registry name" macro ----
+                    @@OptNameMac = 'PROPERTY_PERSIST_REGNAME_FOR_SHARED_' || @@NameSpace || '_' || @@PropertyName;
+
+                    ;--- Work out where in the registry the information goes ---
+                    @@LocnMacName = 'PROPERTY_PERSIST_SHARED_' || @@NameSpace || '_LOCATION'
+                    if  Defined(@@LocnMacName) = 'N' then
+                        @@Key = '<$PROPERTY_PERSIST_SHARED_ROOT_LOCATION>\' || @@NameSpace;
+                    else
+                        @@Key = MacroGet(@@LocnMacName);
+               end;
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               otherwise
+               /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                    error('The "PersistHow" attribute of "' || @@Attribute || '" is unknown!');
+            end;
+        end;
+
+        ;--- See if user wants to override the registry name ----------------
+        if  Defined(@@OptNameMac) = 'N' then
+            @@RegName = @@PropertyName           ;;User not overriding (just use property name)
+        else
+            @@RegName = MacroGet(@@OptNameMac);  ;;Use the supplied value
+
+        ;--- Read the property from the Windows Registry (if it currents exists) ---
+        @@Vbs = @@Vbs || '<' || '$RegistryRead'
+        @@Vbs = @@Vbs ||     ' Property="' || @@PropertyName   || '"'
+        @@Vbs = @@Vbs ||     ' Name="'     || @@RegName        || '"'
+        @@Vbs = @@Vbs ||     ' Hkey="'     || @@Hkey           || '"'
+        @@Vbs = @@Vbs ||     ' Key="'      || @@Key            || '"'
+        @@Vbs = @@Vbs ||     ' Validate="N"'                             ;;It may or may not exist
+        @@Vbs = @@Vbs || '>'
+
+        ;--- Save the value in the registry ---------------------------------
+        @@Vbs = @@Vbs || '<' || '$Component "PersistProperty_'  || @@PropertyName || '" CREATE=^Y^ Directory_=^<$AnyDir>^';
+        if  @@CompPermanent <> 'N' then
+        do
+            ;--- We want a value that survives uninstall, how do we want to do this? ---
+            if  @@CompPermanent = 'G' then
+                @@Vbs = @@Vbs || ' ComponentId=^^';                   ;;Create an unmanaged component (not that these can't be repaied BUT they also don't leave "dregs" registered on uninstall
+            else
+                @@CompAttributes = @@CompAttributes || ' Permanent';  ;;Default is to use component atrributes to make permanent as this can be repaired
+        end;
+        @@Vbs = @@Vbs ||                    ' Attributes=^' || @@CompAttributes || '^';
+        {$Options4Component=^<$DEFAULT_PROPERTY_PERSIST_OPTIONS4COMPONENT>^ $$RxVar:@@CompOpt}  ;;Any component options
+        if  @@CompOpt <> '' then
+            @@Vbs = @@Vbs || ' ' || @@CompOpt
+        @@Vbs = @@Vbs || '>';
+            ;--- Create the required registry entry -------------------------
+            @@Vbs = @@Vbs || '<' || '$Registry'
+            @@Vbs = @@Vbs ||     ' Hkey="'     || @@Hkey           || '"'
+            @@Vbs = @@Vbs ||     ' Key="'      || @@Key            || '"'
+            @@Vbs = @@Vbs ||     ' Name="'     || @@RegName        || '"'
+            @@Vbs = @@Vbs ||     ' Value="['   || @@PropertyName   || ']"'
+            @@Vbs = @@Vbs ||     ' MsiFormatted="VALUE"'
+            @@Vbs = @@Vbs ||     ' KeyPath=^Y^'
+            @@Vbs = @@Vbs ||     ' Doco=^<$PROPERTY_PERSIST_DOCUMENT_REGISTRY_IN_HTML>^'
+            @@Vbs = @@Vbs || '>'
+        @@Vbs = @@Vbs || '<' || '$/Component>'
+   end;
+
+   ;--- Debug ---------------------------------------------------------------
+   #if  ['<$DBG_PROPERTY>' <> 'N']
+        <$DBG_DEC>
+   #endif
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- PropertyList -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define PropertyList
+
+   ;--- Do it ---------------------------------------------------------------
+   <$Table "Property">
+       ;--- Look for the specified property list (update if found) ----------
+       @@PlCntr = 0
+       <$Row @SelfRef="{*}" @Code="Y" @where=^`Property` = '{$#1}'^ *Value=^{*} & "{$Delimiter=^;^}{$Value}"^>
+           ;--- We found and updated the entry ------------------------------
+           @@PlCntr = @@PlCntr + 1
+       <$/Row>
+
+      ;--- If not found then we need to create the property -----------------
+      if   @@PlCntr = 0 then
+           <$Property "{$#1}" Value="{$Value}">
+      end if
+   <$/Table>
+
+   ;--- Check parameter usage -----------------------------------------------
+   {$!:#1,Value,Delimiter}
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Set PROPERTY via Custom Action -----------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define PropertyCa
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords! - CAN'T VALIDATE:#1,VALUE,*VALUE,DIR,SEQ,KEY,SEQTABLE,CONDITION,TYPE
+
+   ;--- Init ----------------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4PropertyCa {$?}>^
+   #if [@@TypeEx <> '']
+       #error ^'ExtendedType' attributes not yet supported on this command. Let me know if you have a good reason...^
+   #endif
+
+   ;--- Define the custom action --------------------------------------------
+   <$TABLE "CustomAction">
+   #(
+       ;--- How is the value handled? ---------------------------------------
+       #if ['{$*Value=^^ $$IsPassed}' = 'Y']
+           ;--- VALUE used (make sure "VALUE" wasn't also!) -----------------
+           #if  ['{$Value=^^ $$IsPassed}' = 'Y']
+                #error ^You shouldn't pass both the "VALUE" and "*VALUE" parameters on the "PropertyCa" command!^
+           #endif
+
+           ;--- User wants VBSCRIPT expression evaluated --------------------
+           <$Row
+              *Target={$*Value $$AQ}
+                *Type=`<??@@Type>`
+               Action=`<??@@CaRowKey>`
+               Source=`{$#1}`         ;;Name of the property being set
+           >
+       #else
+           ;--- VALUE wasn't used (make sure "VALUE" was!) ------------------
+           #if  ['{$Value=^^ $$IsPassed}' = 'N']
+                #error ^The "PropertyCa" command needs you to pass either the "VALUE" or "*VALUE" parameter!^
+           #endif
+
+           ;--- User has supplied a literal string --------------------------
+           <$Row
+               Target={$Value $$AQ}
+                *Type=`<??@@Type>`
+               Action=`<??@@CaRowKey>`
+               Source=`{$#1}`         ;;Name of the property being set
+           >
+       #endif
+   #)
+   <$/TABLE>
+
+   ;--- Invoke the custom action --------------------------------------------
+   #if  [@@SeqTables = '']
+        #error ^No sequence tables were specified!^
+   #endif
+   #{ SET "SeqTable={ }<??@@SeqTables>"
+       ;--- Install in the specified table ----------------------------------
+       SeqNo = <$@@SeqExpression "<??SET_SeqTable>"> ;;Set the VBS variable "SeqNo"
+       <$TABLE "<??SET_SeqTable>">
+       #(
+           <$Row
+                  Action=`<??@@CaRowKey>`        ;;CA Key
+               Condition=`{$Condition=^^}`       ;;Set up under what condition?
+               *Sequence="SeqNo"                 ;;Set up property when?
+           >
+       #)
+       <$/TABLE>
+   #}
+#)
+#RexxVar @@PropertyCaPropCnt = 0
+#DefineRexx '@@Rexx4PropertyCa' NoPack
+   ;--- Get space separated list of table names --------------------------------
+   @@SeqTables = '{$SeqTable=^<$DEFAULT_PROPERTY_CA_SEQTABLE>^}';
+   ;@@SeqTables = translate(@@SeqTables,, <$SUNDRY_STANDARD_DELIMITERS_REXXEXP> || ',;', ' ');
+   <$Rexx2ConvertDelimitersToSpaces RxVar="@@SeqTables">
+
+   ;--- Handle Sequence number parameter ------------------------------------
+   @@Seq = '{$Seq}';
+   <$SeqNumberRexx2CreateSequenceNumberExpression SEQ="@@Seq" Macro="@@SeqExpression" Number="1">;
+
+   ;--- What type? ----------------------------------------------------------
+   if  translate('{$Dir="N"}') = 'Y' then
+   do
+       @@TypeDesc   = 'DirectoryCa'
+       @@Attributes = '<$CATYPE_DIRECTORY_SET_WITH_FORMATTED_TEXT>';
+   end;
+   else
+   do
+       @@TypeDesc   = 'PropertyCa'
+       @@Attributes = '<$CATYPE_PROPERTY_SET_WITH_FORMATTED_TEXT>';
+   end;
+   @@TypeAttributes = 'IMMEDIATE <$PROPERTYCA_DEFAULT_TYPE_ATTRIBUTES> {$Type=^^}';
+   <$CaType.Rexx2ProcessCaAttributes {$?} TypeVar=^@@Type^ TypeExVar=^@@TypeEx^ AttributeVar=^@@Attributes^ TypeAttributesVar=^@@TypeAttributes^>
+
+   ;--- What action/row key do we wish to use -------------------------------
+   @@CaRowKey = '{$Key=""}'
+   if  @@CaRowKey = '' then
+   do
+       ;--- User is allowing us to pick one ---------------------------------
+       @@PropertyCaPropCnt = @@PropertyCaPropCnt + 1
+       if  @@PropertyCaPropCnt < 10 then
+           @@CaRowKey = @@TypeDesc || right(@@PropertyCaPropCnt, 2, '0');
+       else
+           @@CaRowKey = @@TypeDesc || @@PropertyCaPropCnt;
+       @@CaRowKey = @@CaRowKey || '_{$#1}';
+   end;
+#DefineRexx
+
+
+#NextId UNLOCK "Property.MMH"

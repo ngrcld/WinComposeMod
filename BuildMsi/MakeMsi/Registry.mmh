@@ -1,0 +1,546 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   REGISTRY.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.21  $
+;          $Date:   13 Apr 2015 17:34:44  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Registry.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "REGISTRY.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainRegistryRelatedOptions]---
+#define? DEFAULT_REGISTRY_HKEY                       LOCAL_MACHINE
+#define? DEFAULT_REGISTRY_TYPE                       STRING
+#define? DEFAULT_REGISTRY_ROWKEY_PREFIX              RegKey
+#define? DEFAULT_REGISTRY_ACCESS
+#define? DEFAULT_REGISTRY_DOCO                       Y          ;;"N" = Don't add to doco (by default)
+#define? REGISTRY_COMPONENT_AUTOCREATE_ALLOWED       Y          ;;Y/N
+#define? DEFAULT_REGISTRY_OPTIONS4COMPONENT
+#define? REGISTRY_COMPONENT_ROWKEY_REXXEXPRESSION    'AutoRC_' || {$RowKeyVar} ;;For autocreated components
+#define? REGISTRY_HTMLRPT_HR                          <$SUNDRY_HTMLRPT_HR>
+#( '<?NewLine>'
+   #define? REGISTRY_STYLES
+
+   .RegistryCmtPlus             {font-size:9pt;}
+   .RegistryCmtName             {<$HTMLRPT_STYLE_VALUES_KEY>}
+   .RegistryCmtValue            {<$HTMLRPT_STYLE_VALUES_VALUE>}
+#)
+;---[4DocoMainRegistryRelatedOptions]---
+
+;--- Constants to place into VBS --------------------------------------------
+#( '<?NewLine>'
+   #define RegistryVbsConstants
+   const HKEY_CURRENT_USER_OR_LOCAL_MACHINE = -1
+   const HKEY_CLASSES_ROOT                  =  0
+   const HKEY_CURRENT_USER                  =  1
+   const HKEY_LOCAL_MACHINE                 =  2
+   const HKEY_USERS                         =  3
+#)
+#RexxVar @@Hive_CURRENT_USER_OR_LOCAL_MACHINE  = 'CURRENT_USER_OR_LOCAL_MACHINE'
+#RexxVar @@Hive_HKMU                           = 'CURRENT_USER_OR_LOCAL_MACHINE'
+#RexxVar @@Hive_HKUM                           = 'CURRENT_USER_OR_LOCAL_MACHINE'
+#RexxVar @@Hive_CLASSES_ROOT                   = 'CLASSES_ROOT'
+#RexxVar @@Hive_HKCR                           = 'CLASSES_ROOT'
+#RexxVar @@Hive_CURRENT_USER                   = 'CURRENT_USER'
+#RexxVar @@Hive_HKCU                           = 'CURRENT_USER'
+#RexxVar @@Hive_LOCAL_MACHINE                  = 'LOCAL_MACHINE'
+#RexxVar @@Hive_HKLM                           = 'LOCAL_MACHINE'
+#RexxVar @@Hive_USERS                          = 'USERS'
+#RexxVar @@ValidHkeyList = 'HKCR, HKLM, HKCU, HK??, CLASSES_ROOT, LOCAL_MACHINE, CURRENT_USER, USERS, CURRENT_USER_OR_LOCAL_MACHINE'
+
+
+;--- Registry types (see doco for "Value" prefix) ---------------------------
+#RexxVar @@RT_RAW                         = ''
+#RexxVar @@RT_STRING                      = ''
+#RexxVar @@RT__STRING_STARTING_WITH_HASH_ = '#'       ;;User shouldn't be using this (used internally)
+#RexxVar @@RT_MULTISTRING                 = ''
+#RexxVar @@RT_EXPSTRING                   = '#%'
+#RexxVar @@RT_INTEGER                     = '#'       ;;AKA "DWORD"
+#RexxVar @@RT_BINARY                      = '#x'
+
+;--- Registry Key Actions (see doco for "Name" prefix) ----------------------
+#RexxVar @@KA_INSTALL             = '+'   ;;The key is to be created, if absent, when the component is installed
+#RexxVar @@KA_UNINSTALL           = '-'   ;;The key is to be deleted, if present, with all of its values and subkeys, when the component is uninstalled
+#RexxVar @@KA_INSTALL_UNINSTALL   = '*'   ;;The key is to be created, if absent, when the component is installed. Additionally, the key is to be deleted, if present, with all of its values and subkeys, when the component is uninstalled
+
+
+;----------------------------------------------------------------------------
+;--- REGISTRY ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Registry
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Do the hard work! ---------------------------------------------------
+   #evaluate ^^ ^<$Rexx4Registry {$?}>^
+
+   ;--- Generate any code required ------------------------------------------
+   <??@@Vbs><?RestartLine>
+#)
+#RexxVar @@RowKeyCnt   = 0        ;;Incremented for each GENERATED registry key
+#RexxVar @@HtmlItemCnt = 0        ;;#items for the HTML report
+#RexxVar @@CreatedCnt  = 0        ;;Number of components we created
+#RexxVar @@RegistryTable = 'Registry'
+#DefineRexx 'Rexx4Registry'
+   ;--- Init return info ----------------------------------------------------
+   @@Vbs = ''
+
+   ;--- Any Comment? --------------------------------------------------------
+   {$Comment='' $$RxVar:@@Comment};
+   if   @@Comment = '' then
+        @@Comment = RxRegistryComment.RxRegistryCommentCnt;   ;;Any block comment?
+
+   ;--- What if anything contains MSI formatting? ---------------------------
+   @@MsiFormatted_KEY   = 'N';
+   @@MsiFormatted_NAME  = 'N';
+   @@MsiFormatted_VALUE = 'N';
+   @@Val = translate('{$MsiFormatted=^^}', '  ', ',;');  ;;Treat comma and semcolons as spaces
+   do while @@Val <> ''
+      ;--- Get next parameter -----------------------------------------------
+      parse var @@Val @@Val1 @@Val;
+
+      ;--- Check that the item is valid and remember it ---------------------
+      @@ValSym = '@@MsiFormatted_' || @@Val1;
+      if  symbol(@@ValSym) <> 'VAR' then
+          error('The item "' || @@Val1 || '" is not a valid value for the "MsiFormatted" parameter!');
+      else
+          call value @@ValSym, 'Y';
+   end;
+
+   ;--- What should the row's key be? ---------------------------------------
+   @@RowKey    = '{$RowKey=^^}'        ;;Key into Registry table
+   if  @@RowKey = '' then
+   do
+       ;--- User did not supply a registry key (generate one) ---------------
+       @@RowKeyCnt = @@RowKeyCnt + 1
+       if  @@RowKeyCnt > 999 then
+           @@RowKey = '<$DEFAULT_REGISTRY_ROWKEY_PREFIX>' || @@RowKeyCnt;
+       else
+           @@RowKey = '<$DEFAULT_REGISTRY_ROWKEY_PREFIX>' || right(@@RowKeyCnt, 3, '0');
+       @@RowKey = @@RowKey || RxGeneratedKeySuffix;
+   end;
+
+   ;--- Registry for which component? ---------------------------------------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- Defaulting ------------------------------------------------------
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+
+   ;--- Which Hive? ---------------------------------------------------------
+   <$Rexx2ConvertHiveNameToMsiCode HK??="" HiveNameLit='{$HKEY=^<$DEFAULT_REGISTRY_HKEY>^}' HiveNameNewVar="@@Hkey" HKeyConstVar='@@HkeyConst'>;
+
+   ;--- Get Key (location) information --------------------------------------
+   @@Key  = '{$Key}';                  ;;\software etc
+   if  @@MsiFormatted_KEY = 'Y' then
+       @@KeyAdj = @@Key;
+   else
+   do
+       ;--- Not MSI formatted so escape MSI chars ---------------------------
+       <$NotMsiFmt InVar="@@Key"  OutVar="@@KeyAdj">
+   end;
+
+   ;--- What is the VALUE name? ---------------------------------------------
+   @@Name = '{$Name=^^}';              ;;Value name (key)
+   if  @@MsiFormatted_NAME = 'Y' then
+       @@NameAdj = @@Name;
+   else
+   do
+       ;--- Not MSI formatted so escape MSI chars ---------------------------
+       <$NotMsiFmt InVar="@@Name"  OutVar="@@NameAdj">
+   end;
+
+   ;--- What type of registry item (string, dword etc)? ---------------------
+   @@TypeRpt = translate('{$Type=^<$DEFAULT_REGISTRY_TYPE>^}');     ;;User value in upper case (this kept for html report)
+   @@Type    = @@TypeRpt;
+   if  @@Type = 'DWORD' then @@Type = 'INTEGER';                    ;;Take care of alias
+   if  @@Type = '' then
+       error("Registry type was not specified");
+   else
+   do
+       ;--- Work out the prefix ---------------------------------------------
+       @@RexVar = '@@RT_' || @@Type
+       if  symbol(@@RexVar) <> 'VAR' then
+           error('A Registry type of "' || @@Type || '" is unknown');
+       @@TypePrefix = value(@@RexVar);
+   end;
+
+   ;--- Get value handle any special formatting MAKEMSI allows --------------
+   {$Value=^^ $$RxVar:@@Value}            ;;The data!
+   @@ValueAdj = @@Value;
+   if   @@Type = "BINARY" then           ;;2009-09-20, was: if   @@TypePrefix = @@RT_BINARY then
+   do
+        ;--- Remove any commas and spaces -----------------------------------
+        @@ValueAdj = ReplaceString(@@ValueAdj, ",", "");
+        @@ValueAdj = ReplaceString(@@ValueAdj, " ", "");
+   end;
+   if   @@Type = "MULTISTRING" then
+   do
+        ;--- The string must contain "[~]" (if it does don't touch it!) -----
+        @@Null = '[~]';
+        @@Pos = pos(@@Null, @@ValueAdj);
+        if  @@Pos = 0 then
+            @@ValueAdj = @@Null || @@ValueAdj || @@Null;    ;;Single string and we will assume replacement (not append/prepend)
+
+        ;--- The user must specify MsiFormatting used (we don't do this for him) ---
+        @@MsiFormatted_VALUE = "Y";
+        ;if  @@MsiFormatted_VALUE = 'N' then
+        ;    error('You must specify that MsiFormatting is used in the value', 'for "MultiString" types!')
+   end;
+   if  @@Type = "STRING" then
+   do
+       ;--- Must prefix strings that begin with "#" with a "#" --------------
+       if   left(@@Value, 1) = '#' then
+            @@TypePrefix = @@RT__STRING_STARTING_WITH_HASH_;
+   end;
+   if  @@Type = "RAW" then
+   do
+       ;--- The user supplied a "raw" value whioch we won't touch -----------
+       @@MsiFormatted_VALUE = "Y";
+   end;
+
+   ;--- What is the value we wish to assign? --------------------------------
+   if  @@MsiFormatted_VALUE = 'N' then
+   do
+       ;--- Not MSI formatted so escape MSI chars ---------------------------
+       <$NotMsiFmt InVar="@@ValueAdj"  OutVar="@@ValueAdj">  ;;Not MSI formatted so escape MSI chars
+   end;
+
+   ;--- Install/Uninstall (HOW) type information ----------------------------
+   @@KeyAction = '{$KeyAction=^^}';
+   if  @@KeyAction = '' then
+       @@KeyActionPrefix = ''
+   else
+   do
+       ;--- Translate into prefix characters --------------------------------
+       @@RexVar = '@@KA_' || @@KeyAction
+       if  symbol(@@RexVar) <> 'VAR' then
+           error('A Registry key action of "' || @@KeyAction || '" is unknown');
+       else
+           @@KeyActionPrefix = value(@@RexVar);
+   end;
+
+   ;--- Is this value a keypath for the component? --------------------------
+   @@IsKeyPath = '{$KeyPath=^N^}';
+
+   ;--- Need to create a component? -----------------------------------------
+   if   @@Component <> '' then
+        @@ComponentCreated = 'N';          ;;Already have component info
+   else
+   do
+        if  translate( '<$REGISTRY_COMPONENT_AUTOCREATE_ALLOWED>') <> 'Y' then
+            error('The "Registry" command can''t create components for you', 'You have disallowed component creation!');
+        @@ComponentCreated = 'Y';
+        @@IsKeyPath        = 'Y';             ;;We are creating the component for this registry key!
+        @@CreatedCnt       = @@CreatedCnt + 1 ;;Keep count of created components
+        @@Component = <$REGISTRY_COMPONENT_ROWKEY_REXXEXPRESSION CntVar=^@@CreatedCnt^ RowKeyVar=^@@RowKey^>
+        @@Vbs = @@Vbs || '<' || '$Component "' || @@Component || '"';
+        @@Vbs = @@Vbs ||         ' CREATE=^Y^ Directory_=^<$AnyDir>^'
+        {$Options4Component=^<$DEFAULT_REGISTRY_OPTIONS4COMPONENT>^ $$RxVar:@@CompOpt}  ;;Any component options
+        if  @@CompOpt <> '' then
+            @@Vbs = @@Vbs || ' ' || @@CompOpt
+        @@Vbs = @@Vbs || '>'
+        @@Vbs = @@Vbs || '<' || '$/Component>'
+   end;
+
+   ;--- Start Registry TABLE ------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$Table "Registry">'
+
+   ;--- Create the row ------------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$Row'
+   @@Vbs = @@Vbs || ' Registry="'   || @@RowKey       || '"'
+   @@Vbs = @@Vbs || ' Root="'       || @@HkeyConst    || '"'
+   @@Vbs = @@Vbs || ' Key="'        || @@KeyAdj       || '"'
+   @@Vbs = @@Vbs || ' Name="'       || @@KeyActionPrefix || @@NameAdj  || '"'
+   @@Vbs = @@Vbs || ' Component_="' || @@Component    || '"'
+   if  @@KeyAction = "" then
+   do
+       ;--- No "KEY ACTION" so must output the value! -----------------------
+       if  @@Type <> "INTEGER" then
+           @@Vbs = @@Vbs || ' Value='   || Quoted(@@TypePrefix || @@ValueAdj)
+       else
+       do
+           ;--- If the integer starts with "&H" or "0x" then treat as hex literal ---
+           @@ValueAdj = strip(@@ValueAdj);      ;;Leading/trailing spaces don't matter
+           @@L2 = left(@@ValueAdj, 2)
+           if @@L2 = "0X" | @@L2 = "&H" then
+              @@Vbs = @@Vbs || ' *Value='  || Quoted('"' || @@TypePrefix || '" & X2L("' || substr(@@ValueAdj,3) || '")')
+           else
+              @@Vbs = @@Vbs || ' *Value='  || Quoted('"' || @@TypePrefix || '" & ' || @@ValueAdj)   ;;Assume decimal or user knows what they are doing
+       end;
+   end;
+   else
+   do
+       ;--- Have Key action so should not have a value ----------------------
+       if  '{$Value='' $$IsPassed}' = 'Y' then
+           error("You should not specify both the KEYACTION and VALUE parameters.");
+   end;
+   @@Vbs = @@Vbs || '>'
+
+   ;--- End table -----------------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$/Table>'
+
+   ;--- Is this value a keypath for the component? --------------------------
+   if  @@IsKeyPath = 'Y' then
+   do
+       ;--- This key is a registry Keypath ----------------------------------
+       @@Vbs = @@Vbs || '<' || '$Table "Component">'
+       @@Vbs = @@Vbs || '<' ||    "$Row @Where=^`Component` = '" || @@Component || "'^"
+       @@Vbs = @@Vbs ||           " @SelfRef=^{*}^"
+       @@Vbs = @@Vbs ||           " @OK=^=1^"
+       @@Vbs = @@Vbs ||           " Attributes=^({*} OR msidbComponentAttributesRegistryKeyPath)^"
+       @@Vbs = @@Vbs ||           " KeyPath=^" || @@RowKey || "^"
+       @@Vbs = @@Vbs || '>'
+       @@Vbs = @@Vbs || '<' || "$/Table>"
+   end;
+
+   ;--- If required set access permissions ----------------------------------
+   @@Access = '{$Access=^<$DEFAULT_REGISTRY_ACCESS>^}';
+   if   @@Access <> '' then
+   do
+        ;--- User wants to adjust permissions -------------------------------
+        <$RexxToSetAccess AliasVar="@@Access" TableVar="@@RegistryTable" KeyVar="@@RowKey" ResultVar="@@VbsPc">
+        @@Vbs = @@Vbs || @@VbsPc;
+   end;
+
+   ;--- Save information for the HTML report --------------------------------
+   if  '{$Doco='<$DEFAULT_REGISTRY_DOCO>'}' <> 'N' then
+   do
+       ;--- User wants this in the doco -------------------------------------
+       @@SortKey     = @@Hkey || 'FF'x || @@Key || 'FF'x || @@Name || 'FF'x || @@Component
+       @@All         = @@SortKey || '00'x || @@RowKey || '00'x || @@Hkey || '00'x || @@Key || '00'x || @@Name || '00'x || @@Value || '00'x || @@Component || '00'x || @@TypeRpt || '00'x || @@KeyAction || '00'x || @@IsKeyPath || '00'x || @@Comment || '00'x || RxMmLocation;
+       @@HtmlItemCnt = @@HtmlItemCnt + 1;
+       @@HtmlItem.@@HtmlItemCnt = @@All;
+       @@HtmlItem.0             = @@HtmlItemCnt;
+   end;
+
+   ;--- Check Parameter usage -----------------------------------------------
+   {$!}
+#DefineRexx
+#DefineRexx 'Rexx2ConvertHiveNameToMsiCode'
+    @@HiveDesc = translate('{$HiveNameLit}');
+    @@HiveDesc = ReplaceString(@@HiveDesc, "HK??", 'CURRENT_USER_OR_LOCAL_MACHINE');  ;;Special case as "?" not allowed in rexx symbol...
+    if  @@HiveDesc = '' then
+        error("The HKEY parameter not supplied!");
+    @@HiveKey = "@@Hive_" || @@HiveDesc;
+   if  symbol(@@HiveKey) <> 'VAR' then
+       error('The HKEY value of "' || @@HiveDesc || '" is unknown, valid options are:', '   ' || @@ValidHkeyList)
+   else
+       {$HiveNameNewVar} = value(@@HiveKey);        ;;"HKCU" gets converted to "CURRENT_USER" etc
+   {$HKeyConstVar} = 'HKEY_' || {$HiveNameNewVar};  ;;Now name of VBS constant
+   if '{$HK??=""}' <> '' then
+   do
+      ;--- We don't support "HK??" types ------------------------------------
+      if @@HiveDesc = @@Hive_CURRENT_USER_OR_LOCAL_MACHINE then
+         error('The "' || @@Hive_CURRENT_USER_OR_LOCAL_MACHINE || '" hive type is not supported', 'on the {$HK??}.');
+   end;
+#DefineRexx
+
+;----------------------------------------------------------------------------
+;--- Some VB functions ------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define RegistryVbsFunctions
+
+   <?NewLine>
+   '=========================================================================
+   function X2L(ByVal HexString)
+   ' Works around VBSCRIPT "feature" which treats "&H8000" as an "short"
+   ' integer no matter what (even with leading zeros).
+   '
+   ' The passed string can begin with "&H" or "0x" (either case) but must
+   ' otherwise only contain hexadecimal digits (or spaces, which are stripped).
+   '=========================================================================
+        ;--- Remove any leading, trailing or intermediate spaces (ignore them) ---
+        HexString = replace(HexString, " ", "")
+
+        ;--- Now strip off any leading "&H" or "0x" strings -----------------
+        dim L2         : L2 = ucase(left(HexString, 2))
+        dim HexDigits
+        if  L2 = "0X" or L2 = "&H" then
+            HexDigits = mid(HexString, 3)
+        else
+            HexDigits = HexString
+        end if
+
+        ;--- Make the conversion and validate its success (only fails on invalid digits) ---
+        on error resume next
+        X2L = CLng("&H" & HexDigits)
+        if  err.number <> 0 then
+            error("X2L(): The hex string """ & HexString & """ is invalid!")
+        end if
+   end function
+#)
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? REGISTRY_BEFORE_BUTTON_FOR_REGISTRY
+#define? REGISTRY_AFTER_BUTTON_FOR_REGISTRY
+#(
+   #define? REGISTRY_BUTTON_FOR_REGISTRY
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$REGISTRY_BEFORE_BUTTON_FOR_REGISTRY>
+   <$BUTTON2 "REGISTRY" Text="Registry" CNT="@@HtmlItemCnt">
+   <$REGISTRY_AFTER_BUTTON_FOR_REGISTRY>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? REGISTRY_BEFORE_REPORT_FOR_REGISTRY
+#define? REGISTRY_AFTER_REPORT_FOR_REGISTRY
+#( ''
+   #define REGISTRY_REPORT_FOR_REGISTRY
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$REGISTRY_BEFORE_REPORT_FOR_REGISTRY>
+
+   ;--- Generate REGISTRY report --------------------------------------------
+   <A NAME="REGISTRY"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$REGISTRY_HTML_NO_REGISTRY>
+   #elseif
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="REGISTRY">
+      <$REGISTRY_HTML_REPORT_START>
+
+      ;--- Sort registry table entries --------------------------------------
+      #evaluate ^^ ^call SortArray '@@HtmlItem'^
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Index = 1 to @@HtmlItemCnt
+          ;--- Split off components -----------------------------------------
+          #DefineRexx ''
+               parse var @@HtmlItem.@@Index @@SortKey '00'x @@RowKey '00'x @@Hkey '00'x @@Key '00'x @@Name '00'x @@Value '00'x @@Component '00'x @@Type '00'x @@KeyAction '00'x @@IsKeyPath '00'x @@Comment '00'x @@MmLocation;
+
+               ;--- Get Component GUID --------------------------------------
+               @@SavedKey = 'VBSRET.CompGuid.' || @@Component;
+               if   Defined(@@SavedKey) = 'Y' then;
+                    @@ComponentGuid = MacroGet(@@SavedKey);
+               else;
+                    @@ComponentGuid = "?Not created by MAKEMSI?";
+
+               ;--- Take care of long items etc -----------------------------
+               @@Key    = wbr(@@Key);
+               @@HKey   = wbr(@@HKey);
+               if   @@Value = '' then;
+                    @@Value = '&nbsp;';
+               else;
+                    @@Value = wbr(@@Value);
+               if @@Name  = '' then;
+                  @@Name  = '&nbsp;';
+               else;
+                  @@Name = wbr(@@Name);
+
+               ;--- Allow user to combine some of the details for the report ------------
+               <$REGISTRY_COMBINE_SOME_DETAILS>;
+          #DefineRexx
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$REGISTRY_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$REGISTRY_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$REGISTRY_AFTER_REPORT_FOR_REGISTRY>
+#)
+
+
+#ifndef     REGISTRY_COMBINE_SOME_DETAILS
+   #define? REGISTRY_COMBINE_SOME_DETAILS_USER_HOOK_START
+   #define? REGISTRY_COMBINE_SOME_DETAILS_USER_HOOK_END
+   #define  REGISTRY_PREFIX @@
+   #DefineRexx 'REGISTRY_COMBINE_SOME_DETAILS'
+       ;--- User Hook -------------------------------------------------------
+       <$REGISTRY_COMBINE_SOME_DETAILS_USER_HOOK_START>
+
+       ;--- Start with component details ------------------------------------
+       @@CommentCol = '<div class="RegistryCmtPlus">';
+       @@Hr    = '<$REGISTRY_HTMLRPT_HR>'
+       @@CommentCol = @@CommentCol || ' <span title="GUID: ' || @@ComponentGuid || '"><span class="RegistryCmtName">Component</span> <span class="RegistryCmtValue">' || Wbr(@@Component) || '</span></span>';
+
+       ;--- Add any Comment -------------------------------------------------
+       if   @@Comment <> "" then
+            @@CommentCol = @@CommentCol || @@Hr || @@Comment
+
+        ;--- User Hook -------------------------------------------------------
+       <$REGISTRY_COMBINE_SOME_DETAILS_USER_HOOK_END>
+   #DefineRexx
+#endif
+
+
+
+
+#( '<?NewLine>'
+   #define? REGISTRY_HTML_NO_REGISTRY
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="REGISTRY VARIABLES">
+       <P><B>
+       <CENTER>There are no REGISTRY entries.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? REGISTRY_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="6" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>HKEY<BR>(Hive)</TH>
+       <TH>Key</TH>
+       <TH>Value<BR>Name</TH>
+       <TH>Type</TH>
+       <TH>Value</TH>
+       <TH>Comment</TH>
+   </TR>
+   </thead>
+#)
+#( '&#10'
+    #define @@ExtraToolTip
+    Row Key &quot;<??@@RowKey>&quot;
+#)
+#( '<?NewLine>'
+   #define? REGISTRY_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@' After=^<$@@ExtraToolTip>^>>
+       <TD><??@@HKey></TD>
+       <TD><??@@Key></TD>
+       <TD><??@@Name></TD>
+       <TD><??@@Type></TD>
+       <TD><??@@Value></TD>
+       ;<TD><??@@Component></TD>
+       <TD><??@@CommentCol></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? REGISTRY_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> REGISTRY entries(s).
+   </CENTER>
+#)
+
+
+#NextId UNLOCK "REGISTRY.MMH"

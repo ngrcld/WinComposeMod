@@ -1,0 +1,508 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DENNIS.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.52  $
+;          $Date:   06 Aug 2017 08:29:20  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DENNIS.mmh.pvcs  $
+;
+; Used by Dennis Bareis (me) to customise "DEPT.MMH" and "COMPANY.MMH" as well
+; as to define common macros that I'll want to use in many packages.
+;
+; SEE "ME.MMH" for a much simpler and easier to understand example.
+;
+; #################################################################
+; #### DO NOT USE FOR YOUR OWN MSIs (contains my branding etc) ####
+; #################################################################
+;
+; This file serves two distinct purposes, it is used by me to build my MSIs
+; as mentioned above but its secondary purpose is an an example file for
+; MAKEMSI customisation.
+; You should create a file similar to this one, in general I don't recommend
+; using any of my MAKEMSI header files directly.
+;
+; There are hundreds of configurable options available this file only contains
+; a fraction, the reason for this is probably obvious, I made te defaults
+; how I thought they should be! If you need to change a MAKEMSI supplied file
+; because you can't configure something let me know and I will try to solve the
+; issue.
+;
+; Note that where I use a "#define?" I am specifically allowing and expecting
+; that at times individual scripts may override this value.
+; If a value shouldn't be overriden then the "#define" command should be
+; used instead.
+;
+; Note that in this header I define platforms based on operating systems, in
+; a company where the MSI is intended for internal deployment the platforms
+; may be more like "BRANCH_SERVER" and "BRANCH_WORKSTATION".
+;----------------------------------------------------------------------------
+
+
+;----------------------------------------------------------------------------
+;--- This header is not only for me but a SAMPLE distributed with MAKEMSI ---
+;----------------------------------------------------------------------------
+#if left(GetEnv('COMPUTERNAME'), 10) = 'CN-DENNIS-'
+    ;--- Running at home on my personal computer ----------------------------
+    #define THIS_COMPUTER_IS_MINE   Y
+#elseif
+    ;--- Not my computer (so not me!) ---------------------------------------
+    #define THIS_COMPUTER_IS_MINE   N
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Set up some branding options -------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEPT_NAME                       Dennis Bareis              ;;My name
+#define? DEPT_ADDRESS                    Australia                  ;;Full address (45 Xyz Drive<$CRLF>SomePlace, 1234<$CRLF>Australia etc)
+#define? COMPANY_CONTACT_NAME            <$DEPT_NAME>               ;;My name
+#define? COMPANY_CONTACT_NAME_PHONE                                 ;;My phone contact (don't even think about it :-)
+#define? DEPT_ARP_URL_PUBLISHER          <?PpwizardAuthorHomePage>  ;;My main web page
+#define? DEPT_ARP_URL_TECHNICAL_SUPPORT  <?PpwizardAuthorHomePage>  ;;Default to my web site (root)
+
+
+;----------------------------------------------------------------------------
+;--- Set up sundry MAKEMSI options ------------------------------------------
+;----------------------------------------------------------------------------
+#define? DBG_ALL                             Y                          ;;Add MAKEMSI debugging to "console file"
+#define? DEFAULT_FILE_WANT_FILEHASH          Y                          ;;My box can generate MD5 hashes!
+#define? COMPANY_PREPROCESS_LICENCE_FILE     Y                          ;;Default is to preprocess licence files
+#define? MERGEMOD_DLL_ACCEPTABLE_VERSIONS    "2.1"                      ;;Only want to accept "Msm.Merge2.1"
+
+
+;----------------------------------------------------------------------------
+;--- I want to "mark" my development MSIs -----------------------------------
+;----------------------------------------------------------------------------
+#define? COMPANY_MSINAME_SUFFIX.D        (test)
+#define? COMPANY_MSINAME_SUFFIX.P
+#define? COMPANY_MSINAME_SUFFIX          <$COMPANY_MSINAME_SUFFIX.[MMMODE]>  ;;Adds "(test)" in development mode
+#define? COMPANY_PRODUCT_NAME_PREFIX.D   !!!                                 ;;Developer friendy - sorts up front in ARP (in development mode)
+
+
+;----------------------------------------------------------------------------
+;--- Some options more as examples than anything else (sets to defaults anyway) ---
+;----------------------------------------------------------------------------
+#define? MAKEMSI_HTML_EXTENSION                      hta        ;;Default extension (HTML Application - gets around WINXP SP2 issue)
+
+;--- IE Automation works well on my machine (well my retry code gets well used...) ---
+#define? MSI_HTML2TEXT_FUNCTION_USES_IE_AUTOMATION   Y
+
+
+;----------------------------------------------------------------------------
+;--- The Graphics I want to use (at least by default) -----------------------
+;----------------------------------------------------------------------------
+#if ['<$THIS_COMPUTER_IS_MINE>' = 'Y']
+    ;--- I don't want others to use my branding! ----------------------------
+    #define? UISAMPLE_DIALOG_FILE_dlgbmp     LeftSide-Dennis.bmp   ;;My replacement graphic for the left hand side (vertical) bitmap
+    #define? UISAMPLE_LEFTSIDE_TEXT                                ;;Disable "left side text"
+    #define? UISAMPLE_BITMAP_WHITE_BANNER    PrettyBanner.bmp     ;;Use "white.bmp" if you just want it plain
+    #define? UISAMPLE_BITMAP_BANNER_GRAPHIC  Aust_DB.bmp          ;;The graphic on the right of the "UISAMPLE_BITMAP_WHITE_BANNER"
+    #define? COMPANY_PRODUCT_ICON            Aust_DB.ico          ;;Add-Remove (control panel) icon
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Define the types of boxes that I support -------------------------------
+;----------------------------------------------------------------------------
+#(
+    ;--- The VER file will refer to one or more of these platforms or groups ---
+    #define COMPANY_DEFINE_DEPARTMENTS_PLATFORMS
+
+   ;--- WINXP ---------------------------------------------------------------
+   #define  PD_WINXP  Windows\XP
+   <$Platform "WINDOWS_XP_SERVER" DESC=^Windows XP Server^ PLATDIR="<$PD_WINXP>\Servers">
+   <$Platform "WINDOWS_XP_PRO"    DESC=^Windows XP PRO^    PLATDIR="<$PD_WINXP>\PRO">
+   #(
+       <$Platform "WINDOWS_XP"    DESC=^Windows XP (Server/PRO)^
+                   Contains="WINDOWS_XP_SERVER WINDOWS_XP_PRO"
+       >
+   #)
+
+   ;--- WIN2000 -------------------------------------------------------------
+   #define  PD_WIN2000  Windows\2000
+   <$Platform "WINDOWS_2000_SERVER" DESC=^Windows 2000 Server^ PLATDIR="<$PD_WIN2000>\Servers">
+   <$Platform "WINDOWS_2000_PRO"    DESC=^Windows 2000 PRO^    PLATDIR="<$PD_WIN2000>\PRO">
+   #(
+       <$Platform "WINDOWS_2000"    DESC=^Windows 2000 (Server/PRO)^
+                   Contains="WINDOWS_2000_SERVER WINDOWS_2000_PRO"
+       >
+   #)
+
+   ;--- Others --------------------------------------------------------------
+   <$Platform "WINDOWS_NT4" DESC=^Windows NT 4^ PLATDIR="Windows\NT4">
+   <$Platform "WINDOWS_ME"  DESC=^Windows ME^   PLATDIR="Windows\ME">
+   <$Platform "WINDOWS_98"  DESC=^Windows 98^   PLATDIR="Windows\98">
+   <$Platform "WINDOWS_95"  DESC=^Windows 95^   PLATDIR="Windows\95">
+
+   ;--- A generic one for testing (Maybe it will never be supported) --------
+   <$Platform "TEST"       DESC=^Testing (NOT SUPPORTED)^ PLATDIR="Testing-Unsupported">
+
+   ;--- Now create a group for all WINDOWS (groups can contain groups) ------
+   #(
+       <$Platform "WINDOWS_ALL" DESC=^Any Windows workstations or servers^
+                   Contains="WINDOWS_95 WINDOWS_98 WINDOWS_ME WINDOWS_NT4 WINDOWS_2000 WINDOWS_XP"
+       >
+   #)
+#)
+
+
+;----------------------------------------------------------------------------
+;--- I want local build logs & platform logs updated only for production ----
+;----------------------------------------------------------------------------
+#define? DENNIS_LOCAL_LOG_ROOT <??*APPDATA>\MAKEMSI.LOGS
+#(  ';'
+    ;--- Local files for Development Mode Build -----------------------------
+    #define? DENNIS_MAKEMSI_LOCAL_LOGS_FOR_DEVELOPER_MODE
+
+    <$DENNIS_LOCAL_LOG_ROOT>\ALL.LOG                              ;;Dev+Prod
+    <$DENNIS_LOCAL_LOG_ROOT>\DEVELOPER.LOG                        ;;Dev Only
+    <$DENNIS_LOCAL_LOG_ROOT>\Product\{ProductName}.LOG            ;;Dev+Prod
+    <$DENNIS_LOCAL_LOG_ROOT>\Product\Developer\{ProductName}.LOG  ;;Dev Only
+#)
+#(  ';'
+    ;--- Local files for Production Mode Build ------------------------------
+    #define? DENNIS_MAKEMSI_LOCAL_LOGS_FOR_PRODUCTION_MODE
+
+    <$DENNIS_LOCAL_LOG_ROOT>\ALL.LOG                              ;;Dev+Prod
+    <$DENNIS_LOCAL_LOG_ROOT>\PRODUCTION.LOG                       ;;Prod Only
+    <$DENNIS_LOCAL_LOG_ROOT>\Product\{ProductName}.LOG            ;;Dev+Prod
+    <$DENNIS_LOCAL_LOG_ROOT>\Product\Production\{ProductName}.LOG ;;Prod Only
+#)
+#(  ';'
+    ;--- Development Build --------------------------------------------------
+    #define? PLATFORM_LOG_FILES.D
+
+    ;--- Only local files (don't touch platform logs) -----------------------
+    <$DENNIS_MAKEMSI_LOCAL_LOGS_FOR_DEVELOPER_MODE>
+#)
+#(  ';'
+    ;--- Production build ---------------------------------------------------
+    #define? PLATFORM_LOG_FILES.P
+
+    ;--- Logs in other directories ------------------------------------------
+    <$DENNIS_MAKEMSI_LOCAL_LOGS_FOR_PRODUCTION_MODE>
+
+    ;--- The normal log files in platform directories (prod only) -----------
+    <$PLATFORM_DEFAULT_LOG_FILES>
+#)
+#define? PLATFORM_LOG_FILES <$PLATFORM_LOG_FILES.[MmMode]>
+
+
+;---[ReadMeMacros4MakemsiDoco]----
+;----------------------------------------------------------------------------
+;--- ReadMe Macros (creates and adds readme.txt to current component) -------
+;----------------------------------------------------------------------------
+#(
+    ;--- Define README start macro ------------------------------------------
+    #define ReadMe
+
+    ;--- Open the output file (following lines placed in the file) ----------
+    #define+ @@ReadmeName  <$MAKEMSI_OUT_LOG_DIR_RELATIVE>\ReadmeFiles\Readme-<$Component?>.TXT  ;;Only once per-component!
+    #define+ @@IsKeyFile   {$KeyFile=^N^}
+    <$FileMake "<$@@ReadmeName>">
+
+    ;--- Want to keep blank lines! ------------------------------------------
+    #option  PUSH LeaveBlankLines=ON
+
+    ;--- You add readme text lines between the "<$readme>" and  "<$/readme>" tags ---
+#)
+#(
+    ;--- Define README end macro --------------------------------------------
+    #define /ReadMe
+
+    ;--- Restore options to original state ----------------------------------
+    #option  POP
+
+    ;--- Close the file -----------------------------------------------------
+    <$/FileMake>
+
+    ;--- Add the file to the current component ------------------------------
+    <$File Source="<$@@ReadmeName>" Destination="{$Destination=^ReadMe.TXT^}" KEYPATH=^<$@@IsKeyFile>^>
+#)
+;---[ReadMeMacros4MakemsiDoco]----
+
+
+#if ['<$THIS_COMPUTER_IS_MINE>' = 'Y']
+;---[4Doco-SuspendCpuIntensiveTasks]----
+;----------------------------------------------------------------------------
+;--- Define list of resource intensive background applications --------------
+;----------------------------------------------------------------------------
+#( ';'
+    #define @@SuspendProcessList
+    seti@home.exe                      ;;Little Green Men...
+    *_windows_intelx86*                ;;BOINC - All BOINC processes have this naming convention? (not all have ".exe" extension!)
+    WCGrid_Rosetta.exe                 ;;Cancer Research etc
+    GIANTAntiSpywareMain.exe           ;;Microsoft AniSpyware
+    CopernicDesktopSearch.exe          ;;Can interfere with builds
+    ud_ligfit_Release.exe              ;;United Devices
+
+    ;--- Not suspending (as this stops explorer etc working while building msi) ---
+    ;YahooDesktopSearch.exe             ;;Can interfere with builds (suspending can stop Explorer etc opening)
+                                        ;;Commented out if it still hangs until the piece of cr.p
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Stop CPU intensive processes as soon as possible -----------------------
+;----------------------------------------------------------------------------
+;---[4Doco-HookIntoExample]---
+#(
+    ;--- Code we wish to execute early in build (but after logging locations known) ---
+    #define SuspendCpuIntensiveTasks
+
+    ;--- Need to perform latter when the logging directory is known! --------
+    #evaluate ^^ ^<$Rexx4SuspendCpuIntensiveTasks>^
+#)
+#include "HookInto.MMH"             ;;We haven't already included the MAKEMSI headers...
+<$HookInto "MAKEMSI_HOOK_ASAP_AFTER_LOG_DIRECTORIES_DEFINED" Before="SuspendCpuIntensiveTasks">
+;---[4Doco-HookIntoExample]---
+#DefineRexx 'Rexx4SuspendCpuIntensiveTasks'
+    ;--- Create logging directory -------------------------------------------
+    @@MainDir = '<$MAKEMSI_OTHER_DIR>\SuspendResume'
+    @@LogDir = @@MainDir || '\Logs'
+    call AddressCmd 'rd "' || @@LogDir  || '" /q /s >nul <$Stderr2Out>'
+    call AddressCmd 'rd "' || @@MainDir || '" /q /s >nul <$Stderr2Out>'
+    call MakeDirectoryTree @@LogDir;
+
+    ;--- Set up files -------------------------------------------------------
+    @@ProcessFile = @@MainDir || '\MatchingProcesses.txt';
+    @@SuspendCmd  = @@MainDir || '\Suspend.CMD';     ;;Only for user invokation (if user aborted - may need to be manually executed)
+    @@ResumeCmd   = @@MainDir || '\Resume.CMD';      ;;Only for user invokation (if user aborted - may need to be manually executed)
+    call FileDelete @@ProcessFile;
+    call FileDelete @@SuspendCmd;
+    call FileDelete @@ResumeCmd;
+
+    ;--- Initialize "emergency" Batch file (user invoked if required) -------
+    @@Batch = "@echo off" || '0A0A'x;
+    @@Batch = @@Batch || '@REM ***' || '0A'x;
+    @@Batch = @@Batch || '@REM *** Provided for your use (not actually used by MAKEMSI due to AntiSpyware programs)' || '0A'x;
+    @@Batch = @@Batch || '@REM ***' || '0A0A'x;
+    @@Batch = @@Batch || '@REM *** List of MASKS ***' || '0A'x;
+
+    ;--- Produce a file containing the matching tasks (those running any matching the mask) ---
+    call ArraySplit '@@ProcessMasks', '<$@@SuspendProcessList>', ';'
+    @@PvExe = "PV.EXE --quiet"
+    do  @@i = 1 to @@ProcessMasks.0
+        ;--- Add this wilcard process mask to the list ----------------------
+        @@PvExe = @@PvExe || ' "' || @@ProcessMasks.@@i || '"';
+        @@Batch = @@Batch || "@REM MASK #" || @@i || ': ' || @@ProcessMasks.@@i || '0A'x;
+    end
+    @@Batch = @@Batch || '0A0A'x;
+
+    ;--- Process matching (running) processes -------------------------------
+    address system @@PvExe || ' > "' || @@ProcessFile || '" 2>&1'
+    @@ProcessCnt = 0;
+    do  while lines(@@ProcessFile) <> 0
+        ;--- All lines should have a tab (process name ends with tab) -------
+        @@Line   = linein(@@ProcessFile);
+        @@TabPos = pos('09'x, @@Line);
+
+        ;--- Now Extract the Name of the process ----------------------------
+        if  @@TabPos <> 0 then
+        do
+            ;--- Looks OK ---------------------------------------------------
+            @@ProcessCnt  = @@ProcessCnt + 1;
+            @@ProcessName = left(@@Line, @@TabPos-1);
+
+            ;--- Create Batch file resume command ----------------------------
+            @@Batch = @@Batch || 'PsSuspend.exe {Action} "' || @@ProcessName || '"' || '0A'x;
+
+            ;--- Add to the Process list ------------------------------------
+            @@Process.@@ProcessCnt = @@ProcessName;
+        end;
+    end;
+    call FileClose @@ProcessFile;
+    @@Process.0 = @@ProcessCnt;
+
+    ;--- Actually create the batch files ------------------------------------
+    @@Batch = ReplaceString(@@Batch, '0A'x, '0D0A'x);
+    call FileLineOut @@SuspendCmd, ReplaceString(@@Batch, "{Action} ", "");
+    call FileLineOut @@ResumeCmd,  ReplaceString(@@Batch, "{Action}",  "-r");
+    call FileClose @@SuspendCmd;
+    call FileClose @@ResumeCmd;     ;;We won't actually run the batch files automatically due to SpyWare programs etc...
+
+    ;--- Schedule RESUME at end of PPWIZARD's processing --------------------
+    call ScheduleCleanupCode 'ResumeCpuIntensiveTasks';
+
+    ;--- SUSPEND ignoring return codes/failure (but log for debug) ----------
+    do  @@i = 1 to @@Process.0
+        @@LogFile = @@LogDir || '\Suspending-' || @@Process.@@i || '.log'
+        address system 'PsSuspend.EXE "' || @@Process.@@i || '" > "' || @@LogFile || '" 2>&1'
+    end
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- This RESUME code was scheduled in the SUSPEND step above ---------------
+;----------------------------------------------------------------------------
+#DefineRexx 'ResumeCpuIntensiveTasks'       ;;Define "resume" code (not yet executed)
+    ;--- RESUME ignoring return codes/failure (but log for debug) -----------
+    do  @@i = 1 to @@Process.0
+        @@LogFile = @@LogDir || '\Resuming-' || @@Process.@@i || '.log'
+        address system 'PsSuspend.EXE -r "' || @@Process.@@i || '" > "' || @@LogFile || '" 2>&1'
+    end
+#DefineRexx
+;---[4Doco-SuspendCpuIntensiveTasks]----
+#endif
+
+
+;---[4Doco-FindWscript.exe]----
+;----------------------------------------------------------------------------
+;--- Macro to find "WSCRIPT.EXE"
+;--- MS stupidly places this file in logically different locations
+;--- ("C:\windows" in WIN98). Also just to make it more difficult it is not
+;--- possible to search by attribute, or search path and thus not possible
+;--- to avoid possible incorrect matches in fixpack backup directories.
+;--- All in all nearly a handful of reasons to swear at MS in one go....
+;----------------------------------------------------------------------------
+#(
+    #define WSCRIPT.EXE
+
+    ;--- Can't do this! Can find files in "$NtServicePackUninstall" type directories ---
+    ;<$FileFind File="WSCRIPT.EXE" Property="WSCRIPT.EXE" PATH="[WindowsFolder]" Depth="1">   ;;Danger, Danger...
+
+    ;--- Thanks MS... -------------------------------------------------------
+    <$FileFind File="WSCRIPT.EXE" Property="WSCRIPT.EXE.WF" PATH="[WindowsFolder]" Depth="0" Default="">
+    <$FileFind File="WSCRIPT.EXE" Property="WSCRIPT.EXE.SF" PATH="[SystemFolder]"  Depth="0" Default="">
+    <$PropertyCa "WSCRIPT.EXE" Value="[WSCRIPT.EXE.WF]" Seq="AppSearch-" Condition="WSCRIPT.EXE.WF and (<$CONDITION_EXCEPT_UNINSTALL>)" SeqTable="InstallUISequence InstallExecuteSequence">
+    <$PropertyCa "WSCRIPT.EXE" Value="[WSCRIPT.EXE.SF]" Seq="AppSearch-" Condition="WSCRIPT.EXE.SF and (<$CONDITION_EXCEPT_UNINSTALL>)" SeqTable="InstallUISequence InstallExecuteSequence">
+    <$AbortIf
+        Condition="not WSCRIPT.EXE and (<$CONDITION_EXCEPT_UNINSTALL>)"
+          Message=^The file "WSCRIPT.EXE" was not found in the "[WindowsFolder]" or "[SystemFolder]" directories!^
+         SeqTable="InstallUISequence InstallExecuteSequence"
+              Seq="AppSearch-"
+    >
+#)
+;---[4Doco-FindWscript.exe]----
+
+#(
+    #define CSCRIPT.EXE
+
+    ;--- Can't do this! Can find files in "$NtServicePackUninstall" type directories ---
+    ;<$FileFind File="CSCRIPT.EXE" Property="CSCRIPT.EXE" PATH="[WindowsFolder]" Depth="1">
+
+    ;--- Thanks MS... -------------------------------------------------------
+    <$FileFind File="CSCRIPT.EXE" Property="CSCRIPT.EXE.WF" PATH="[WindowsFolder]" Depth="0" Default="">
+    <$FileFind File="CSCRIPT.EXE" Property="CSCRIPT.EXE.SF" PATH="[SystemFolder]"  Depth="0" Default="">
+    <$PropertyCa "CSCRIPT.EXE" Value="[CSCRIPT.EXE.WF]" Seq="AppSearch-" Condition="CSCRIPT.EXE.WF and (<$CONDITION_EXCEPT_UNINSTALL>)" SeqTable="InstallUISequence InstallExecuteSequence">
+    <$PropertyCa "CSCRIPT.EXE" Value="[CSCRIPT.EXE.SF]" Seq="AppSearch-" Condition="CSCRIPT.EXE.SF and (<$CONDITION_EXCEPT_UNINSTALL>)" SeqTable="InstallUISequence InstallExecuteSequence">
+    <$AbortIf
+        Condition="not CSCRIPT.EXE and (<$CONDITION_EXCEPT_UNINSTALL>)"
+          Message=^The file "CSCRIPT.EXE" was not found in the "[WindowsFolder]" or "[SystemFolder]" directories!^
+         SeqTable="InstallUISequence InstallExecuteSequence"
+              Seq="AppSearch-"
+    >
+#)
+
+
+;---[4Doco-DebugWaitMacro]----
+;----------------------------------------------------------------------------
+;--- Macro for inserting Debug Pauses (ver 06.113) --------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+    #define DebugWait
+
+    ;--- Validate parameters and keep count ---------------------------------
+    {$!:TEXT,SEQ,SEQTABLE,TYPE,CONDITION}
+    #RexxVar RxDebugWaitCnt + 1     ;;Inc Count (need diff binaries as text may/will differ)
+
+    ;--- Don't do anything in production mode! ------------------------------
+    #if ['<$MmMode>' = '<$MMMODE_PRODUCTION>']
+        ;--- In production mode warn first time -----------------------------
+        #if [RxDebugWaitCnt = 1]
+            #info ^DebugWait not inserted in production mode!^
+        #endif
+    #elseif
+        ;--- Not Production mode --------------------------------------------
+        <$VbsCa Binary="DebugWait_<??RxDebugWaitCnt>.vbs">
+           <$VbsCaEntry "MessageBox">
+               ;--- Will display whether or not in "silent" mode --------------------
+               MsgBox "{$Text=^Waiting...^}" & vbCRLF & vbCRLF & "Defined at <??RxMmLocation>", vbInformation, "DebugWait: <$ProdInfo.ProductName> v<$ProductVersion>"
+           <$/VbsCaEntry>
+        <$/VbsCa>
+        <$VbsCaSetup Binary="DebugWait_<??RxDebugWaitCnt>.vbs" Entry="MessageBox" Seq="{$Seq}" CONDITION=^{$Condition=~<$CONDITION_INSTALL_ONLY>~}^ Type="{$Type=^Deferred^}" SeqTable="{$SeqTable=^InstallExecuteSequence^}">
+    #endif
+#)
+#RexxVar RxDebugWaitCnt = 0         ;;Init count
+;---[4Doco-DebugWaitMacro]----
+
+
+;---[4Doco-DebugCauseFailureMacro]----
+;-----------------------------------------------------------------------------
+;--- DEBUG MACRO: RollBack (use to abort install/repair/uninstall activity ---
+;-----------------------------------------------------------------------------
+#( '<?NewLine>'
+    #define DebugRollback                   ;;Version 08.241
+
+    ;--- Validate parameters and keep count ---------------------------------
+    {$!:SEQ,SEQTABLE,TYPE,CONDITION}
+    #RexxVar RxDebugRollBackCnt + 1     ;;Inc Count (need diff binaries as conditions, scheduling may/will differ)
+
+    ;--- Don't do anything in production mode! ------------------------------
+    #if ['<$MmMode>' = '<$MMMODE_PRODUCTION>']
+        ;--- In production mode warn first time -----------------------------
+        #if [RxDebugRollBackCnt = 1]
+            #info ^DebugRollback not inserted in production mode!^
+        #endif
+    #elseif
+        ;--- Not Production mode --------------------------------------------
+        <$VbsCa Binary="DebugRollback_<??RxDebugRollBackCnt>.vbs">
+           <$VbsCaEntry "FailedOnPurpose">
+               #(
+                    VbsCaRaiseError "FailedOnPurpose()",
+                                    "<$DebugCauseFailureMsg>" & vbCRLF &
+                                    vbCRLF &
+                                    "MSI       : <$ProdInfo.ProductName> v<$ProductVersion> (build <?CompileTime>)"  & vbCRLF &
+                                    "Sequenced : {$Seq=^<-InstallFinalize^}  (in {$SeqTable=^InstallExecuteSequence^})"  & vbCRLF &
+                                    "Condition : {$Condition=~<$CONDITION_INSTALL_ONLY>~}"  & vbCRLF &
+                                    "CA Type   : {$Type=^Deferred^}"  & vbCRLF &
+                                    "Defined   : <??RxMmLocation>"
+               #)
+           <$/VbsCaEntry>
+        <$/VbsCa>
+        <$VbsCaSetup Binary="DebugRollback_<??RxDebugRollBackCnt>.vbs" Entry="FailedOnPurpose" Seq="{$Seq}" CONDITION=^{$Condition}^ Type="{$Type}" SeqTable="{$SeqTable}">
+    #endif
+#)
+#RexxVar RxDebugRollBackCnt = 0         ;;Init count
+#(
+    #define? DebugCauseFailureMsg
+    We are causing a failure on purpose,
+    perhaps to test rollback or because we want to test an install
+    over and over again without needing to uninstall all the time!
+#)
+#define DebugCauseFailure <$DebugRollback {$?}>             ;;Create an alias for the macro.
+;---[4Doco-DebugCauseFailureMacro]----
+
+
+
+
+#ifndef FeatureIs                               ;;Defined elsewhere?
+    ;--- Define Feature and Component state queries -------------------------
+    #define FeatureIs       (!{$#1} <$INSTALLCOMPARE_{$IS=^EQUAL^}> <$INSTALLSTATE_{$STATE=^LOCAL^}>)  ;;Feature   is already installed
+    #define FeatureWillBe   (&{$#1} <$INSTALLCOMPARE_{$IS=^EQUAL^}> <$INSTALLSTATE_{$STATE=^LOCAL^}>)  ;;Feature   is being installed
+    #define ComponentIs     (?{$#1} <$INSTALLCOMPARE_{$IS=^EQUAL^}> <$INSTALLSTATE_{$STATE=^LOCAL^}>)  ;;Component is already installed
+    #define ComponentWillBe (${$#1} <$INSTALLCOMPARE_{$IS=^EQUAL^}> <$INSTALLSTATE_{$STATE=^LOCAL^}>)  ;;Component is being installed
+
+    ;--- Define valid "IS" parameter comparison types -----------------------
+    #define INSTALLCOMPARE_EQUAL      =
+    #define INSTALLCOMPARE_NOT_EQUAL  <>
+
+    ;--- Define valid "STATE" parameter values ------------------------------
+    #define INSTALLSTATE_UNKNOWN     -1     ;;No action to be taken on the feature or component.
+    #define INSTALLSTATE_ADVERTISED   1     ;;Advertised feature. This state is not available for components.
+    #define INSTALLSTATE_ABSENT       2     ;;Feature or component is not present.
+    #define INSTALLSTATE_LOCAL        3     ;;Feature or component on the local computer.
+    #define INSTALLSTATE_SOURCE       4     ;;Feature or component run from the source.
+#endif
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Include MAKEMSI support ------------------------------------------------
+;----------------------------------------------------------------------------
+#include "DEPT.MMH"
+
+
+

@@ -1,0 +1,551 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ICE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   22 Jul 2006 10:22:14  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ICE.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   This header would be included to provide "ICE" validation
+;                   support.
+;----------------------------------------------------------------------------
+
+
+;----------------------------------------------------------------------------
+;--- Include MAKEMSI support ------------------------------------------------
+;----------------------------------------------------------------------------
+#define  VALID_ValidateTheGeneratedMsi   ;;Can't validate the generate CUB
+#define  MSI_NOT_COMPLETE_TEXT           ;;Can't mark changes in progress
+#( '{NL}'
+    #define? FILE_COMMAND_ALLOWED
+    The "File" and "Files" commands are not currently supported through this
+    framework.{NL}
+
+    If you have a need to do this then please let the author know and he
+    will enable the ability.
+#)
+#include "OpenMSI.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Prepare NameSpace ------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "ICE.MMH"
+
+
+;---[4Doco-IceRelatedOptions]---
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? ICE_LOG_DIR                 <$MAKEMSI_VBSCA_DIR>
+#define? ICE_DEFAULT_SEQUENCE_RANGE  1-32767   ;;Use any "free" number starting at one
+#define? ICE_EXTRA_VBS_CONSTANTS
+#define? ICE_EXTRA_VBS_FUNCTIONS               ;;Handy if you wish to add your own standard functions (in a header etc)
+#( '<?NewLine>'
+   #define? ICE_FORCE_VARIABLE_DECLARATION_CODE
+   option explicit
+#)
+#( '<?NewLine>'
+   #define? ICE_DEBUG_CODE
+   IceInfo("DEBUG: " & Text)
+#)
+#( '<?NewLine>'
+   #define? ICE_TRAP_DISPLAY_MESSAGE
+   IceFatal "TRAP: " & Text
+#)
+#(
+    #define ICE_IceFatal
+
+    ;--- Extra code to display error in a message box -----------------------
+    MsgBox {$TextVar}, vbCritical, "ICE ""{$IceName}"" Validation Problem"
+#)
+
+;---[4Doco-IceRelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Define the "_ICESequence" table ----------------------------------------
+;----------------------------------------------------------------------------
+<$TableDefinition "_ICESequence">
+   <$Column "Action"     TYPE="s72"   KEY="Y">
+   <$Column "Condition"  TYPE="S255">
+   <$Column "Sequence"   TYPE="I2">
+<$/TableDefinition>
+
+
+;----------------------------------------------------------------------------
+;--- ICE -------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@InICEBlock      = ''      ;;Has block start location if within a block
+#RexxVar @@IceEndFuncReq   = ''
+#RexxVar @@IceNumber       = 0
+#(
+   #define Ice
+   <$UpdateMmLocation>
+   {$!KEYWORDS}         ;;Don't Expect any keywords!
+   {$!:#1,VERSION,SEQ}   ;;List valid parameters
+
+   ;--- Do some Initialization ----------------------------------------------
+   #push "ICE macro"
+   #evaluate ^^ ^<$@@Rexx4ICE {$?}>^
+
+   ;--- Start with a clean ICE validation script directory? -----------------
+   #if [@@IceNumber = 1]
+       ;--- Clean out the validation directory ------------------------------
+       #ifndef ICE_DONT_INITIALIZE_SCRIPT_DIRECTORY
+           ;--- User is allowing directory to be deleted --------------------
+           #ifdef IsNT
+               #DefineRexx ''
+                   call AddressCmd 'rd "<$ICE_LOG_DIR>" /q /s >nul <$Stderr2Out>'
+               #DefineRexx
+           #end if
+       #endif
+   #endif
+
+   ;--- Start the output file -----------------------------------------------
+   #output "<??@@IceFile>" ASIS
+   <$@@ICE_CODE_START>
+   #RexxVar @@IceEndFuncReq = 'Y'
+#)
+#DefineRexx '@@Rexx4ICE'
+   ;--- Nesting stuff -------------------------------------------------------
+   if  @@InICEBlock <> '' then
+       error('You are not allowed to nest "ICE" macros!', 'Current block started at: ' || @@InICE);
+   @@InICEBlock = GetInputFileNameAndLine();
+
+   ;--- This will be the key ------------------------------------------------
+   @@IceKey = '{$#1}'
+
+   ;--- Now work out the name of the file -----------------------------------
+   @@IceFile = '<$ICE_LOG_DIR>\' || @@IceKey || '.vbs'
+
+   ;--- User pass a version number? -----------------------------------------
+   @@IceVer = '{$Version=^^}';
+   if  @@IceVer = '' then
+       @@IceVer = '<?CompileTime>';
+
+   ;--- What will be the sequence number? -----------------------------------
+   @@Seq = '{$Seq=^<$ICE_DEFAULT_SEQUENCE_RANGE>^}';
+   <$SeqNumberRexx2CreateSequenceNumberExpression SEQ="@@Seq" Macro="@@SeqExpression" Number="1">;
+
+   ;--- Remember how many we have processed ---------------------------------
+   @@IceNumber = @@IceNumber + 1;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- IceEndMainline ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define IceEndMainline
+
+   ;--- No parameters -------------------------------------------------------
+   {$!KEYWORDS}         ;;Don't Expect any keywords!
+   {$!:}                ;;List valid parameters
+
+   ;--- Nesting checks ------------------------------------------------------
+   #if [@@InICEBlock = '']
+       #error ^You must be within a "ICE" block to use this command!^
+   #endif
+
+   ;--- End the mainline function -------------------------------------------
+   #if [@@IceEndFuncReq = 'Y']
+       <$@@ICE_CODE_END_MAIN_FUNCTION>
+       #RexxVar @@IceEndFuncReq = 'N'
+   #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- /ICE ------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define /ICE
+
+   ;--- No parameters -------------------------------------------------------
+   {$!KEYWORDS}         ;;Don't Expect any keywords!
+   {$!:}                ;;List valid parameters
+
+   ;--- Nesting checks ------------------------------------------------------
+   <$IceEndMainline>
+   #pop    "ICE macro"
+   #RexxVar @@InICEBlock = ''
+
+   ;--- Finish the ICE code -------------------------------------------------
+   <$@@ICE_CODE_END>
+   #output
+   <$UpdateMmLocation>
+
+   ;--- Add to the binary table ---------------------------------------------
+   <$Binary "<??@@IceFile>" Key="<??@@IceKey>.vbs">
+
+   ;--- Define custom action ------------------------------------------------
+   <$Table "CustomAction">
+       #(
+           <$Row
+               Action=^<??@@IceKey>^           ;;KEY - CA
+               Source=^<??@@IceKey>.vbs^       ;;KEY - Binary
+               Target=^<??@@IceKey>^           ;;Name of the entry point
+                 Type="6"
+           >
+       #)
+   <$/Table>
+
+   ;--- Add to the "_ICESequence" table -------------------------------------
+   #ifndef @@IceSeqNo
+        ;--- Create VB variable first time through --------------------------
+        dim IceSeqNo<?NewLine>
+        #define @@IceSeqNo
+   #endif
+   IceSeqNo = <$@@SeqExpression "_ICESequence">  ;;Set the VBS variable "SeqNo"
+   <$Table "_ICESequence">
+       #(
+           <$Row
+                 Action=^<??@@IceKey>^           ;;KEY - CA
+              *Sequence=^IceSeqNo^               ;;User or assigned sequence number
+           >
+       #)
+   <$/Table>
+
+   ;--- Do some once only stuff ---------------------------------------------
+   #if [@@IceNumber = 1]
+       ;--- MUST have new GUID or ORCA validation configuration won't work correctly ---
+       <$Summary "PackageCode" *Value='GuidMake("")'>
+
+       ;--- set application name and creation time --------------------------
+       <$Summary "CREATE_DTM"   VALUE="now()">
+       <$Summary "AppName"      VALUE="<$MSI_STANDARD_APPNAME>">
+
+       ;--- Some other values -----------------------------------------------
+       <$Summary "Subject"      Value="MSI Validation Suite">
+       <$Summary "Title"        Value="MSI Validation Suite">
+   #endif
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Start ICE CODE ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define @@ICE_CODE_START
+
+   ;--- Make user declare variables for safety? -----------------------------
+   <$ICE_FORCE_VARIABLE_DECLARATION_CODE>
+
+   ;--- Syntax check --------------------------------------------------------
+   <?NewLine>
+   on error resume next
+   #ifdef  IsNT
+       <?SyntaxCheck>
+   #endif
+   on error goto 0
+   <?NewLine>
+   dim oMsgRec
+   <?NewLine>
+   <$ICE_EXTRA_VBS_CONSTANTS>
+
+   <?NewLine>
+   <?NewLine>
+   <?NewLine>
+   <?NewLine>
+   '============================================================================
+   function <??@@IceKey>()
+   '
+   '  Called by ORCA etc to perform validations
+   '============================================================================
+       ;--- Create a message record -----------------------------------------
+       on error resume next               ;;Also clears err object
+       <??@@IceKey> = 1                   'As usual nothing Windows related is documented!
+       set oMsgRec = Installer.CreateRecord(1)
+       if  IceCheck4Err("Could not create a message record") <> 0 then
+           exit function
+       end if
+
+       ;--- Display some starting "info" messages ---------------------------
+       IceInfo("------------------------------------------------------")
+       IceInfo("Starting ""<??@@IceKey>"" validations (Version <??@@IceVer>)")
+       <?NewLine>
+       <?NewLine>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- END ICE FUNCTION -------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define @@ICE_CODE_END_MAIN_FUNCTION
+
+   ;--- End the function ----------------------------------------------------
+   <?NewLine>
+   <?NewLine>
+   <?NewLine>
+       ;--- See if Error occurred (user should clear if expected) -----------
+       if  err.number <> 0 then
+           dim ET : ET = ""
+           ET = ET & "Detected a trap at the end of ICE ""<??@@IceKey>""!"
+           ET = ET & vbCRLF
+           ET = ET & "Use ""err.clear()"" if err.number can be can be non-zero."
+           ET = ET & vbCRLF & vbCRLF
+           ET = ET & "ERR.NUMBER: " & err.number & vbCRLF
+           ET = ET & "ERR.SOURCE: " & err.source & vbCRLF
+           ET = ET & "ERR.DESCRIPTION" & vbCRLF
+           ET = ET & "~~~~~~~~~~~~~~~" & vbCRLF
+           ET = ET & err.description
+           IceFatal(ET)
+       end if
+
+       ;--- Ending information message --------------------------------------
+       IceInfo("Finished ""<??@@IceKey>"" validations (Version <??@@IceVer>)")
+   end function
+   <?NewLine>
+   <?NewLine>
+#)
+
+;----------------------------------------------------------------------------
+;--- END ICE CODE -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define @@ICE_CODE_END
+
+   ;--- Add common code -----------------------------------------------------
+   <?NewLine>
+   <?NewLine>
+   <?NewLine>
+   <?NewLine>
+
+
+   <?NewLine>
+   '============================================================================
+   '===[ Any User functions Start Here ]========================================
+   '============================================================================
+   <?NewLine>
+   <$ICE_EXTRA_VBS_FUNCTIONS>
+   <?NewLine>
+   '============================================================================
+   '===[ Any User functions end Here ]==========================================
+   '============================================================================
+
+
+
+   <?NewLine>
+   ;============================================================================
+   sub @@IceMsg(MsgType, MsgTypeSuffix, ByVal Text)
+   ;
+   ;   No Table, Column or Key information is available, so ORCA can not
+   ;   tell where the error is and highlight it.
+   ;============================================================================
+       ;--- How should "[something]" be handled? ----------------------------
+       if   left(Text, 3) = "[]:" then
+            ;--- Let Windows Installer handle any MSI formatting ------------
+            Text = mid(Text, 4)
+       else
+            ;--- Want message displayed as is (don't process MSI formatting in message) ---
+            #define+ @@HideBracket (!@#$)
+            Text = replace(Text, "]",                "<$@@HideBracket>") ;;Hide the right bracket
+            Text = replace(Text, "[",                "[\[]")             ;;Take care of "["
+            Text = replace(Text, "<$@@HideBracket>", "[\]]")             ;;Take care of "]"
+
+            ;--- Only want a single line of output --------------------------
+            Text = replace(Text, vbCRLF, "<<CRLF>>")
+            Text = replace(Text, vbCR,   "<<CR>>")
+            Text = replace(Text, vbLF,   "<<LF>>")
+       end if
+
+       ;--- Output the message ----------------------------------------------
+       oMsgRec.StringData(0) = "<??@@IceKey>" & MsgTypeSuffix & Chr(9) & MsgType & Chr(9) & Text
+       Message &h03000000, oMsgRec
+   end sub
+
+
+   <?NewLine>
+   ;============================================================================
+   function IceLocation(Table, Column, Keys)
+   ;
+   ;  Add to the end of your message text as much "location" information as
+   ;  possible , ORCA will use this to highlight errors/warnings.
+   ;
+   ;  WARNING
+   ;  ~~~~~~~
+   ;  ORCA is flakey if you specify a correct table and an incorrect column
+   ;  name, this is probably the case for all mismatches.
+   ;============================================================================
+       dim T
+       if  Table = "" then
+           T = ""
+       else
+           ;--- Set up the table information --------------------------------
+           T = T & Chr(9) & "" & Chr(9) & Table
+
+           ;--- Set up Column Information -----------------------------------
+           if  Column <> "" and (Keys <> "") then  ;;Don't output Column info unless Key available due to ORCA bug (table or anything is not highlighted)
+               ;--- Add the Column ------------------------------------------
+               T = T & Chr(9) & Column
+
+               ;--- Have Key info? ------------------------------------------
+               if  Keys <> "" then
+                   ;--- Add Key info (if more than one column, tab separate)
+                   T = T & Chr(9) & Keys
+               end if
+           end if
+       end if
+       IceLocation = T
+   end function
+
+
+   <?NewLine>
+   ;============================================================================
+   sub IceError(MsgTypeSuffix, Text)
+   ;
+   ;   Some situation which should be considered to be an error was detected
+   ;============================================================================
+       @@IceMsg "1", MsgTypeSuffix, Text
+   end sub
+
+
+   <?NewLine>
+   ;============================================================================
+   sub IceWarning(MsgTypeSuffix, Text)
+   ;
+   ;   Some situation which may in some situations be considered to be
+   ;   an error was detected.
+   ;============================================================================
+       @@IceMsg "2", MsgTypeSuffix, Text
+   end sub
+
+
+   <?NewLine>
+   ;============================================================================
+   sub IceInfo(Text)
+   ;
+   ;   Some information type message (not critical)
+   ;============================================================================
+       @@IceMsg "3", "", Text
+   end sub
+
+
+   <?NewLine>
+   ;============================================================================
+   sub IceFatal(Text)
+   ;
+   ;   Some error caused the validation to fail.
+   ;============================================================================
+       ;--- Generate a "fatal" message in the validation output -------------
+       dim OneLine
+       OneLine = Replace(Text,    vbCRLF, " ")
+       OneLine = Replace(OneLine, vbLF,   " ")
+       OneLine = Replace(OneLine, vbCR,   " ")
+       @@IceMsg "0", "", OneLine
+
+       ;--- Now display the text in a popup (unless disabled etc ------------
+       <$ICE_IceFatal TextVar="Text" IceName="<??@@IceKey>">
+   end sub
+
+
+   <?NewLine>
+   ;============================================================================
+   sub IceDebug(Text)
+   ;
+   ;   Some processing information which may help resolve issues with your
+   ;   validation code if it appears to be failing...
+   ;============================================================================
+       <$ICE_DEBUG_CODE>
+   end sub
+
+
+
+   <?NewLine>
+   ;=========================================================================
+   function IceViewOpen(ByVal Sql)
+   ;=========================================================================
+       ;--- Open a view -----------------------------------------------------
+       on error resume next
+       set IceViewOpen = Database.OpenView(Sql)
+       if  IceCheck4Err("Opening View - " & Sql) <> 0 then
+           set IceViewOpen = Nothing
+           exit function
+       end if
+
+       ;--- Execute the view ------------------------------------------------
+       IceViewOpen.Execute
+       if  IceCheck4Err("Executing View - " & Sql) <> 0 then
+           set IceViewOpen = Nothing
+       end if
+   end function
+
+
+   <?NewLine>
+   ;---[4Doco-IceCheck4Err-Example]---
+   ;=========================================================================
+   function IceViewFetch(ByRef oView)
+   ;=========================================================================
+       on error resume next
+       set IceViewFetch = oView.Fetch()
+       if  IceCheck4Err("Fetching a record") <> 0 then
+           set IceViewFetch = Nothing
+       end if
+   end function
+   ;---[4Doco-IceCheck4Err-Example]---
+
+
+
+   <?NewLine>
+   ;=========================================================================
+   sub IceViewClose(ByRef oView)
+   ;=========================================================================
+       ;--- Close the view --------------------------------------------------
+       on error resume next
+       oView.close
+       IceCheck4Err "Closing a view"
+       set oView = Nothing
+   end sub
+
+   <?NewLine>
+   ;=========================================================================
+   function IceCheck4Err(ByVal Message)     ;;Displays message and returns non-zero return code if err.number <> 0
+   ;=========================================================================
+       ;--- Did an error occur? ---------------------------------------------
+       IceCheck4Err = err.number
+       if  IceCheck4Err = 0 then
+           exit function
+       end if
+
+       ;--- Output VBS trap info --------------------------------------------
+       dim Text : Text = "We have detected a VBSCRIPT trap: " & Message & vbCRLF & vbCRLF
+       Text = Text & "VBS error 0x" & hex(err.number) & " (" & err.number & "). "
+       if  err.source      <> "" then Text = Text & "Source: "      & err.source
+       if  err.description <> "" then Text = Text & "Description: " & err.description
+
+       ;--- Try to get some MSI error specific details ----------------------
+       on error resume next    ;;Don't need VB TRAP info any more
+       dim oMsiErrRec
+       err.clear()
+       set oMsiErrRec = Installer.LastErrorRecord
+       if  err.number = 0 then
+           ;--- Didn't trap -------------------------------------------------
+           if  not oMsiErrRec is nothing then
+               ;--- Information is available , generate title ---------------
+               dim MsiErrCode : MsiErrCode = oMsiErrRec.StringData(1)
+               Text = Text & vbCRLF & vbCRLF
+               Text = Text & "MSI details: " & oMsiErrRec.FormatText()
+           end if
+       end if
+
+       ;--- Display the message ---------------------------------------------
+       <$ICE_TRAP_DISPLAY_MESSAGE>
+       err.clear()
+   end function
+#)
+
+
+
+
+#NextId UNLOCK "ICE.MMH"
+
+
+
+

@@ -1,0 +1,233 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   EXTN.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.7  $
+;          $Date:   28 Feb 2016 15:41:18  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/extn.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "EXTN.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainExtn+ExtnActionRelatedOptions]---
+#define? EXTN_DEFAULT_PROGID_PREFIX     ProgId4.
+#define? DEFAULT_EXTN_HKEY              CLASSES_ROOT
+#define? EXTN_ACTION_COMMAND_TYPE       STRING      ;;or EXPSTRING (to expand environment variables etc)?
+;---[4DocoMainExtn+ExtnActionRelatedOptions]---
+
+;----------------------------------------------------------------------------
+;--- More for Doco... -------------------------------------------------------
+;----------------------------------------------------------------------------
+#ifdef NeverExecuted
+;---[must be REG_SZ on Win95 Systems]---
+<$MsiValFilter "Default types must be REG_SZ on Win95 Systems">
+;---[must be REG_SZ on Win95 Systems]---
+#endif
+
+
+
+;----------------------------------------------------------------------------
+;--- EXTN -------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@InExtnBlock = ''        ;;Has block start location if within a block
+#(
+   #define Extn
+   <$UpdateMmLocation>
+
+   ;--- Validate parameters ------------------------------------------------
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1,Component,ProgId,Description,Icon,AlwaysShow,KeyPath,HKEY}
+
+   ;--- See where the user wants the registry to go -------------------------
+   #define+ @@HKEY           {$HKEY=^<$DEFAULT_EXTN_HKEY>^}
+   #if  translate('<$@@HKEY>') == 'CLASSES_ROOT' | translate('<$@@HKEY>') == 'HKCR'
+        #define+ @@KeyRoot
+   #elseif
+        #define+ @@KeyRoot    Software\Classes\
+   #endif
+
+   ;--- Do some Initialization ----------------------------------------------
+   #push "EXTN macro"
+   #evaluate ^^ ^<$@@Rexx4Extn {$?}>^
+
+   ;--- Normal action is to associate an extension with a "ProgId" ----------
+   #if [@@ExtnPassed = 'Y']
+   #(
+       ;--- Map extension to ProgId -----------------------------------------
+       <$Registry
+           Component="<??@@Component>"  KEYPATH="{$KeyPath=^N^}"
+                HKEY="<$@@HKEY>"     Key="<$@@KeyRoot>.<??@@Extn>"
+               Value="<??@@ProgId>"
+        MsiFormatted=^Value,Name,Key^
+       >
+   #)
+   #endif
+
+   ;--- Set up a "ProgId" description ---------------------------------------
+   #if ['{$Description=''}' <> '']
+   #(
+       ;--- Add description -------------------------------------------------
+       <$Registry
+           Component="<??@@Component>"
+                HKEY="<$@@HKEY>"     Key="<$@@KeyRoot><??@@ProgId>"
+               Value=^{$Description}^
+        MsiFormatted=^Value,Name,Key^
+       >
+   #)
+   #endif
+
+   ;--- Set up a "ProgId" icon ----------------------------------------------
+   #if ['{$Icon=''}' <> '']
+   #(
+       <$Registry
+           Component="<??@@Component>"
+                HKEY="<$@@HKEY>"     Key="<$@@KeyRoot><??@@ProgId>\DefaultIcon"
+               Value=^{$Icon}^
+        MsiFormatted=^Value,Name,Key^
+       >
+   #)
+   #endif
+
+   ;--- Set up a "AlwaysShowExt" icon ---------------------------------------
+   #if ['{$AlwaysShow='N'}' <> 'N']
+   #(
+       <$Registry
+           Component="<??@@Component>"
+                HKEY="<$@@HKEY>" Key="<$@@KeyRoot><??@@ProgId>" Name="AlwaysShowExt"
+               Value=^^                 ;;Value doesn't seem to matter?
+        MsiFormatted=^Value,Name,Key^
+       >
+   #)
+   #endif
+#)
+#DefineRexx '@@Rexx4Extn'
+   ;--- Nesting stuff -------------------------------------------------------
+   if  @@InExtnBlock <> '' then
+       error('You are not allowed to nest "Extn" macros!', 'Current block started at: ' || @@InExtn);
+   @@InExtnBlock = GetInputFileNameAndLine();
+
+   ;--- The extension should not have a dot! --------------------------------
+   @@ExtnPassed = '{$#1="" $$IsPassed}';        ;;Y/N
+   @@Extn       = '{$#1=^^}';
+   if  left(@@Extn, 1) = '.' then
+       @@Extn = substr(@@Extn, 2);
+
+   ;--- Handle "ProgId" -----------------------------------------------------
+   @@ProgId = '{$ProgId=^^}';
+   if  @@ProgId = '' then
+   do
+       ;--- ProgId not passed -----------------------------------------------
+;;     if  @@Extn = '' then
+       if  @@ExtnPassed = 'N' then
+           Error("You can't default the ProgId as no extension was supplied!");
+       @@ProgId = '<$EXTN_DEFAULT_PROGID_PREFIX>' || @@Extn;
+   end;
+
+   ;--- Which component will this be belong to ------------------------------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- Defaulting ------------------------------------------------------
+       <$Rexx4ValidateInComponent>
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- /EXTN ------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define /Extn
+   <$UpdateMmLocation>
+
+   ;--- Validate parameters ------------------------------------------------
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:}
+
+   ;--- Nesting checks ------------------------------------------------------
+   #if [@@InExtnBlock = '']
+       #error ^You must be within a "Extn" block to use this command!^
+   #endif
+   #pop    "EXTN macro"
+   #RexxVar @@InExtnBlock = ''
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- ExtnAction -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define ExtnAction
+   <$UpdateMmLocation>
+
+
+   ;--- Validate parameters ------------------------------------------------
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:Command,Description,Key,NewMenu,KeyPath,Type}
+
+   ;--- Validate use --------------------------------------------------------
+   #if [@@InExtnBlock = '']
+       #error ^You must be within a "Extn" block to use this command!^
+   #endif
+
+   ;--- Where does the action go? -------------------------------------------
+   #if ['{$NewMenu=^N^ $$UPPER}' == 'Y']
+       ;--- Location if the action is for the Windows "NEW" shell menu ------
+       #define+ @@WhereKey    .<??@@Extn>\ShellNew
+       #define+ @@CommandKey  <$@@WhereKey>
+       #define+ @@CommandName Command
+   #elseif
+       ;--- Normal location -------------------------------------------------
+       #RexxVar @@ActionKey = '{$Key=^ZZZZ_{$Description}^}'   ;;Can be "Open" etc
+       #define+ @@WhereKey    <??@@ProgId>\Shell\<??@@ActionKey>
+       #define+ @@CommandKey  <$@@WhereKey>\Command
+       #define+ @@CommandName ;;Default name
+   #endif
+
+   ;--- Set up the Action's Text --------------------------------------------
+   #(
+       <$Registry
+           Component="<??@@Component>" KEYPATH="{$KeyPath=^N^}"
+                HKEY="<$@@HKEY>"
+                 Key="<$@@KeyRoot><$@@WhereKey>"
+               Value="{$Description=^^}"
+        MsiFormatted=^Value,Name,Key^
+       >
+   #)
+
+   ;--- Set up the Action's Command -----------------------------------------
+   #(
+       <$Registry
+           Component="<??@@Component>"
+                HKEY="<$@@HKEY>"
+                 Key="<$@@KeyRoot><$@@CommandKey>"
+                Name="<$@@CommandName>"
+               Value={$Command $$AQ}
+               Type=^{$Type=^<$EXTN_ACTION_COMMAND_TYPE>^}^
+        MsiFormatted=^Value,Name,Key^
+       >
+   #)
+#)
+
+
+
+
+#NextId UNLOCK "EXTN.MMH"
+
+
+

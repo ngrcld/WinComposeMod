@@ -1,0 +1,142 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SRCCODE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.8  $
+;          $Date:   23 Jun 2007 18:18:56  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/srccode.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "SRCCODE.MMH"
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SRCCODE_HEADING_EXPANDED N      ;;Start with the source code contracted
+
+
+;----------------------------------------------------------------------------
+;--- Add source file to HTML report -----------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@MoreSrcCnt = 0
+#define  SourceForReport   ;;Could be useful for non-header files  \
+         #evaluate ^^ ^<$@@Rexx4SourceForReport {$?}>^
+#DefineRexx '@@Rexx4SourceForReport'
+   ;--- What is the full name of the file (Dies on error) -------------------
+   @@FullName = FindFile('{$#1=^<?InputComponent>^}', 'source');
+
+   ;--- Save the info -------------------------------------------------------
+   @@MoreSrcCnt           = @@MoreSrcCnt + 1;
+   @@MoreSrc.@@MoreSrcCnt = @@FullName;
+   @@MoreSrc.0            = @@MoreSrcCnt;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- BUTTON -----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SRCCODE_BEFORE_BUTTON_FOR_SOURCE_CODE
+#define? SRCCODE_AFTER_BUTTON_FOR_SOURCE_CODE
+#(
+   #define? SRCCODE_BUTTON_FOR_SOURCE_CODE
+
+   ;--- Anything before? ----------------------------------------------------
+   <$SRCCODE_BEFORE_BUTTON_FOR_SOURCE_CODE>
+
+   ;--- Output the button ---------------------------------------------------
+   #ifndef SRCCODE_NO_SOURCE_CODE
+           <$BUTTON2 "SOURCE_CODE"
+                   Text="Source Code"
+                   CNT="-1"
+                   TT="The source code used to build the MSI"
+           >
+   #endif
+
+   ;--- Anything after? -----------------------------------------------------
+   <$SRCCODE_AFTER_BUTTON_FOR_SOURCE_CODE>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- SOURCE CODE "REPORTS" --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SRCCODE_SOURCE_CODE_TRAILER  ;;Trailer used when listing main source
+#(
+   ;--- Header used when listing main source --------------------------------
+   #define? SRCCODE_SOURCE_CODE_HEADER
+
+   #evaluate ^^ ^<$Rexx4SRCCODE_SOURCE_CODE_HEADER>^
+   <??@@Text>
+#)
+#define? MAKEMSI_SOURCE_DATE_TIME_FORMAT   <$MAKEMSI_DATE_TIME_FORMAT>
+#ifndef Rexx4SRCCODE_SOURCE_CODE_HEADER
+   #DefineRexx 'Rexx4SRCCODE_SOURCE_CODE_HEADER'
+       @@Text = '<center><font color="maroon"><?InputFile:n> dated ' || FileQueryDateTime('<?InputFile>', '<$MAKEMSI_SOURCE_DATE_TIME_FORMAT>') || '</font></center>'
+   #DefineRexx
+#endif
+#define? SRCCODE_BEFORE_REPORT_FOR_SOURCE_CODE
+#define? SRCCODE_AFTER_REPORT_FOR_SOURCE_CODE
+#define? SRCCODE_SOURCE_CODE_SHOW_EXTRA   Y    ;;Show extra source files if known
+#( '<?NewLine>'
+   #define? SRCCODE_SOURCE_CODE_EXTRA_HEADING ;;Heading/Header for extra source files
+
+   ;--- Only show shortname in the title ------------------------------------
+   #evaluate+ ^@@FILENAME^ ^FilePart('name', '<$@@ExtraSrcFileName>')^
+   <$HTMLRPT_HEADING TEXT="SOURCE CODE - <$@@FILENAME>" EXPANDED="<$SRCCODE_HEADING_EXPANDED>">
+#)
+#(
+   ;--- Header used when listing main source --------------------------------
+   #define? SRCCODE_SOURCE_CODE_EXTRA_HEADER
+
+   #evaluate ^^ ^<$Rexx4SRCCODE_SOURCE_CODE_EXTRA_HEADER>^
+   <??@@Text>
+#)
+#ifndef Rexx4SRCCODE_SOURCE_CODE_EXTRA_HEADER
+   #DefineRexx 'Rexx4SRCCODE_SOURCE_CODE_EXTRA_HEADER'
+       @@Text = '<center><font color="maroon"><$@@ExtraSrcFileName> dated ' || FileQueryDateTime('<$@@ExtraSrcFileName>', '<$MAKEMSI_SOURCE_DATE_TIME_FORMAT>') || '</font></center>'
+   #DefineRexx
+#endif
+#define? SRCCODE_SOURCE_CODE_EXTRA_TRAILER    ;;Trailer for extra source files
+#( ''
+   #define SRCCODE_REPORT_FOR_SOURCE_CODE
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$SRCCODE_BEFORE_REPORT_FOR_SOURCE_CODE>
+
+   ;--- Want source code? ---------------------------------------------------
+   #ifndef SRCCODE_NO_SOURCE_CODE
+       ;--- Generate SOURCE CODE listings -----------------------------------
+       <A NAME="SOURCE_CODE"></A>
+       <$HTMLRPT_HEADING TEXT="SOURCE CODE" EXPANDED="<$SRCCODE_HEADING_EXPANDED>">
+       <$SRCCODE_SOURCE_CODE_HEADER>
+       <$ExampleFile FILE="<?InputFile>" STATE="REMEMBER" INDENT="0">
+       <$SRCCODE_SOURCE_CODE_TRAILER>
+
+       ;--- Did the user ask for extra files to be processed? -----------
+       #if ['<$SRCCODE_SOURCE_CODE_SHOW_EXTRA>' <> 'N']
+           ;--- Work through the list -----------------------------------
+           #{ FOR @@SrcIndex = 1 to @@MoreSrcCnt
+               #evaluate+ ^@@ExtraSrcFileName^ ^@@MoreSrc.@@SrcIndex^
+               <$SRCCODE_SOURCE_CODE_EXTRA_HEADING>
+               <$SRCCODE_SOURCE_CODE_EXTRA_HEADER>
+               <$ExampleFile FILE=^<$@@ExtraSrcFileName>^ STATE="REMEMBER" INDENT="0">
+               <$SRCCODE_SOURCE_CODE_EXTRA_TRAILER>
+           #}
+       #endif
+   #end if
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$SRCCODE_AFTER_REPORT_FOR_SOURCE_CODE>
+#)
+
+
+
+#NextId UNLOCK "SRCCODE.MMH"

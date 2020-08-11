@@ -1,0 +1,1462 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   VbsCa-StartEnd.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.5  $
+;          $Date:   10 Aug 2017 17:29:30  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/VbsCa-StartEnd.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+
+;#############################################################################
+;######################### VBSCA_CA_BINARY_START #############################
+;#############################################################################
+#(  '<?NewLine>'
+    #define VBSCA_CA_BINARY_START
+
+   ;--- Does the user wish to require all variables be defined --------------
+   #if ['{$Define=^<$DEFAULT_VBSCA_MUST_DEFINE_VBS_VARIABLES>^}' <> 'N']
+       option explicit      'All variables must be defined
+   #endif
+
+   ;--- Syntax check --------------------------------------------------------
+   <?NewLine>
+   on error resume next
+   #ifdef  IsNT
+       <?SyntaxCheck>
+   #endif
+   on error goto 0
+   <?NewLine>
+
+
+   ;--- This value only used for command line testing -----------------------
+   #evaluate ^^ ^<$Rexx2BuildScriptCaData {$?} DelDefault=^<$DEFAULT_VBSCA_CAD_DELIMITER>^ 4STRING=^Y^>^   ;;Generates "@@S" as return code
+   <?NewLine><?NewLine>
+
+   ;--- You can change this value to make testing from command line easier ---
+   dim TestCustomActionData : TestCustomActionData = "<??@@CaDataValueDefault>"
+   <?NewLine><?NewLine>
+
+   ;--- Debug variables -----------------------------------------------------
+   public LogInc       : LogInc       = 0          ;;Debug indent level (0=lowest)
+   public LikelyReason : LikelyReason = ""   ;;User suggestion as to cause of a trap
+   dim    DebugPauses  : DebugPauses  = ucase("{$Pause=^<$VBSCA_PAUSE>^}")  ;;User can specify via the "PAUSE" parameter
+
+   ;--- Want a log file (if so where? If not set to "") ---------------------
+   dim LogFile            : LogFile            = ""
+   dim LogFileInitialized : LogFileInitialized = <$@@LOG_NEEDS_INITIALIZATION>
+   dim oLogFile           : set  oLogFile      = Nothing
+   #if translate('<$VBSCA_LOG_TO_FILE>') = 'N'
+       ;--- User does not want a log ever -----------------------------------
+       LogFile = ""
+   #elseif
+       ;--- Logging not disabled altogether ---------------------------------
+       if  CaGetEnv("<$VBSCA_LOG_OK_ENVVAR>", false) = "N" then
+           ;--- Environment says don't log ----------------------------------
+           LogFile = ""
+       else
+           ;--- Environment variable to disable logging not set to "N" ------
+           #if ["{$LogFile='' $$IsPassed}" = 'N']
+                ;--- User did not pass the parameter so choose default ------
+                LogFile = <$VBSCA_LOGFILE_EXP_4_DEFAULT_BASENAME BINARY=^{$Binary}^>
+           #else
+                ;--- User used the "LOGFILE" parameter ("" valid) -----------
+                LogFile = "{$LogFile=''}"       ;;May or may not have a PATH attached
+           #endif
+
+           ;--- Do we need to add a PATH to the log file name? --------------
+           if  instr(LogFile, "\") = 0 then
+               ;--- Work out where to put the logfile -----------------------
+               dim LogDir : LogDir = CaGetEnv("<$VBSCA_LOGDIR_ENVVAR>", false)
+               if  LogDir = "" then
+                   ;--- Environment variable does not exist -----------------
+                   LogDir = <$VBSCA_LOGDIR_EXP_4_DEFAULT>
+               end if
+
+               ;--- Add the path to the filename ----------------------------
+               if  right(LogDir, 1) <> "\" then
+                   LogDir = LogDir & "\"
+               end if
+               LogFile = LogDir & LogFile
+           end if
+       end if
+   #endif
+
+   ;--- Want to monitor "err.number" on entry to debug functions ------------
+   public DebugMonitorErrNumber : DebugMonitorErrNumber = {$Err.number="true"}
+
+   ;--- How to handle traps in testing mode ---------------------------------
+   public CmdLineTrapsHandledByVb : CmdLineTrapsHandledByVb = <$VBSCA_CmdLineTrapsHandledByVb>
+
+   ;--- Set up dictionary to hold details of CustomActionData ---------------
+   public oCad : set oCad = Nothing
+
+   ;--- What do we want on line#1 of the progress bar? ----------------------
+   public Line1Prefix
+   #if ['{$Line1=^^}' = '']
+       Line1Prefix = "Custom Action ""{$Binary}"""
+   #elseif
+       Line1Prefix = "{$Line1}"
+   #endif
+
+   ;--- Set up global variables ---------------------------------------------
+   const ForReading   = 1
+   const ForWriting   = 2
+   const ForAppending = 8
+   const TemporaryFolder = 2
+   public LastUserMsg    : LastUserMsg    = "VBSCRIPT ""{$Binary}"" just started..."
+   public LastLogOnlyMsg : LastLogOnlyMsg = ""
+
+   ;--- What error code should we use on error (use 0 to ignore etc) --------
+   const ERROR_INSTALL_USEREXIT = 1602
+   const ERROR_INSTALL_FAILURE  = 1603
+   public VbsCaRcError : VbsCaRcError = {$ErrorRc="<$ERROR_INSTALL_FAILURE>"}
+
+   ;--- Output a separator to any text log we are maintaining ---------------
+   VbsCaLog ""
+   VbsCaLog string(79, "#")
+
+   ;--- Logging constants ---------------------------------------------------
+   dim IsCustomAction
+   dim LastSessMsgRc
+   dim oMsiLog         : set oMsiLog         = Nothing
+   dim oRecActionStart : set oRecActionStart = Nothing
+   dim oRecActionData  : set oRecActionData  = Nothing
+   const msiMessageTypeError       = &H01000000   ;;Display Error in a Message Box
+   const msiMessageTypeWarning     = &H02000000   ;;Display Warning in a Message Box - stupid - looks like error anyway
+   const msiMessageTypeUser        = &H03000000   ;;Display Information in a Message Box
+   const msiMessageTypeInfo        = &H04000000   ;;Send to the MSI Log
+   const msiMessageTypeFilesInUse  = &H05000000   ;;Send FilesInUse msg
+   const msiMessageTypeActionStart = &H08000000   ;;Define a progress "step"
+   const msiMessageTypeActionData  = &H09000000   ;;Send "step"
+   const msiMessageTypeProgress    = &H0A000000   ;;Define total ticks and progress towards total
+   const msiMessageStatusError     = -1
+   const msiMessageStatusNONE      = 0
+   const msiMessageStatusOK        = 1
+   const msiMessageStatusCancel    = 2
+   const msiMessageStatusAbort     = 3
+   const msiMessageStatusRetry     = 4
+   const msiMessageStatusIgnore    = 5            ;;Seems to return "msiMessageStatusOK" instead...
+   const msiMessageStatusYes       = 6
+   const msiMessageStatusNo        = 7
+   const LogPrefix12 =        "    VBS-> "                 ;;Make logged lines easy to find (lines 1+2)
+   const LogPrefix0  = "    [Time] VBS-> "                 ;;Make logged lines easy to find (lines 0)
+
+   ;--- Progress Bar ticks --------------------------------------------------
+   const ActionInfo       = 1
+   const ProgressReport   = 2
+   const ProgressAddition = 3
+
+   ;--- Run Modes -----------------------------------------------------------
+   const msiRunModeScheduled = 16               ;;Normal Deferred CA
+
+   ;--- Is this being tested as a WSH or executed as a custom action --------
+   <?NewLine>
+   on error resume next
+   dim DetermineEnv : DetermineEnv = WScript.ScriptFullName
+   if  err.Number = 0 then
+       IsCustomAction = false
+   else
+       IsCustomAction = true
+   end if
+   <?NewLine>
+
+   ;--- Create Installer object when testing CA via Windows Script ----------
+   dim Installer                   ;;Use this over "Installer" if you want to TEST CA in WSCRIPT...
+   if  IsCustomAction then
+       set Installer = session.installer   ;;Already exists, simply make a copy
+   else
+       set Installer = CaMkObject("WindowsInstaller.Installer")
+   end if
+
+   ;--- Prepare for MSI logging ---------------------------------------------
+   err.clear()
+   dim CustomActionType
+   if  IsCustomAction then
+       ;--- Set up logging, if the following fails, assume DCOM permissions issue ---
+       set oRecActionStart  = Installer.CreateRecord(3)
+       if   err.number <> 0 then
+            ;--- "machine's DCOM configuration" according to Carolyn Napier's post (Wed, Jan 26 2005 2:10 pm) - note "session" also fails ---
+            dim T : T = "Installer.CreateRecord() failed" & ErrDetails()
+            err.clear()
+            <$VBSCA_DEBUG0> ""
+            <$VBSCA_DEBUG0> T
+            <$VBSCA_DEBUG0> ""
+            T =     "Failed accessing ""Installer"" object, this should never fail and "
+            T = T & "possibly indicates a problem with this machines's DCOM configuration."
+            on error goto 0
+            VbsCaRaiseError "InitializingLogging()", T
+       end if
+       set oRecActionData  = Installer.CreateRecord(1)
+       set oMsiLog         = Installer.CreateRecord(1)
+       <$VBSCA_DEBUG1> Line1Prefix & " starting..."
+
+       ;--- What type is this CA --------------------------------------------
+       if   Session.Property("INSTALLLEVEL") <> "" then      ;;This property should always exist...
+            CustomActionType = "IMMEDIATE (full access to properties etc)"
+       else
+            CustomActionType = "DEFERRED (very limited access to properties, information passes in ""CustomActionData"")"
+       end if
+   else
+       ;--- Not running as a Custom Action (require CSCRIPT!) ---------------
+       CustomActionType = "NOT (testing as standalone vbscript)"
+       if  ucase(mid(wscript.FullName, len(wscript.Path) + 2, 1)) = "W" Then
+           wscript.echo "You can't use WSCRIPT on this VB script, use CSCRIPT instead!"
+           wscript.quit 999
+       end if
+   end if
+
+   ;--- Output interesting information --------------------------------------
+   dim CaBinaryName, CaDefinedAtTxt, CaDefinedAt, CaMode, ProductName, ProductVersion, ProductMsi
+   CaBinaryName   = "{$Binary}"
+   #if  ['<$VBSCA_THIS_SCRIPT_IS_USING_FILEMAKE>' = 'N']
+        CaDefinedAtTxt = "Defined at     :"
+        CaDefinedAt    = "<??RxMmLocation>"
+   #elseif
+        ;--- We may be using an older cached version as the following line is "insigificant) ---
+        CaDefinedAtTxt = "Once Defined at:"
+        <$FileMakeIgnore>CaDefinedAt    = "<??RxMmLocation>  (may have moved, last significant change to this CA was at <?CompileTime>)"<$/FileMakeIgnore>
+   #endif
+   ProductName    = "<$ProdInfo.ProductName>"
+   ProductVersion = "<$ProductVersion>"
+   ProductMsi     = "<$MSI_MSIBASENAME>"
+   if  IsCustomAction then
+       CaMode = "Custom Action"
+   else
+       CaMode = "Standard VBSCRIPT"
+   end if
+   err.clear()                 ;;Prevent CaDebug() logging err details we don't care about
+   <$VBSCA_DEBUG0> ""
+   <$VBSCA_DEBUG0> ""
+   <$VBSCA_DEBUG0> "Custom Action  : " & CaBinaryName
+   <$VBSCA_DEBUG0> "CA Type        : " & CustomActionType
+   <$VBSCA_DEBUG0> "WI Version     : " & Installer.version
+   <$VBSCA_DEBUG0> CaDefinedAtTxt & " " & CaDefinedAt
+   <$VBSCA_DEBUG0> "Running Mode   : " & CaMode
+   <$VBSCA_DEBUG0> "Product Name   : " & ProductName
+   <$VBSCA_DEBUG0> "Product Version: " & ProductVersion
+   <$VBSCA_DEBUG0> "Product MSI    : " & ProductMsi
+   <$VBSCA_DEBUG0> "Extra Log      : " & LogFile
+   <$VBSCA_DEBUG0> "User's ID      : " & CaGetEnv("USERNAME",   false)
+   <$VBSCA_DEBUG0> "User's Domain  : " & CaGetEnv("USERDOMAIN", false)
+   <$VBSCA_LOG_EXP_4_ADD_2_HEADER>
+   <$VBSCA_DEBUG0> ""
+
+   ;--- Make sure any user code placed in mainline is handled ---------------
+   on error goto 0
+
+   ;--- Put a newline here (it is required to work around some rareish user bugs) ---
+   <?NewLine>
+#)
+
+
+
+;#############################################################################
+;######################### VBSCA_CA_BINARY_END ###############################
+;#############################################################################
+#( '<?NewLine>'
+   #define VBSCA_CA_BINARY_END
+
+   ;--- Output the command line VBS test stub -------------------------------
+   <?NewLine>
+   <?NewLine>
+   ;=========================================================================
+   function VbsScriptTestingStub()
+   ;=========================================================================
+       ;--- We want to be able to "exercise" stubs (entry points) from cmd line ---
+       <$VBSCA_DEBUG0> "VbsScriptTestingStub() - Starting"
+       VbsScriptTestingStub = 0
+       if  IsCustomAction then
+           <$VBSCA_DEBUG0> "VbsScriptTestingStub() - Real Custom Action!"
+       else
+           ;--- By default we will call the first entry point specified -----
+           <$VBSCA_DEBUG0> "VbsScriptTestingStub() - Testing mode!"
+           if  wscript.arguments.count = 0 then
+               ;--- Nothing specfied so call the first one! -----------------
+               VbsScriptTestingStub = <??@@DefaultTestingFunction>()
+           else
+               ;--- User passed parameters, call identified code ------------
+               dim EntryPoint : EntryPoint = wscript.arguments(0)
+               if  left(EntryPoint, 1) = "!" then
+                   CmdLineTrapsHandledByVb = not CmdLineTrapsHandledByVb
+                   EntryPoint            = mid(EntryPoint, 2)
+               end if
+               select case ucase(EntryPoint)
+                   #{  FOR @@Index = 1 to @@FunctionCnt
+                       case "<??@@Function.@@Index $$UPPER>"
+                            VbsScriptTestingStub = <??@@Function.@@Index>()
+                   #}
+                   case else
+                       ;--- Invalid parameter specified ---------------------
+                       <$VBSCA_DEBUG0> "Entry point """ & EntryPoint & "()"" unknown!"
+                       VbsScriptTestingStub = 999
+               end select
+           end if
+       end if
+       <$VBSCA_DEBUG0> "VbsScriptTestingStub() - Ending"
+       CloseLogFile_()
+   end function
+
+
+       ;--- Create all Entry stubs (we front end each user function) --------
+       #{  FOR @@Index = 1 to @@FunctionCnt
+           <?NewLine>
+           ;=====================================================================
+           function <??@@Function.@@Index>()
+           ;
+           ; The stub detects traps in the user function.
+           ;=====================================================================
+               ;--- Stub starting... ----------------------------------------
+               <$VBSCA_DEBUG0> "<??@@Function.@@Index>(): Stub STARTING"
+               VbsCaLogInc 1
+
+               ;--- Add name of routine to line #1 --------------------------
+               <$VBSCA_DEBUG1>  Line1Prefix & " - <??@@Function.@@Index>()"
+
+               ;--- Call the routine where the real work is done ------------
+               if  IsCustomAction then
+                   ;--- Running as CA, Want to handle any trap below --------
+                   on error resume next
+               else
+                   ;--- Being "tested" from the command line ----------------
+                   if  CmdLineTrapsHandledByVb then
+                       ;--- Want to see line # etc (only Microsoft...) ------
+                       on error goto 0     ;;VB is crap, its better to see line number and other details that you can programatically get
+                   else
+                       ;--- Allows you to test how popup message boxes look etc ---
+                       on error resume next
+                   end if
+               end if
+               <??@@Function.@@Index> = USER_<??@@Function.@@Index>()
+
+               ;--- If we get here there was a trap/exception ---------------
+               if  err.number <> 0 then
+                   ;--- Display/log the exception ---------------------------
+                   <??@@Function.@@Index> = UserFunctionTrapped()
+
+                   ;--- Did user supply any code to execute on exception? ---
+                   #if ['<??@@FunctionOnTrap.@@Index $$IsBlank>' = 'N']
+                       ;--- USER supplied VBS code to handle the error ------
+                       <$VBSCA_DEBUG2> "Executing user supplied exception handler for ""<??@@Function.@@Index>()"""
+                       <??@@FunctionOnTrap.@@Index><?RestartLine>
+                   #endif
+               else
+                   ;--- Did not trap! ---------------------------------------
+                   <$VBSCA_DEBUG0> ""
+                   <$VBSCA_DEBUG2> "Finished! USER code did not trap."
+               end if
+
+               ;--- Finished the stub ---------------------------------------
+               VbsCaLogInc -1
+               <$VBSCA_DEBUG0> "<??@@Function.@@Index>(): Stub  FINISHED, RC = " & <??@@Function.@@Index>
+           end function
+       #}
+
+       <?NewLine>
+       <?NewLine>
+       ;=====================================================================
+       function UserFunctionTrapped()
+       ;=====================================================================
+           ;--- Must have trapped, get info ---------------------------------
+           dim ErrNumb, ErrDesc, ErrSrc, ErrNumbT
+           ErrNumb  = Err.Number
+           ErrDesc  = Err.Description
+           ErrSrc   = Err.Source
+           ErrNumbT = "0x" & hex(ErrNumb) & " (" & ErrNumb & ")"
+           on error resume next
+           dim MsiReason : MsiReason = ""                      ;;May not have been an MSI error
+           if  not Installer is nothing then
+               set oLastErr = Installer.LastErrorRecord
+               if  not oLastErr is nothing then
+                   MsiReason = oLastErr.FormatText() & vbCRLF  ;;Was an MSI error!
+               end if
+           end if
+
+           ;--- Output appropriate message ----------------------------------
+           dim Text
+           if   LastUserMsg = "<$@@VBSCA_TRAP_FLAG>" then
+                ;--- Trap raised by user with "VbsCaRaiseError()" -----------
+                Text = ErrDesc & vbCrLf & vbCrLf
+                Text = Text & "This problem was raised by """ & ErrSrc & """."
+                if  MsiReason <> "" then
+                    Text = Text & " Possibly for this Windows Installer reason: " & MsiReason
+                end if
+           else
+                ;--- Error unexpected/unhandled, output debug info ----------
+               dim SavedLastUserMsg, SavedLastLogOnlyMsg
+               SavedLastUserMsg    = LastUserMsg
+               SavedLastLogOnlyMsg = LastLogOnlyMsg
+               err.clear()
+               <$VBSCA_DEBUG0> ""
+               <$VBSCA_DEBUG0> ""
+               <$VBSCA_DEBUG0> "DISPLAY TRAP"
+               <$VBSCA_DEBUG0> "~~~~~~~~~~~~"
+               <$VBSCA_DEBUG0> "SOURCE     : " & ErrSrc
+               <$VBSCA_DEBUG0> "NUMBER     : " & ErrNumbT
+               <$VBSCA_DEBUG0> "DESCRIPTION: " & ErrDesc
+               <$VBSCA_DEBUG0> "AFTER MSG U: " & CaOneLine(0, SavedLastUserMsg)
+               <$VBSCA_DEBUG0> "AFTER MSG L: " & CaOneLine(0, SavedLastLogOnlyMsg)
+               if  LikelyReason <> "" THEN
+                   <$VBSCA_DEBUG0> "CAUSE?     : " & LikelyReason
+               end if
+
+               ;--- Display error -----------------------------------------------
+               Text = "Script failed - " & ErrNumbT
+               if  ErrDesc <> "" then Text = Text & vbCrLf & "Reason: " & ErrDesc
+               Text = Text & vbCrLf & MsiReason
+               if  IsCustomAction then
+                   Text = Text & vbCrLf & vbCrLf & "The install has aborted!" & vbCrLf
+               end if
+               Text  = Text & vbCrLf & "AfterU: " & CaOneLine(80, SavedLastUserMsg)
+               Text  = Text & vbCrLf & "AfterL: " & CaOneLine(80, SavedLastLogOnlyMsg)
+               if  ErrSrc <> "" then Text = Text & vbCrLf & "Source: " & ErrSrc
+               if  LikelyReason <> "" then Text = Text & vbCrLf & "Cause?: " & LikelyReason
+           end if
+           CaMsgBox "E", Text
+
+           ;--- Force rollback ----------------------------------------------
+           <$VBSCA_DEBUG0> ""
+           if  IsCustomAction then
+               <$VBSCA_DEBUG2> "Forcing rollback..."
+           end if
+           UserFunctionTrapped = VbsCaRcError
+           CloseLogFile_()
+       end function
+
+
+       <?NewLine>
+       ;=====================================================================
+       function CaGetEnv(EnvVar, DieIfMissing)
+       ;=====================================================================
+           on error goto 0       ;;Should be no reason to trap!
+           CaGetEnv = ""
+           dim Try : Try = "%" & EnvVar & "%"
+           dim oShell : set oShell = CaMkObject("WScript.Shell")
+           on error resume next
+           CaGetEnv = oShell.ExpandEnvironmentStrings(Try)
+           set oShell = Nothing
+           on error goto 0     ;;Should be no reason to trap!
+           if  CaGetEnv = Try then
+               CaGetEnv = ""
+               if  DieIfMissing then
+                   on error goto 0
+                   VbsCaRaiseError "CaGetEnv()", "The environment variable """ & EnvVar & """ does not exist"
+               end if
+           end if
+       end function
+
+       <$MSI_CODE_ErrDetails()>
+
+       <?NewLine>
+       ;=====================================================================
+       function CaMkObject(ByVal AutomationClass)
+       ;=====================================================================
+           on error resume next
+           set CaMkObject = CreateObject(AutomationClass)
+           dim EC : EC = err.number
+           Dim ET : ET = "0x" & hex(EC) & " - " & err.description
+           on error goto 0
+           if  EC <> 0 then
+               VbsCaRaiseError "CaMkObject()", "Failed loading the automation class """ & AutomationClass & """." & vbCRLF & vbCRLF & "Reason " & ET
+           end if
+       end function
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub VbsCaLikelyReason4Trap(Reason)
+       ;=====================================================================
+           LikelyReason = Reason
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub VbsCaProgressLine1(Doing)
+       ;
+       ; This updates the top line of the progress bar (also put into log)
+       ; This needs to be called even if you only have a single "step" process
+       ; to set up the "LogPrefix" as that messages are easier to find in the
+       ; log!
+       ;=====================================================================
+           ;--- Output to progress bar --------------------------------------
+           on error resume next
+           oRecActionStart.StringData(1) = LogPrefix12  ;;This item is only seen in the MSI log
+           oRecActionStart.StringData(2) = Doing        ;;Top line of Progress Bar
+           oRecActionStart.StringData(3) = "<$VBSCA_CADEBUG_FORMAT_LINE12>"
+           LastSessMsgRc = session.message( msiMessageTypeActionStart, oRecActionStart )
+
+           ;--- Remember this in case we trap (display in trap) -------------
+           if  Doing <> "" then
+               LastUserMsg    = Doing
+               LastLogOnlyMsg = ""
+           end if
+
+           ;--- Make sure err.number is 0 -----------------------------------
+           err.clear()
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub VbsCaProgressLine2(Doing)
+       ;
+       ; This updates the 2nd line of the progress bar ONLY.
+       ; No other logging. Not recommended for user use, why display
+       ; something to use but not log!
+       ;=====================================================================
+           ;--- Output to progress bar --------------------------------------
+           on error resume next
+           oRecActionData.StringData(1) = Doing          ;;Windows installer ignores any formatting
+           LastSessMsgRc = session.message( msiMessageTypeActionData, oRecActionData )
+
+           ;--- Remember this in case we trap (display in trap) -------------
+           if  Doing <> "" then
+               LastUserMsg    = Doing
+               LastLogOnlyMsg = ""
+           end if
+
+           ;--- Make sure err.number is 0 -----------------------------------
+           err.clear()
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub CaDebug(ByVal ForUI, ByVal What)
+       ;
+       ; This displays messages to the console when run as VBSCRIPT and updates
+       ; The second line (plus first indirectly) of the Progress Bar, the info
+       ; also goes into the MSI log.
+       ;=====================================================================
+           ;--- If err.number <> 0 then log ---------------------------------
+           dim RebuildNonZeroErrNumb : RebuildNonZeroErrNumb = false
+           if  DebugMonitorErrNumber and err.number <> 0 then
+               ;--- Get details and log -------------------------------------
+               dim ErrNumbDec : ErrNumbDec = err.number
+               dim ErrNumb    : ErrNumb    = hex(ErrNumbDec)
+               dim ErrSrc     : ErrSrc     = err.source
+               dim ErrDesc    : ErrDesc    = err.description
+               err.clear()    ;;Don't cause infinite loop!
+
+               ;--- Now log the message -------------------------------------
+               dim SavedLastLogOnlyMsg : SavedLastLogOnlyMsg = LastLogOnlyMsg
+               VbsCaLogInc 1
+                   CaDebug_ 0, "####^^^^ CaDebug(EntryCheck): Err.NUMBER: 0x" & ErrNumb & ", SOURCE: " & ErrSrc & ", DESC: " & ErrDesc
+               VbsCaLogInc -1
+               RebuildNonZeroErrNumb = true
+               LastLogOnlyMsg        = SavedLastLogOnlyMsg
+           end if
+
+           ;--- Display the message the user wants to see (in log etc) ------
+           CaDebug_ ForUI, What
+
+           ;--- Make sure err.number is 0 -----------------------------------
+           if   RebuildNonZeroErrNumb then
+                ;--- We had an error on entry (regenerate) ------------------
+                on error resume next                        ;;We don't want the following line to actually raise an error?
+                SavedLastLogOnlyMsg = LastLogOnlyMsg
+                VbsCaLogInc 1
+                    CaDebug_ 0, "####>>>> CaDebug(ExitCheck): Rebuilding original error details..."
+                VbsCaLogInc -1
+                LastLogOnlyMsg = SavedLastLogOnlyMsg
+                err.raise ErrNumbDec, ErrSrc, ErrDesc       ;;Restore information
+           end if
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub CaDebug_(ByVal ForUI, ByVal What)
+       ;
+       ; This displays messages to the console when run as VBSCRIPT and updates
+       ; The second line (plus first indirectly) of the Progress Bar, the info
+       ; also goes into the MSI log.
+       ;=====================================================================
+           ;--- Plough on (expect some errors) ------------------------------
+           on error resume next
+
+           ;--- WSCRIPT not available in CA (any error ignored) -------------
+           wscript.echo What
+
+           ;--- Windows Installer will put UI messages into any verbose MSI log ---
+           select case ForUI
+               ;+++++++++++++++++
+               case 1
+               ;+++++++++++++++++
+                   VbsCaProgressLine1 What
+               ;+++++++++++++++++
+               case 2
+               ;+++++++++++++++++
+                   VbsCaProgressLine2 What
+               ;+++++++++++++++++
+               case else
+               ;+++++++++++++++++
+                   ;--- Just LOG (MSI log) ----------------------------------
+                   dim Text
+                   if  What = "" then
+                       Text = ""
+                   else
+                       ;--- Add prefix to logged message to make it easier to find ---
+                       Text = LogPrefix0 & What
+
+                       ;--- Message in non blank so remember it -------------
+                       LastLogOnlyMsg = What
+                   end if
+                   oMsiLog.StringData(0) = Text
+                   LastSessMsgRc = session.message( msiMessageTypeInfo, oMsiLog)
+           end select
+
+           ;--- Update log file (if possible) -------------------------------
+           VbsCaLog What
+
+           ;--- Clear any error code produced by the above ------------------
+           err.clear()
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       function VbsCaRunSync(ByVal TheCmd, ByVal RunType, ByVal TheOutput)
+       ;
+       ; The first 2 parameters match that of the shell "run" method, the
+       ; 3rd parameter should be "" to force capturing of stdout/in to
+       ; a single output file, otherwise "!" indicates do nothing and
+       ; anything else is the name of a file to be dumped after the
+       ; command has completed.
+       ;=====================================================================
+           ;--- Indent this stuff -------------------------------------------
+           VbsCaLogInc 1
+
+           ;--- Load "shell" object -----------------------------------------
+           on error goto 0
+           dim oShell : set oShell = CaMkObject("WScript.Shell")
+           dim oFS    : set oFS    = CaMkObject("Scripting.FileSystemObject")
+
+           ;--- Do we need to add redirection code? -------------------------
+           dim TmpFile : TmpFile = ""
+           if  TheOutput = "" then
+               ;--- Want to capture redirected output -----------------------
+               TheOutput = "?"
+           end if
+           if  instr(TheOutput, "?") <> 0 then
+               ;--- Work out the name of a temporary file -------------------
+               TmpFile = oFS.GetSpecialFolder(TemporaryFolder) & "\" & oFS.GetTempName()
+
+               ;--- Build the command ---------------------------------------
+               If  IsDos() then
+                   TheCmd = """" & CaGetEnv("COMSPEC", true) & """ /c " & TheCmd & " > """ & TmpFile & """"
+               else
+                   ;--- Can redirect stderr. Also work around command process bug ---
+                   TheCmd = """" & CaGetEnv("COMSPEC", true) & """ /c """ & TheCmd & " > """ & TmpFile & """ 2>&1"""
+               end if
+           end if
+
+           ;--- Run the command ---------------------------------------------
+           <$VBSCA_DEBUG0> "EXECUTING: " & TheCmd
+           on error resume next
+           dim CmdRc  : CmdRc = oShell.run(TheCmd, RunType, true)
+           dim ErrNumber : ErrNumber = err.number               ;;Trap, pretty rare (probably means command processor failed)
+           dim ErrDesc   : ErrDesc   = err.description
+           on error goto 0
+
+           ;--- Dump the generated or specified file ------------------------
+           if  TheOutput <> "!" then
+               ;--- Dump the file -------------------------------------------
+               dim FileList : FileList = split(TheOutput, ";")
+               dim FileIndex, FileName, FileTitle
+               for FileIndex = lbound(FileList) to ubound(FileList)
+                   ;--- May want the name of the temporary file -------------
+                   FileName  = trim(FileList(FileIndex))
+                   FileTitle = FileName
+                   if   FileName = "?" then
+                        ;--- Want the temporary file ------------------------
+                        FileName  = TmpFile
+                        FileTitle = "REDIRECTED OUTPUT: " & FileName
+                   end if
+
+                   ;--- Dump the file ---------------------------------------
+                   if   FileName <> "" then
+                        ;--- Ignore possible error as well as allowing flexability ---
+                        VbsDebugDumpFile FileName, FileTitle
+                   end if
+               next
+
+               ;--- Delete the "temp" file ----------------------------------
+               if  TmpFile <> "" then
+                   if   oFS.FileExists(TmpFile) then
+                        oFS.DeleteFile TmpFile
+                   end if
+               end if
+           end if
+
+           ;--- Report any trap that occurred (rare) ------------------------
+           if  ErrNumber <> 0 then
+               ;--- Die -----------------------------------------------------
+               VbsCaRunSync = -999
+               VbsCaRaiseError "VbsCaRunSync()", "Failed Executing an external command!" & vbCRLF & "Reason 0x" & hex(ErrNumber) & " - " & ErrDesc & vbCRLF & vbCRLF & "The command was """ & TheCmd & """"
+           end if
+
+           ;--- Return info to caller ---------------------------------------
+           <$VBSCA_DEBUG0> "EXE Rc = " & CmdRc
+           <$VBSCA_DEBUG0> ""
+           set oShell = Nothing
+           set oFS    = Nothing
+           VbsCaRunSync = CmdRc
+
+           ;--- Return to original indenting --------------------------------
+           VbsCaLogInc -1
+       end function
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub VbsDebugDumpFile(ByVal FileName, Title)
+       ;=====================================================================
+           ;--- Increase indent and display filename ------------------------
+           VbsCaLogInc 1
+           if  Title <> "" then
+               ;--- Output the supplied title -------------------------------
+               <$VBSCA_DEBUG0> Title
+               <$VBSCA_DEBUG0> string(len(Title), "~")
+           end if
+
+           ;--- Dump the value ----------------------------------------------
+           on error resume next
+           dim oFS : set oFS = CaMkObject("Scripting.FileSystemObject")
+           if  not oFS.FileExists(FileName) then
+               <$VBSCA_DEBUG0> "*+* File does not exist *+*" & vbCRLF
+           else
+               ;--- Dump the whole file -------------------------------------
+               dim Stream : set Stream = oFS.OpenTextFile(FileName, ForReading)
+               if  Stream.AtEndOfStream then
+                   <$VBSCA_DEBUG0> "+*+ NO OUTPUT +*+" & vbCRLF
+               else
+                   <$VBSCA_DEBUG0> Stream.ReadAll()
+               end if
+               Stream.close()
+           end if
+           VbsCaLogInc -1
+           set oFS = Nothing
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       function CaOneLine(ByVal How, ByVal MultiLine)
+       ;=====================================================================
+            CaOneLine = replace(MultiLine, vbCR, "")
+            if  How = -1 then
+                ;--- Truncate to first line ---------------------------------
+                dim Pos : Pos = instr(CaOneLine, vbLF)
+                if  Pos <> 0 then
+                    CaOneLine = left(CaOneLine, Pos) & "..."
+                end if
+            else
+                ;--- truncate if wanted and needed --------------------------
+                if  How <> 0 then
+                    if  len(CaOneLine) > How then
+                        CaOneLine = left(CaOneLine, How) & "..."
+                    end if
+                end if
+            end if
+            CaOneLine = replace(CaOneLine, vbLF, "{{NL}}")
+       end function
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub VbsCaLogInc(ByVal IncAmount)     ;;Can pass positive and negative numbers
+       ;=====================================================================
+           ;--- Adjust the increment (can't go negative!) -------------------
+           #ifndef VBSCA_DONT_INDENT_LOGGED_LINES
+               LogInc = LogInc + IncAmount
+               if  LogInc < 0 then LogInc = 0
+           #elseif
+               '--- user chose not to support log file indentation ---
+           #endif
+       end sub
+
+       <?NewLine>
+       ;=====================================================================
+       sub InitializeLogFile()
+       ;=====================================================================
+           ;--- Init in progress --------------------------------------------
+           LogFileInitialized = <$@@LOG_NEEDS_INITIALIZATION_STARTED>
+
+           ;--- See if we have a debug log to update ------------------------
+           on error resume next
+           dim oFs   : set oFs = CreateObject("Scripting.FileSystemObject")
+           dim oFile
+
+           ;--- Create the directory if it does not exist -------------------
+           dim ParentDir : ParentDir = oFS.GetParentFolderName(LogFile)
+           if  not oFS.FolderExists(ParentDir) then
+               ;--- Need to create logging directory ------------------------
+               CaCreateFolder ParentDir
+               '<$VBSCA_DEBUG0> "LOGINIT: Created the log's folder """ & ParentDir & """ - " & err.description
+           end if
+
+           ;--- Do we care how old it is? -----------------------------------
+           #if  ['<$VBSCA_LOGFILE_MAX_AGE_IN_DAYS>' <> '0']
+                if   oFS.FileExists(LogFile) then
+                    ;--- The file exists ------------------------------------
+                    dim MaxDays  : MaxDays   = <$VBSCA_LOGFILE_MAX_AGE_IN_DAYS>
+                    set oFile = oFS.GetFile(LogFile)
+                    dim FileDays : FileDays = DateDiff("d", oFile.DateLastModified, Date())
+                    '<$VBSCA_DEBUG0> "LOGINIT: Old file dated: " & oFile.DateLastModified
+                    set oFile = Nothing
+                    if  FileDays > MaxDays then
+                        ;--- Delete the file --------------------------------
+                        oFS.FileDelete LogFile
+                        '<$VBSCA_DEBUG0> "LOGINIT: Deleted old file as it is older than " & MaxDays & " days - " & err.description
+                    end if
+                end if
+           #endif
+
+           ;--- Care about how big the log gets? ----------------------------
+           #if  ['<$VBSCA_LOGFILE_MAX_SIZE_IN_K>' <> '0']
+                if  oFS.FileExists(LogFile) then
+                    ;--- The file exists -------------------------------------
+                    dim MaxBytes : MaxBytes = <$VBSCA_LOGFILE_MAX_SIZE_IN_K> * 1024
+                    set oFile = oFS.GetFile(LogFile)
+                    dim FileSize : FileSize = oFile.size
+                    '<$VBSCA_DEBUG0> "LOGINIT: File is  " & FileSize & " bytes long."
+                    set oFile = Nothing
+                    if  FileSize > MaxBytes then
+                        ;--- File too big so shorten it (how much?) ---------
+                        dim ShortenToBytes : ShortenToBytes = (MaxBytes \ 100) * <$VBSCA_LOGFILE_REDUCE_TO_PERCENTAGE>
+                        dim ShortenByBytes : ShortenByBytes = FileSize - ShortenToBytes
+                        '<$VBSCA_DEBUG0> "LOGINIT: File is being shortened to about " & ShortenToBytes & " bytes."
+
+                        ;--- Read the bit we want to keep -------------------
+                        dim Contents
+                        set oLogFile = oFS.OpenTextFile(LogFile, ForReading)
+                            Contents = oLogFile.read(ShortenByBytes)      ;;Drop required number of bytes
+                            Contents = oLogFile.readLine()                ;;Drop any partial line
+                            Contents = oLogFile.readall()                 ;;Got the bit we want!
+                        oLogFile.Close()
+                        set oLogFile = Nothing
+
+                        ;--- Recreate file with only the contents we wish to keep ---
+                        set oLogFile = oFS.CreateTextFile(LogFile, true)
+                            ;--- Header -------------------------------------
+                            oLogFile.writeline string(78, "*")
+                            oLogFile.writeline "*** Time        : " & Date() & ", " & time()
+                            oLogFile.writeline "*** Log Size    : " & (FileSize \ 1024) & "K (" & FileSize & " bytes)"
+                            oLogFile.writeline "*** Max Log Size: <$VBSCA_LOGFILE_MAX_SIZE_IN_K>K (Shortens to " & (<$VBSCA_LOGFILE_REDUCE_TO_PERCENTAGE> * <$VBSCA_LOGFILE_MAX_SIZE_IN_K>) \ 100 & "K)"
+                            oLogFile.writeline "*** Action      : File shortened by " & ShortenByBytes & " bytes"
+                            oLogFile.writeline string(78, "*")
+                            oLogFile.writeline ""
+
+                            ;--- Contents -----------------------------------
+                            oLogFile.write Contents
+                        oLogFile.Close()
+                        set oLogFile = Nothing
+                    end if
+                end if
+           #endif
+
+           ;--- Log ready to be used ---------------------------------------
+           LogFileInitialized = <$@@LOG_NEEDS_INITIALIZATION_COMPLETE>
+           set oFS = Nothing
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub VbsCaLog(ByVal What)
+       ;=====================================================================
+           ;--- See if we have a debug log to update ------------------------
+           on error resume next
+           if  LogFile = "" then
+               exit sub
+           end if
+
+           ;--- Have we performed any required initialization? --------------
+           if  LogFileInitialized = <$@@LOG_NEEDS_INITIALIZATION> then
+               ;--- Start initialization ------------------------------------
+               InitializeLogFile()
+           else
+               ;--- Ignore any log messages cause by initialization! --------
+               if  LogFileInitialized <> <$@@LOG_NEEDS_INITIALIZATION_COMPLETE> then
+                   exit sub
+               end if
+           end if
+
+           ;--- Open the log ------------------------------------------------
+           if  oLogFile is NOTHING then
+               dim oFs : set oFS = CreateObject("Scripting.FileSystemObject")
+               set oLogFile = oFs.OpenTextFile(LogFile, ForAppending, True)
+               set oFS = Nothing
+           end if
+
+           ;--- Update the log ----------------------------------------------
+           if  What = "" then
+               oLogFile.writeLine ""
+           else
+               ;--- Non blank lines have date added -------------------------
+               dim Tp, TpContinued, TpTimeLength
+               Tp =             <$VBSCA_VBEXP_CURRENT_DATE>
+               Tp = Tp & ", " & <$VBSCA_VBEXP_CURRENT_TIME>
+               TpTimeLength = len(Tp)
+               Tp           = Tp                        & ": "
+               TpContinued  = string(TpTimeLength, " ") & ": "
+
+               ;--- Add an indent (if allowed) ------------------------------
+               #ifndef VBSCA_DONT_INDENT_LOGGED_LINES
+                   dim TpIndent : TpIndent = string(LogInc*<$VBSCA_INC_BY_SPACE_COUNT>, " ")
+                   Tp          = Tp          & TpIndent
+                   TpContinued = TpContinued & TpIndent
+               #endif
+
+               ;--- Handle multiline text -----------------------------------
+               What = replace(replace(What, vbCR, ""), vbLF, vbCRLF & TpContinued)
+               oLogFile.writeLine Tp & What
+           end if
+
+           ;--- Make sure err.number is 0 -----------------------------------
+           err.clear()
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub CloseLogFile_()
+       ;=====================================================================
+           ;--- See if we have a debug log to update ------------------------
+           if  LogFile <> "" then
+               on error resume next
+               oLogFile.close()
+               set oLogFile = Nothing
+               err.clear()
+           end if
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub VbsCaRaiseError(ByVal ErrorSource, ByVal ErrorReason)
+       ;=====================================================================
+           ;--- Get some basic Information ----------------------------------
+           dim ErrNumb, ErrDesc
+           ErrNumb = "0x" & hex(err.number) & " (" & err.number & ")"
+           ErrDesc = err.description
+           if  ErrDesc = "" then ErrDesc = "unknown"
+
+           ;--- Output some debug info --------------------------------------
+           <$VBSCA_DEBUG0> ""
+           <$VBSCA_DEBUG0> ""
+           <$VBSCA_DEBUG0> "VbsCaRaiseError()"
+           <$VBSCA_DEBUG0> "~~~~~~~~~~~~~~~~~"
+           <$VBSCA_DEBUG0> "SOURCE     : " & ErrorSource
+           <$VBSCA_DEBUG0> "REASON     : " & ErrorReason
+           <$VBSCA_DEBUG0> "err.number : " & ErrNumb
+           <$VBSCA_DEBUG0> "err.desc   : " & ErrDesc
+
+           ;--- Raise the error ---------------------------------------------
+           LastUserMsg    = "<$@@VBSCA_TRAP_FLAG>"
+           LastLogOnlyMsg = "<$@@VBSCA_TRAP_FLAG>"
+           Err.clear()
+           Err.Description = ErrorReason
+           Err.Source      = ErrorSource
+           Err.raise(vbObjectError+219)
+       end sub
+
+       <?NewLine>
+       ;=====================================================================
+       sub CaDebugPause(ByVal Text)
+       ;=====================================================================
+            ;--- Allow user to use for own purposes -------------------------
+            on error resume next
+            if   DebugPauses = "N" then
+                 exit sub
+            end if
+
+            ;--- Extra information ------------------------------------------
+            dim X : X = ""
+            X = X & vbCRLF
+            X = X & vbCRLF
+            X = X & "Custom Action  : " & CaBinaryName
+            X = X & vbCRLF
+            X = X & "Defined At     : " & CaDefinedAt
+            X = X & vbCRLF
+            X = X & "Running Mode   : " & CaMode
+            X = X & vbCRLF
+            X = X & "Product Name   : " & ProductName
+            X = X & vbCRLF
+            X = X & "Product Version: " & ProductVersion
+            X = X & vbCRLF
+            X = X & "Product MSI    : " & ProductMsi
+            X = X & vbCRLF
+            X = X & "Extra Log      : " & LogFile
+
+            ;--- We want the pause ------------------------------------------
+            dim T
+            T =     "DEBUG PAUSE (VBSCRIPT)" & vbCRLF
+            T = T & "~~~~~~~~~~~~~~~~~~~~~~" & vbCRLF
+            CaMsgBox "I", T & Text & X
+       end sub
+
+       <?NewLine>
+       ;=====================================================================
+       function CaMsgBox(ByVal BoxType, ByVal Text)
+       ;=====================================================================
+           ;--- Want to see errors in user script! --------------------------
+           on error goto 0
+
+           ;--- Now log the message -----------------------------------------
+           dim BoxT
+           BoxT        = "MSG BOX - "   & BoxType & vbCRLF
+           BoxT = BoxT & "~~~~~~~~~~~~" & VbCRLF
+           BoxT = BoxT & Text & vbCRLF
+           BoxT = BoxT & "^^^^^ End of Message Box ^^^^^"
+           <$VBSCA_DEBUG0>  ""
+           <$VBSCA_DEBUG0>  BoxT
+           <$VBSCA_DEBUG0>  ""
+
+           ;--- Not "good" for CA but great for command line testing --------
+           dim Buttons, CaMsgType
+           if  BoxType = "" then BoxType = "I"
+           select case ucase(BoxType)
+               ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+               case "I"
+               ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                   Buttons     = VbInformation
+                   CaMsgType   = msiMessageTypeUser
+               ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+               case "E"
+               ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                   Buttons     = VbCritical
+                   CaMsgType   = msiMessageTypeError
+               ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+               case else
+               ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                   ;--- If numeric then assume user knows what they are doing! ---
+                   on error resume next
+                   CaMsgType = cint(BoxType)
+                   if  err.number = 0 then
+                        ;--- Combine... -------------------------------------
+                        CaMsgType = msiMessageTypeUser or CaMsgType
+                   else
+                       ;--- Its not numeric ---------------------------------
+                       Buttons   = VbCritical
+                       CaMsgType = msiMessageTypeWarning        ;;Looks same as error...
+                       Text = Text & VbCrLf & vbCRLF & "Note: BoxType of """ & BoxType & """ is invalid!"
+                   end if
+                   on error goto 0
+           end select
+
+           ;--- Display the message -----------------------------------------
+           if  not IsCustomAction then
+               ;--- Code only being tested as a standalone custom action ----
+               CaMsgBox = MsgBox(Text, Buttons, "<$MSI_MSIBASENAME> (CA <??@@Binary>)")
+           else
+               ;--- Running as Custom Action (possibly without UI!) ---------
+               dim MsgTemplate
+               if  (Buttons and VbCritical) =  VbCritical then
+                   MsgTemplate = "<$VBSCA_CAMSGBOX_PREFIX_ERROR>"
+               elseif (Buttons and VbInformation) =  VbInformation then
+                   MsgTemplate = "<$VBSCA_CAMSGBOX_PREFIX_INFO>"
+               else
+                   MsgTemplate = "<$VBSCA_CAMSGBOX_PREFIX_OTHER>"
+               end if
+               if  instr(MsgTemplate, "[1]") = 0 then
+                   ;--- This Windows Installer template must include or be "[1]" ---
+                   MsgTemplate = trim(MsgTemplate & " [1]")
+               end if
+               dim oRecMsgBox : set oRecMsgBox = Installer.CreateRecord(1)
+               oRecMsgBox.StringData(0) = MsgTemplate
+               oRecMsgBox.StringData(1) = Text
+               CaMsgBox = session.message(CaMsgType, oRecMsgBox)
+           end if
+       end function
+
+       <?NewLine>
+       ;=====================================================================
+       function VbsCaPropertyGet(ByVal PropertyName, ByVal DefaultValue, ByVal PromptExtra)
+       ;=====================================================================
+           ;--- Want to see errors in user script! --------------------------
+           on error goto 0
+
+           ;--- Now log the message -----------------------------------------
+           <$VBSCA_DEBUG0> ""
+           <$VBSCA_DEBUG0> "VbsCaPropertyGet(""" & PropertyName & """)"
+           VbsCaLogInc 1
+
+           ;--- Get the "answer" --------------------------------------------
+           if  IsCustomAction then
+               VbsCaPropertyGet = session.property(PropertyName)
+           else
+               ;--- Running as Custom Action (no properties!) ---------------
+               dim Prompt, Title
+               Title  = "GET VALUE - """ & PropertyName & """"
+               Prompt = "Please enter a value for the property """ & PropertyName & """." & VbCRLF & VbCRLF
+               Prompt = Prompt & "This would normally be passed by the Custom Action and so is unavailable while testing!"
+               if  PromptExtra <> "" then
+                   Prompt = Prompt & vbCRLF & vbCRLF & PromptExtra
+               end if
+               VbsCaPropertyGet = InputBox(Prompt, Title, DefaultValue)
+           end if
+
+           ;--- Dump the value ----------------------------------------------
+           <$VBSCA_DEBUG0> PropertyName & " => """ & VbsCaPropertyGet & """"
+           <$VBSCA_DEBUG0> ""
+           VbsCaLogInc -1
+       end function
+
+       <?NewLine>
+       ;=====================================================================
+       function VbsCaCadGet(ByVal Name)
+       ;=====================================================================
+           ;--- Want to see errors in user script! --------------------------
+           on error goto 0
+           <$VBSCA_DEBUG0> "VbsCaCadGet(" & Name & ")"
+           VbsCaLogInc 1
+
+           ;--- We use "?:" to indicate a query operation -------------------
+           dim QueryExists
+           if   left(Name,2) <> "?:" then
+                QueryExists = false
+           else
+                QueryExists = true
+                VbsCaCadGet = "N"           ;;Lets just play it very safe...
+                Name        = mid(Name, 3)  ;;Strip off the prefix
+                <$VBSCA_DEBUG0> "This is a query to see if the item exists..."
+           end if
+
+           ;--- Need to initialize? -----------------------------------------
+           if  oCad is Nothing then
+               ;--- Create the object ---------------------------------------
+               set oCad = CaMkObject("Scripting.Dictionary")
+
+               ;--- Get the "CustomActionData" ------------------------------
+               if  TestCustomActionData = "" then
+                   ;--- Default not supplied or hardcoded for testing -------
+                   TestCustomActionData = "1," & Name & "="
+               end if
+               dim Cad : Cad = VbsCaPropertyGet("CustomActionData", TestCustomActionData, "Example: ""1,Name1=Value1,Name2=Value2""")
+               if  Cad <> "" then
+                   ;--- Need to work out what the delimiter is --------------
+                   dim Lng, Delimiter
+                   Lng = left(Cad, 1)
+                   if  not IsNumeric(Lng) then
+                       VbsCaRaiseError "VbsCaCadGet()", "Incorrectly formatted CustomActionData, first byte is not numeric!"
+                   end if
+                   Delimiter = mid(Cad, 2, Lng)
+                   Cad = mid(Cad, 1+Lng+1)
+
+                   ;--- Split the data and add to the dictionary ------------
+                   <$VBSCA_DEBUG0> "Splitting: " & Cad
+                   dim CadArray : CadArray = split(Cad, Delimiter)
+                   dim Index, Bits
+                   if  ubound(CadArray) = -1 then
+                       <$VBSCA_DEBUG0> "  - No parameters passed"
+                   else
+                       ;--- Have at least 1 parameter -----------------------
+                       for Index = 0 to ubound(CadArray)
+                           ;--- Split at "=" --------------------------------
+                           Bits = split(CadArray(Index), "=", 2)
+                           if  ubound(Bits) <> 1 then
+                               VbsCaRaiseError "VbsCaCadGet()", "Incorrectly formatted CustomActionData #" & Index+1 & ": " & CadArray(Index)
+                           end if
+
+                           ;--- Add to the dictionary -----------------------
+                           <$VBSCA_DEBUG0> "  - #" & Index+1 & ", " & Bits(0) & " = " & Bits(1)
+                           oCad.add Bits(0), Bits(1)
+                       next
+                   end if
+                   <$VBSCA_DEBUG0> ""
+               end if
+           end if
+
+           ;--- User may just have wanted to initialize "oCAD" --------------
+           if  Name = "" then
+               exit function
+           end if
+
+           ;--- Want list of keys/values ------------------------------------
+           if  Name = "?" then
+               ;--- Return a copy of the dictionary object ------------------
+               set VbsCaCadGet = oCad
+               exit function
+           end if
+
+           ;--- What are we returning? --------------------------------------
+           if   QueryExists then
+                ;--- We want to know if a value exists ----------------------
+                if  oCad.exists(Name) then
+                    VbsCaCadGet = "Y"
+                else
+                    VbsCaCadGet = "N"
+                end if
+                <$VBSCA_DEBUG0> "Query Result is """ & VbsCaCadGet & """"
+           else
+                ;--- We want the items actual value -------------------------
+                if  oCad.exists(Name) then
+                   VbsCaCadGet = oCad(Name)
+                   <$VBSCA_DEBUG0> """" & Name & """ contained """ & VbsCaCadGet & """"
+                else
+                   VbsCaRaiseError "VbsCaCadGet()", "The value """ & Name & """ was not passed in the CustomActionData!"
+                end if
+           end if
+           VbsCaLogInc -1
+       end function
+
+       <?NewLine>
+       ;============================================================================
+       function VbsCaCadReplace(ByVal Before, ByVal SymCodeS, ByVal SymCodeE)
+       ;============================================================================
+           ;--- Loop through all matches --------------------------------------------
+           dim Pos, LeftBit, CadVar, Value
+           LeftBit = ""
+           Pos     = instr(Before, SymCodeS)
+           do  while Pos <> 0
+               ;--- Update Left bit -----------------------------------------
+               LeftBit = LeftBit & left(Before, Pos-1)
+               Before  = mid(Before, Pos+len(SymCodeS))
+
+               ;--- Now find the end symbol marker --------------------------
+               Pos = instr(Before, SymCodeE)
+               if  Pos = 0 then
+                   LeftBit = LeftBit & "SymCodeS"    ;;Assume mistake hit - Add it back on!
+               else
+                   ;--- Extract CustomActionData name, get it ---------------
+                   CadVar  = left(Before, Pos-1)
+                   Before  = mid(Before, Pos+len(SymCodeE))
+                   Value   = VbsCaCadGet(CadVar)
+                   LeftBit = LeftBit & Value
+               end if
+
+               ;--- Prepare for the next loop -------------------------------
+               Pos = instr(Before, SymCodeS)
+           loop
+
+           ;--- Update the return code --------------------------------------
+           VbsCaCadReplace = LeftBit & Before
+       end function
+
+
+       <?NewLine>
+       ;=====================================================================
+       sub CaCreateFolder(byVal DirName)
+       ;
+       ; Overcomes the FSO restriction (it can not create a whole tree)
+       ;
+       ; Also note FSO does not handle UNC names very well...
+       ; I will probably improve code to work around the "features".
+       ;=====================================================================
+           ;--- Make sure we don't have problems ----------------------------
+           if  DirName = "" then exit sub
+
+           ;--- Make sure the parent exists ---------------------------------
+           dim oFS       : set oFS   = CaMkObject("Scripting.FileSystemObject")
+           dim ParentDir : ParentDir = oFS.GetParentFolderName(DirName)
+           if  not oFS.FolderExists(ParentDir) then
+               CaCreateFolder ParentDir
+           end if
+
+           ;--- Now create this directory -----------------------------------
+           if  not oFS.FolderExists(DirName) then
+               ;--- Log what we are doing -----------------------------------
+               VbsCaLogInc 1
+               <$VBSCA_DEBUG0> "Creating Folder """ & DirName & """"
+               VbsCaLogInc -1
+
+               ;--- Create the folder ---------------------------------------
+               on error resume next
+               oFS.CreateFolder DirName
+               dim EC : EC = err.number
+               Dim ET : ET = "0x" & hex(EC) & " - " & err.description
+               on error goto 0
+               if  EC <> 0 then
+                   VbsCaRaiseError "CaCreateFolder()", "Failed creating folder """ & DirName & """." & vbCRLF & vbCRLF & "Reason " & ET
+               end if
+           end if
+           set oFs = Nothing
+       end sub
+
+
+       <?NewLine>
+       ;=====================================================================
+       function IsDos()
+       ;=====================================================================
+           on error goto 0       ;;Should be no reason to trap!
+           if  instr(ucase(CaGetEnv("COMSPEC", true)), "COMMAND.COM") <> 0 then
+               IsDos = True
+           else
+               IsDos = False
+           end if
+       end function
+
+       ;--- Obsolete stubs --------------------------------------------------
+       #ifndef VBSCA_DONT_WANT_OBSOLETE_VBSCA_STUBS
+           <?NewLine><?NewLine><?NewLine><?NewLine>
+           '!!! Obsolete functions stubs !!!
+           sub VbsCaDebug(ForUI, What)
+               CaDebug ForUI, What
+           end sub
+           function VbsCaMsgBox(BoxType, Text)
+                VbsCaMsgBox = CaMsgBox(BoxType, Text)
+           end function
+           function VbsCaGetEnv(EnvVar, DieIfMissing)
+                VbsCaGetEnv = CaGetEnv(EnvVar, DieIfMissing)
+           end function
+       #endif
+
+
+       ;---------------------------------------------------------------------
+       ;--- OPTIONAL ROUTINES FOLLOW ----------------------------------------
+       ;---------------------------------------------------------------------
+       <?NewLine><?NewLine><?NewLine>
+
+
+       ;---------------------------------------------------------------------
+       ;--- WANT: CaDeleteFile()? -------------------------------------------
+       ;---------------------------------------------------------------------
+       #if  [@@WANT_CaDeleteFile <> 'N']
+           <?NewLine>
+           ;=====================================================================
+           sub CaDeleteFile(ByVal FileName)
+           ;=====================================================================
+               VbsCaLogInc 1
+               <$VBSCA_DEBUG0> "Deleting """ & FileName & """ (if it exists)"
+               VbsCaLogInc 1
+               dim oFS : set oFS = CaMkObject("Scripting.FileSystemObject")
+               if  not oFS.FileExists(FileName) then
+                   <$VBSCA_DEBUG0> "It doesn't exist"
+               else
+                   <$VBSCA_DEBUG0> "It exists, removing it"
+                   on error resume next
+                   oFS.DeleteFile(FileName)
+                   dim EC : EC = err.number
+                   Dim ET : ET = "0x" & hex(EC) & " - " & err.description
+                   on error goto 0
+                   if  EC <> 0 then
+                       VbsCaRaiseError "CaDeleteFile()", "The file """ & FileName & """ exists but couldn't be deleted!" & vbCRLF & vbCRLF & "Reason " & ET
+                   end if
+               end if
+               set oFS = Nothing
+               VbsCaLogInc -2
+           end sub
+       #endif
+
+
+       ;---------------------------------------------------------------------
+       ;--- WANT: CaSleep()? ------------------------------------------------
+       ;---------------------------------------------------------------------
+       #if  [@@WANT_CaSleep <> 'N']
+           <?NewLine>
+           ;=====================================================================
+           sub CaSleep(ByVal NumSeconds)     'Based on solution posted by Torgeir Bakken
+           ;=====================================================================
+              on error resume next
+              VbsCaLogInc 1
+                  CaDebug 0, "Waiting approx " & NumSeconds & " second(s)."
+                  VbsCaLogInc 1
+                      dim oShell   : set oShell = CaMkObject("Wscript.Shell")
+                      dim NumPings : NumPings   = NumSeconds + 1
+                      dim Host     : Host       = "127.0.0.1"
+                      oShell.Run "ping.exe -n " & NumPings & " " & Host , 0, True
+                      set oShell = Nothing
+                      CaDebug 0, "Finished waiting..."
+                  VbsCaLogInc -1
+              VbsCaLogInc -1
+            end Sub
+       #endif
+
+
+       ;---------------------------------------------------------------------
+       ;--- WANT: VbsCaCadGetValidate()? ------------------------------------
+       ;---------------------------------------------------------------------
+       #if  [@@WANT_VbsCaCadGetValidate <> 'N']
+           <?NewLine>
+           ;=====================================================================
+           function VbsCaCadGetValidate(ByVal Name, ByVal ValidateType)
+           ;=====================================================================
+                ;--- Init -----------------------------------------------------------
+                <$VBSCA_DEBUG0> ""
+                <$VBSCA_DEBUG0> "VbsCaCadGetValidate(""" & Name & """)"
+                VbsCaLogInc 1
+
+                ;--- Get the named value ----------------------------------------
+                dim Val : Val = VbsCaCadGet(Name)
+
+                ;--- Want to validate, separate validation type from any parameters ---
+                dim Pos, ValType, ValParms
+                Pos = instr(ValidateType, ":")
+                if  Pos = 0 then
+                    ;--- No Parameters ------------------------------------------
+                    ValType  = trim(ValidateType)
+                    ValParms = ""
+                else
+                    ValType  = trim( left(ValidateType, Pos-1) )
+                    ValParms = trim(  mid(ValidateType, Pos+1) )
+                end if
+                <$VBSCA_DEBUG0> ""
+                <$VBSCA_DEBUG0> "Val Type: " & ValType
+                <$VBSCA_DEBUG0> "Val Parm: " & ValParms
+
+                ;--- Now perform required validation ----------------------------
+                dim oFS     : set oFS = CaMkObject("Scripting.FileSystemObject")
+                dim FailMsg : FailMsg = ""
+                select case ucase(ValType)
+                   ;============================
+                   case "FILE"
+                   ;============================
+                        ;--- Fix common user mistakes ---------------------------
+                        Val = replace(Val, "\\", "\")
+
+                        ;--- The file MUST exist --------------------------------
+                        if  oFS.FileExists(Val) then
+                            <$VBSCA_DEBUG0> "The file """ & Val & """ exists!"
+                        else
+                            FailMsg = "The file """ & Val & """ doesn't exist!"
+                        end if
+                   ;============================
+                   case "DIR"
+                   ;============================
+                        ;--- Fix common user mistakes ---------------------------
+                        Val = replace(Val, "\\", "\")
+
+                        ;--- The directory MUST exist ---------------------------
+                        if  oFS.FolderExists(Val) then
+                            <$VBSCA_DEBUG0> "The directory """ & Val & """ exists!"
+                        else
+                            FailMsg = "The directory """ & Val & """ doesn't exist!"
+                        end if
+                   ;============================
+                   case else
+                   ;============================
+                       ;--- Invalid validation type -----------------------------
+                       FailMsg = "The validation type of """ & ValType & """ is unknown."
+                end select
+                set oFs = Nothing
+
+                ;--- Set the Return value ---------------------------------------
+                VbsCaCadGetValidate = Val
+
+                ;--- Make sure any passed parameters we consumed ------------
+                if  ValParms <> "" then
+                    if  FailMsg <> "" then FailMsg = FailMsg & vbCRLF & vbCRLF
+                    FailMsg = FailMsg & "We didn't expect parameters on the validation type of """ & ValType & """." & vbCRLF & "The parameters were: " & ValParms
+                end if
+
+                ;--- Any error to report ----------------------------------------
+                if  FailMsg <> "" then
+                    VbsCaRaiseError "VbsCaCadGetValidate()", FailMsg
+                else
+                    <$VBSCA_DEBUG0> "The value passed validation."
+                end if
+
+                ;--- Exit -------------------------------------------------------
+                VbsCaLogInc -1
+           end function
+       #endif
+#)

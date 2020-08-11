@@ -1,0 +1,426 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FIND.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.21  $
+;          $Date:   20 Sep 2009 16:17:18  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/find.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "FIND.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_FIND_FILE_MAXDEPTH   6
+#define? DEFAULT_FIND_COMPONENT_TYPE  FILE
+#define? DEFAULT_REGISTRYREAD_64BIT   N         ;;Searches 32 bit by default
+#(
+    ;--- Default if the "MESSAGE" parameter is not used ---------------------
+    #define? FIND_DEFAULT_NOT_FOUND_MESSAGE_AND_NO_DEFAULT
+    The {$Error4What} was not found and there is no default
+    (the property "{$Property}" doesn't exist).
+#)
+
+
+
+;--- Constants to place into VBS --------------------------------------------
+#( '<?NewLine>'
+   #define FindVbsConstants
+
+   ;--- Used by "RegLocator Table / Registry Read" --------------------------
+   const msidbLocatorTypeRawValue = 2     '0x02
+   const msidbLocatorType64bit    = 16    '0x10
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Search for a Registry value --------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define RegistryRead
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Initialization ------------------------------------------------------
+   #DefineRexx ''
+       <$Rexx2ConvertHiveNameToMsiCode HK??=^"RegistryRead" command^ HiveNameLit='{$HKEY}' HiveNameNewVar="@@Dummy" HKeyConstVar='@@HkeyConst'>;
+       <$@@RexxGetSignatureAndValidatePropertyName {$?}>;
+   #DefineRexx
+
+   ;--- The "Signature " table must exist (no entry for registry though) ----
+   <$@@CmdRequiresTableToExist "Signature">
+
+   ;--- Look for the registry value -----------------------------------------
+   #if  '{$64BIT='<$DEFAULT_REGISTRYREAD_64BIT>' $$UPPER}' = 'Y'
+        ;--- 64 bit ---------------------------------------------------------
+        #define+ @@LocatorType msidbLocatorTypeRawValue or msidbLocatorType64bit
+   #elseif
+        ;--- NOT 64 bit -----------------------------------------------------
+        #define+ @@LocatorType msidbLocatorTypeRawValue
+   #endif
+   <$TABLE "RegLocator">
+       #(
+           <$Row
+               Signature_="<??@@Signature>"
+                    *Root="<??@@HkeyConst>"
+                      Key="{$Key}"
+                     Name="{$Name=^^}"
+                     Type="<$@@LocatorType>"
+           >
+       #)
+   <$/TABLE>
+   <$TABLE "AppSearch">
+       #(
+           <$Row
+                 Property="{$Property}"
+               Signature_="<??@@Signature>"
+           >
+       #)
+   <$/TABLE>
+
+   ;--- Property handling ---------------------------------------------------
+   <$@@SetDefaultValueOrAddPropertyValidationCode {$?ResetUsed}{$?} Command=^RegistryRead^ Error4What=~"{$HKEY}" registry value "{$Key}\{$Name=^^}"~>
+
+   ;--- Check passed parameters ---------------------------------------------
+   {$!:Default,Property,Message,Condition,Signature,Validate,ValidateAfter,HKEY,Key,Name,64BIT}
+#)
+#DefineRexx '@@RexxGetSignatureAndValidatePropertyName'
+    ;--- Property name must be upper case -----------------------------------
+    @@PropName = '{$Property}';
+    if  @@PropName <> translate(@@PropName) then
+        error('The property "' || @@PropName || '" should not contain lower case characters!');
+
+    ;--- User will see which search occurs! ---------------------------------
+   {$Signature="{$Property}" $$RxVar:@@Signature}
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Search for a File ------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define FileFindVbsVariables
+   <?NewLine>
+   dim FileFindSL           ;;Used to hold "8.3|long Name"
+#)
+#DefineRexx '@@Rexx4FileFind'
+    ;--- Get the signature for starters -------------------------------------
+    <$@@RexxGetSignatureAndValidatePropertyName {$?}>
+
+    ;--- Work out how to populate the file info -----------------------------
+    @@File = '{$File}';                 ;;Long filename
+    if  @@File = '' then
+        @@VbsF = ''                     ;;Saerching for directory!
+    else
+    do
+        ;--- User is looking for a file -------------------------------------
+        if '{$8.3='' $$IsPassed}' = 'Y' then
+        do
+            ;--- User passed "8.3" name -----------------------------------------
+            @@VbsF = 'FileFindSL="{$8.3}|' || @@File || '"<?x0A>'
+        end;
+        else
+        do
+            ;--- Is 8.3 name already attached? ----------------------------------
+            if  pos('|', @@File) <> 0 then
+            do
+                ;--- Already has 8.3 name attached! -----------------------------
+                @@VbsF = 'FileFindSL="' || @@File || '"<?x0A>'
+            end;
+            else
+            do
+                ;--- Need to work out an 8.3 name ("$$FileFind$$" is a bit of a hack) ---
+                @@VbsF = 'FileFindSL=MakeSfnLfn("$$FileFind$$", "' || @@File || '")<?x0A>'
+            end;
+        end;
+    end;
+#DefineRexx
+#(
+   #define FileFind
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Initialization ------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4FileFind {$?}>^
+   <??@@VbsF>
+
+   ;--- Find a file? (we could be looking for a directory) ------------------
+   #if  [@@File = '']
+       ;--- The "Signature " table must exist even if searching for a directory ---
+       <$@@CmdRequiresTableToExist "Signature">
+   #elseif
+       <$TABLE "Signature">
+           #(
+               ;--- Define what the file we want looks like -----------------
+               <$Row
+                    Signature="<??@@Signature>"
+                    *FileName="FileFindSL"            ;;"8.3|long" filename (no path)
+                   MinVersion="{$MinVersion=^^}"
+                   MaxVersion="{$MaxVersion=^^}"
+                      MinSize="{$MinSize=^^}"
+                      MaxSize="{$MaxSize=^^}"
+                      MinDate="{$MinDate=^^}"
+                      MaxDate="{$MaxDate=^^}"
+                    Languages="{$Languages=^^}"
+               >
+           #)
+       <$/TABLE>
+   #endif
+
+   ;--- Define the search ---------------------------------------------------
+   <$TABLE "AppSearch">
+       #(
+           <$Row
+                 Property="{$Property}"
+               Signature_="<??@@Signature>"
+           >
+       #)
+   <$/TABLE>
+
+   ;--- Define where to look for the file or directory) ---------------------
+   <$TABLE "DrLocator">
+       #(
+           <$Row
+               Signature_="<??@@Signature>"
+                   Parent="{$Parent=^^}"
+                     Path="{$Path=^^}"
+                    Depth="{$Depth=^<$DEFAULT_FIND_FILE_MAXDEPTH>^}"
+           >
+       #)
+   <$/TABLE>
+
+   ;--- Property handling ---------------------------------------------------
+   #if  [@@File <> '']
+        ;--- FILE -----------------------------------------------------------
+        <$@@SetDefaultValueOrAddPropertyValidationCode {$?ResetUsed}{$?} Command=^FileFind^ Error4What=^file "{$File}"^>
+   #elseif
+        ;--- DIR ------------------------------------------------------------
+        <$@@SetDefaultValueOrAddPropertyValidationCode {$?ResetUsed}{$?} Command=^FileFind^ Error4What=^directory "{$Path}"^>
+   #endif
+
+   ;--- Check passed parameters ---------------------------------------------
+   {$!:Default,Property,Message,Condition,Signature,Validate,ValidateAfter,Parent,Path,Depth,File,8.3,MinVersion,MaxVersion,MinSize,MaxSize,MinDate,MaxDate,Languages}
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Search for an installed MSI Component ----------------------------------
+;----------------------------------------------------------------------------
+#define @@TYPE_KEYPATH_FILE 1
+#define @@TYPE_KEYPATH_DIR  0
+#DefineRexx '@@Rexx4ComponentFind'
+    ;--- Get the signature for starters -------------------------------------
+    <$@@RexxGetSignatureAndValidatePropertyName {$?}>
+
+    ;--- Get component Name -------------------------------------------------
+    @@Comp2Find = "{$ComponentId}"
+
+    ;--- Type? --------------------------------------------------------------
+    @@TypeStr = "{$Type=^<$DEFAULT_FIND_COMPONENT_TYPE>^}"
+    @@TypeMac = "@@TYPE_KEYPATH_" || @@TypeStr
+    if  Defined(@@TypeMac) = 'N' then
+        error('The component keypath type should be "FILE" or "DIR" (not "' || @@TypeStr || '")!');
+    else
+        @@Type = MacroGet(@@TypeMac);
+#DefineRexx
+#(
+   #define ComponentFind
+   <$UpdateMmLocation>
+   {$!KEYWORDS}                 ;;Don't Expect any keywords!
+
+   ;--- Initialization ------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4ComponentFind {$?}>^
+
+   <$TABLE "AppSearch">
+       #(
+           <$Row
+                 Property="{$Property}"
+               Signature_="<??@@Signature>"
+           >
+       #)
+   <$/TABLE>
+   <$TABLE "CompLocator">
+       #(
+           <$Row
+                Signature_="<??@@Signature>"
+               ComponentId="<??@@Comp2Find>"
+                      Type="<??@@Type>"
+           >
+       #)
+   <$/TABLE>
+
+   ;--- This command needs some tables to exist even if empty ---------------
+   <$@@CmdRequiresTableToExist "Signature">
+   <$@@CmdRequiresTableToExist "LaunchCondition">
+   #define+ ChangesMarked_Leave_LaunchCondition_Table   (see MSI.MMH)
+
+   ;--- Property handling ---------------------------------------------------
+   <$@@SetDefaultValueOrAddPropertyValidationCode {$?ResetUsed}{$?} Command=^ComponentFind^ Error4What=^component with GUID "{$ComponentId}"^>
+
+   ;--- Check passed parameters ---------------------------------------------
+   {$!:Default,Property,Message,Condition,Signature,Validate,ValidateAfter,ComponentId,Type}
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Validate results (or set property to the default value) ----------------
+;----------------------------------------------------------------------------
+#(
+   #define @@SetDefaultValueOrAddPropertyValidationCode
+
+   ;--- Set a default value? ------------------------------------------------
+   #if ['{$Default="" $$IsPassed}' = 'Y']
+       ;--- Want the value to default if not found! -------------------------
+       #if '{$Default}' \== ''
+           ;--- Can't set a property to null... -----------------------------
+           <$Property "{$Property}" VALUE={$Default $$AQ}>
+       #endif
+   #elseif
+       ;--- Die if not found (does not exist) -------------------------------
+       #if  ['{$Validate='Y' $$UPPER}' <> 'N']
+            ;--- Validation not disabled ------------------------------------
+            #(
+               #if ['{$Condition="" $$IsPassed}' = 'N']
+                   #RexxVar @@Condition = 'NOT {$Property}'
+               #elseif
+                   #RexxVar @@Condition = 'NOT {$Property} and ({$Condition})'
+               #endif
+
+               ;--- Create a CA to fail if the condition is true ------------
+               #define+ @@CA_ACTION_NAME Val4{$Command}_<??@@Signature>
+               <$Table "CustomAction">
+               #(
+                   <$Row
+                       Action="<$@@CA_ACTION_NAME>"
+                         Type="19"
+                       Target=^{$Message=~<$FIND_DEFAULT_NOT_FOUND_MESSAGE_AND_NO_DEFAULT {$?ResetUsed}{$?}>~}^
+                   >
+               #)
+               <$/Table>
+
+               ;--- Schedule Validation Custom Actions ----------------------
+               #DefineRexx ''
+                    ;--- Sequence this CA (after the "AppSearch" action) ----
+                    @@Seq = '{$ValidateAfter=^AppSearch^}-';
+                    <$SeqNumberRexx2CreateSequenceNumberExpression SEQ="@@Seq" Macro="@@SeqExpression" Number="1">;
+               #DefineRexx
+               <$@@InsertAfterAppSearch "InstallExecuteSequence" {$?}>
+               <$@@InsertAfterAppSearch "InstallUISequence"      {$?}>
+           #)
+       #endif
+   #endif
+#)
+#(
+   #define @@InsertAfterAppSearch
+
+   SeqNo = <$@@SeqExpression "{$#1}">        ;;Set the VBS variable "SeqNo"
+   <$Table "{$#1}">
+       #(
+            <$Row
+                   Action="<$@@CA_ACTION_NAME>"
+                Condition="<??@@Condition>"
+                *Sequence="SeqNo"                 ;;Set up property when?
+            >
+       #)
+   <$/Table>
+#)
+
+
+#(
+   #define @@CmdRequiresTableToExist
+   if  not TableExists("{$#1}") then<?NewLine>
+       <$TableCreate "{$#1}" DropExisting="N">
+   end if<?NewLine>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Search for a product ---------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define PropertyFindVbsInit
+
+    <?NewLine><?NewLine>
+    '--- "Upgrade" table attributes ---
+    const msidbUpgradeAttributesMigrateFeatures     = &H001      'Migrate feature states by enabling the logic in the MigrateFeatureStates action.
+    const msidbUpgradeAttributesOnlyDetect          = &H002      'Detect products and applications but do not install.
+    const msidbUpgradeAttributesIgnoreRemoveFailure = &H004      'Continue installation upon failure to remove a product or application.
+    const msidbUpgradeAttributesVersionMinInclusive = &H100      'The range of versions detected includes the value in VersionMin.
+    const msidbUpgradeAttributesVersionMaxInclusive = &H200      'The range of versions detected includes the value in VersionMax.
+    const msidbUpgradeAttributesLanguagesExclusive  = &H400      'Detect all languages, excluding the languages listed in the Language column.
+   <?NewLine><?NewLine>
+#)
+#RexxVar '@@ProductFindCnt' = 0
+#(
+    #define ProductFind
+
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}                    ;;Don't Expect any keywords!
+    {$!:Product,UpgradeCode,VersionMin,VersionMax,Property,Inclusive,Message,ValidateAfter}
+
+    ;--- Work out the "key" -------------------------------------------------
+    #if ['{$Property=""}' <> '']
+        #RexxVar '@@Key' = '{$Property}'
+    #elseif
+        #RexxVar '@@ProductFindCnt' + 1
+        #RexxVar '@@Key' = 'PRODUCTFIND.<??@@ProductFindCnt>'
+    #endif
+
+    ;--- Handle attributes --------------------------------------------------
+    #if ['{$Inclusive="Y"}' = 'N']
+        ;--- INCLUSIVE ------------------------------------------------------
+        #define+ @@PfAttributes msidbUpgradeAttributesOnlyDetect or (msidbUpgradeAttributesLanguagesExclusive)
+    #elseif
+        ;--- EXCLUSIVE ------------------------------------------------------
+        #define+ @@PfAttributes msidbUpgradeAttributesOnlyDetect or (msidbUpgradeAttributesLanguagesExclusive or msidbUpgradeAttributesVersionMinInclusive or msidbUpgradeAttributesVersionMaxInclusive)
+    #endif
+
+    ;--- Look for the product -----------------------------------------------
+    <$PropertyList "SecureCustomProperties" Value="<??@@Key>">
+    <$Table "Upgrade">
+       #(
+           <$Row
+               ActionProperty="<??@@Key>"
+                  UpgradeCode=^{$UpgradeCode}^
+                   Attributes="<$@@PfAttributes>"
+                   VersionMin="{$VersionMin=''}"
+                   VersionMax="{$VersionMax=''}"
+           >
+       #)
+    <$/Table>
+
+    ;--- Want to abort if missing? ------------------------------------------
+    #if \ ('{$Message=^^ $$IsPassed}' = 'Y' & '{$Message=^^ $$IsBlank}' = 'Y')
+        ;--- User does want to abort with a message if product not found ----
+        #if ['{$VersionMin=""}{$VersionMax=""}' = '']
+            #define+ @@PfVersions any version
+        #elseif
+            #define+ @@PfVersions a version number between "{$VersionMin=''}" and "{$VersionMax=''}"
+        #endif
+        #define+ @@PfMsg The product "{$Product=^*NoProductNameSupplied*^}"  \
+                         with <$@@PfVersions>                                \
+                         and an upgrade code of "{$UpgradeCode}"             \
+                         doesn't appear to be installed.
+        <$AbortIf
+               Condition=^not <??@@Key> and (not Installed and {$Condition='1'})^
+              SeqTable="InstallUISequence InstallExecuteSequence"
+                   Seq="{$ValidateAfter=^FindRelatedProducts^}-"
+                   Key="AbortIf.<??@@Key>.Not.Installed"
+               Message="<$@@PfMsg>"
+        >
+    #endif
+#)
+
+
+
+#NextId UNLOCK "FIND.MMH"

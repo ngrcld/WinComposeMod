@@ -1,0 +1,525 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DIRTREE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.32  $
+;          $Date:   24 Mar 2015 18:35:00  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DirTree.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "DIRTREE.MMH"
+
+;--- Options ----------------------------------------------------------------
+#define? DIRTREE_ROOT                        C:      ;;No terminating slash (can be as long as you like)!
+#define? DIRTREE_DRIVE_PROPERTY_PREFIX       DRIVE.  ;;In upper case to allow command line override ("DRIVE.Z" etc)
+#define? DEFAULT_DIRECTORYTREE_ACCESS
+#define? DIRTEE_ADD_\_AFTER_RSB_IF_REQUIRED  Y       ;;Normally wouldn't touch except if it somehow causes problems with older code...
+#ifndef  DIRTREE_REXXCODE_TO_ADJUST_GENERATED_DIRECTORY_KEY
+    #DefineRexx 'DIRTREE_REXXCODE_TO_ADJUST_GENERATED_DIRECTORY_KEY'
+        ;--- The default is simply to make it a public property so it can be changed on the command line ---
+        {$KeyVar} = translate({$KeyVar});
+    #DefineRexx
+#endif
+
+;----------------------------------------------------------------------------
+;--- Define a directory "tree" ----------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define DirectoryTree
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Create the appropriate "Directory" table entries --------------------
+   #evaluate "" ^<$Rexx4MakeDirectoryTree {$?}>^
+   <??DTVBS><?RestartLine>
+
+   ;--- Now create a blank folder if that is required -----------------------
+   #RexxVar @@UsedComponent = ''
+   #if ['{$Make=^N^}' <> 'N']
+       ;--- Want to create the directory, need to create component? ---------
+       #if ['{$Component=^^ $$IsPassed}' = 'Y']
+           ;--- User supplied component info (even if blank) ----------------
+           #RexxVar @@Component = '{$Component}'
+       #elseif
+           ;--- Get current component information ---------------------------
+           #RexxVar @@Component = RxComponent.RxComponentNestingLevel
+       #endif
+       #if [@@Component = '']
+           ;--- If component BLANK then user wants us to CREATE ONE ---------
+           {$Dir $$Ignore}
+           {$Key $$Ignore}
+           <$MakeComponent_ Directory_=^<??DT_KEYNAME>^ {$?}>
+           #RexxVar @@Component = RxCreatedComponentKey
+       #endif
+
+       ;--- Create the folder creation table entry --------------------------
+       <$TABLE "CreateFolder">
+           <$Row Directory_="<??DT_KEYNAME>" Component_="<??@@Component>">
+       <$/TABLE>
+
+       ;--- Remember component used fot "CreateFolder" ----------------------
+       #RexxVar @@UsedComponent = @@Component
+   #endif
+
+   ;--- Want to add to "RemoveFile" table? ----------------------------------
+   #if ['{$Remove=^N^}' <> 'N']
+       ;--- YES -------------------------------------------------------------
+       #if [@@UsedComponent <> '']
+           #RexxVar @@Component = @@UsedComponent
+       #else
+           ;--- We don't already know the component info --------------------
+           #if ['{$Component=^^ $$IsPassed}' = 'Y']
+               ;--- User supplied component info (even if blank) ----------------
+               #RexxVar @@Component = '{$Component}'
+           #elseif
+               ;--- Get current component information ---------------------------
+               #RexxVar @@Component = RxComponent.RxComponentNestingLevel
+           #endif
+           #if [@@Component = '']
+               #error ^You did not use the "MAKE" parameter to create a component!{NL}You must therefore supply a component name.^
+           #endif
+       #endif
+
+        ;--- Add to the "RemoveFile" table ----------------------------------
+        <$RemoveFile DIR=^{$Key}^ COMPONENT=^<??@@Component>^>
+    #endif
+
+   ;--- Handle "PRIMARYFOLDER" parameter ------------------------------------
+   <$DirHandlePrimaryFolderParameter {$?} KEY=^<??DT_KEYNAME>^>
+
+   ;--- Validate passed parameters ------------------------------------------
+   ;;{$!:DIR,KEY,DIREXP,MAKE,COMPONENT,CHANGE,ACCESS,PRIMARYFOLDER} ;;(can't do as any parm is valid when "MAKE" used to create component...)
+#)
+
+#RexxVar @@PrevDriveLetters = ''       ;;Lists previously used drive letters
+#RexxVar @@CreateFolderTable  = 'CreateFolder'
+#evaluate ''   ^call GetIdPrepare 'MakeDirTree'^
+#DefineRexx 'Rexx4MakeDirectoryTree'
+   ;--- Start DEBUG ---------------------------------------------------------
+   #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_SAY> 'Rexx4MakeDirectoryTree()'
+       <$DBG_INC>
+   #endif
+
+   ;--- Does user have any preference for the name of the last part of directory? ---
+   @@Name = '{$Key=^^}';
+
+   ;--- Get directory -------------------------------------------------------
+   if  '{$DirExp=^^ $$IsPassed}' <> 'Y' then
+   do
+       ;--- Literal value passed (this is the documented mechanism ----------
+       {$Dir='' $$RxVar:@@DirOrg}
+   end;
+   else
+   do
+       ;--- Not documented (internal use only - data passed in a rexx variable) ---
+       @@DirOrg = {$DirExp};
+   end;
+   #define @@ERRDIR 'The directory "' || @@DirOrg || '" is invalid!'
+   if  @@DirOrg = '' then
+       error('To create a directory tree you need to pass its name', 'in the "{$DirParm=^DIR^}" parameter!');
+
+   ;--- Touch Up #1: Want the directory name to end with a slash ------------
+   if  right(@@DirOrg, 1) <> '\' then
+       @@DirOrg = @@DirOrg || '\'
+
+   ;--- Touch Up #2: We want to convert "[key]Rest" to "[key]\Rest" (allow some scope for "[" being part of legit dir name) ---
+   #if ['<$DIRTEE_ADD_\_AFTER_RSB_IF_REQUIRED $$UPPER>' <> 'N']
+       ;--- We normally allow this "touch up" (can diable in unlikely event it causes backwards compatability issues for you ) ---
+       if  left(@@DirOrg, 1) = '[' then
+       do
+           ;--- Look for first end bracket ----------------------------------
+           @@Rpos = pos(']', @@DirOrg);
+           if   @@Rpos <> 0 then
+           do
+                ;--- We did find a "]" character, make sure not after a "\"! ---
+                @@Spos = pos('\', @@DirOrg)
+                if  @@Spos = 0 | ((@@Spos <> 0) & (@@Rpos < @@Spos)) then
+                do
+                    ;--- OK this is looking like an alias, expect "\" after "]" ---
+                    if substr(@@DirOrg, @@Rpos+1, 1) <> '\' then
+                    do
+                        ;--- Must add the "\" -------------------------------
+                        @@DirOrg = left(@@DirOrg, @@RPos) || '\' || substr(@@DirOrg, @@Rpos+1);
+                    end;
+                end;
+           end;
+       end;
+   #endif
+
+   ;--- Allow specification of an alias (as prefix to directory) ------------
+   if  left(@@DirOrg, 1) = '{' then
+   do
+       ;--- Not allowed to also use NAME parameter! -------------------------
+       if  @@Name <> '' then
+           error('You used the "{name}dir" format AND used the NAME parameter ("' || @@Name || '")', <$@@ERRDIR>);
+
+       ;--- Use the prefix as an alias --------------------------------------
+       #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+            <$DBG_SAY> 'The directory "' || @@DirOrg || '" has a NAME as a prefix!'
+       #endif
+       parse var @@DirOrg '{' @@Name '}' @@Dir;
+       if  @@Dir = '' then
+           error('Incorrectly formatted "{name}dir" reference?', <$@@ERRDIR>);
+       @@DirOrg = @@Dir;
+   end;
+
+   ;--- More debug info -----------------------------------------------------
+   #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+       <$DBG_SAY> 'INPUTS'
+       <$DBG_SAY> '~~~~~~'
+       <$DBG_SAY> 'DIRECTORY: ' || @@DirOrg;
+       <$DBG_SAY> 'NAME     : ' || @@Name;
+       <$DBG_NEWLINE>
+   #endif
+
+   ;--- Lets do any defined mapping (mapping order highly significant) ------
+   @@Dir  = @@DirOrg;
+   <$DirMapRexx2MapDirectory DirVar="@@Dir">
+   @@DirAfterMapping = @@Dir;
+
+   ;--- See if we can translate all or part of the name ---------------------
+   #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+        <$DBG_SAY> 'See if we can find a directory alias for start of directory'
+        <$DBG_INC>
+   #endif
+   @@DirTmp = @@Dir;
+   do  while @@DirTmp <> ''
+       ;--- Remove any terminating slash ------------------------------------
+       if  right(@@DirTmp, 1) = '\' then
+           @@DirTmp = left(@@DirTmp, length(@@DirTmp)-1);
+
+       ;--- See if we match on the directory --------------------------------
+       #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+            <$DBG_SAY> 'Look at: ' || @@DirTmp;
+       #endif
+       @@Key = 'DT_USER2KEY_' || c2x(translate(@@DirTmp));
+       if  symbol(@@Key) = 'VAR' then
+       do
+           ;--- Work out the new name ---------------------------------------
+           @@Dir = '[' || value(@@Key) || ']' || substr(@@Dir, length(@@DirTmp)+1);
+           #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                <$DBG_INC>
+                <$DBG_SAY> 'New DIR: ' || @@Dir;
+                <$DBG_DEC>
+           #endif
+           leave;
+       end;
+
+       ;--- No match so remove right most part of directory -----------------
+       @@SPos = lastpos('\', @@DirTmp);
+       if  @@SPos = 0 then
+           @@DirTmp = '';
+       else
+           @@DirTmp = left(@@DirTmp, @@SPos-1);
+   end;
+   #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+        <$DBG_DEC>
+   #endif
+
+   ;--- If the item has a trailing slash then remove it ---------------------
+   if  right(@@Dir, 1) = '\' then
+       @@Dir = left(@@Dir, length(@@Dir)-1);
+
+   ;--- Assume OK as is if can't find a '\' ---------------------------------
+   DTVBS = ''          ;;A GLOBAL name as other modules may use this as well!
+   if  pos('\', @@Dir) = 0 & substr(@@Dir, 2, 1) <> ':' then
+   do
+       ;--- Only a single component, Get the "NAME" -------------------------
+       #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+            <$DBG_SAY> 'Only a single directory component assume it''s an alias';
+       #endif
+       if  left(@@Dir, 1) = '[' then
+       do
+           ;--- Extract the name --------------------------------------------
+           parse var @@Dir '[' @@Dir ']' @@Crap;
+           if  @@Dir = '' | @@Crap <> '' then
+               error('Incorrectly formatted [dir] reference?', <$@@ERRDIR>);
+       end;
+       DT_KEYNAME = @@Dir;
+   end;
+   else
+   do
+       ;--- See if starts with "\" ------------------------------------------
+       if  left(@@Dir, 1) = '\' then
+       do
+           ;--- Add the prefix ----------------------------------------------
+           @@Dir = '<$DIRTREE_ROOT>' || @@Dir;
+           #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                <$DBG_SAY> 'Adding "DIRTREE_ROOT" to give:' || @@Dir;
+           #endif
+       end;
+
+       ;--- Strip off any drive letter --------------------------------------
+       if  substr(@@Dir, 2, 1) <> ':' then
+           @@DriveLetter = '';
+       else
+       do
+           ;--- Has drive letter attached -----------------------------------
+           @@DriveLetter  = translate(left(@@Dir, 1));
+           @@Dir = substr(@@Dir, 3);
+       end;
+
+       ;--- If there was a drive letter then "create" it if required --------
+       if  @@DriveLetter <> '' then
+       do
+           ;--- Create the first time we see a specific letter --------------
+           @@DriveLetter = translate(@@DriveLetter);
+           if  @@Name = '' | @@Dir <> '' then
+               @@DlName = "<$DIRTREE_DRIVE_PROPERTY_PREFIX>" || @@DriveLetter;  ;;If had name it is meant for the last bit...
+           else
+           do
+               @@DlName = @@Name;
+               @@Name   = '';          ;;Mark used
+           end;
+           if pos(@@DriveLetter, @@PrevDriveLetters) = 0 then
+           do
+               ;--- Need to define! -----------------------------------------
+               #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                    <$DBG_SAY> 'Defining the drive letter "' || @@DriveLetter || '" as "' || @@DlName || '"';
+               #endif
+               DTVBS = DTVBS || '<' || '$Directory KEY=^' || @@DlName || '^ VALUE=^' || @@DriveLetter || ':\^>' || d2c(10);
+               @@PrevDriveLetters = @@PrevDriveLetters || @@DriveLetter
+
+               ;--- Remember how to translate user to MSI directory bit -----
+               @@UserDir = @@DriveLetter || ':'
+               @@Key = 'DT_USER2KEY_' || c2x(@@UserDir);
+               call value @@Key, @@DlName;
+               @@Key = 'DT_KEY2USER_' || c2x(translate(@@DlName));
+               call value @@Key, @@UserDir;    ;;USER DIR (c:) by directory name as key
+               @@Key = 'DT_KEY2USER_MAPPED_' || c2x(translate(@@DlName));
+               call value @@Key, @@UserDir;    ;;USER DIR (c:) by directory name as key
+           end;
+
+           ;--- Now use this as a base --------------------------------------
+           @@Dir = '[' || @@DlName || ']\' || @@Dir;
+       end;
+
+       ;--- Extract the BASE (Must start with '[' and end with  ']') --------
+       #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+            <$DBG_SAY> 'Extracting the BASE from "' || @@Dir || '"';
+       #endif
+       parse var @@Dir @@Base '\' @@Dir;
+       @@BaseO = @@Base;
+       parse var @@Base '[' @@Base ']' @@Crap;
+       if  @@Base = '' | @@Crap <> '' then
+           error('The base of "' || @@BaseO || '" is invalid (expect "[base]")', <$@@ERRDIR>);
+
+       ;--- Anything to do? -------------------------------------------------
+       if  @@Dir = '' then
+       do
+           ;--- The base is all there is ------------------------------------
+           DT_KEYNAME = @@Base;
+       end;
+       else
+       do
+           ;--- Now work through the tree -----------------------------------
+           #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                <$DBG_NEWLINE>
+                <$DBG_SAY> 'Work through the tree "' || @@Dir || '" creating any required directories';
+                <$DBG_INC>
+           #endif
+           @@BitKeyName = '';
+           @@BitCnt     = 0;
+           do  while @@Dir <> ''
+               ;--- Get Next "bit" of the tree ------------------------------
+               parse var @@Dir @@Bit '\' @@Dir;
+               if @@Bit = '' then
+                   iterate;                    ;;"\\" etc
+               @@BitCnt = @@BitCnt + 1;
+
+               ;--- Is this the last bit? If so user have a preference for a name? ---
+               if  @@Dir = '' & @@Name <> '' then
+               do
+                   ;--- User wants a specific key used ----------------------
+                   @@BitKeyName = @@Name;
+                   @@Name    = '';         ;;Mark as used
+               end;
+               else
+               do
+                   ;--- What will we call this directory (it's key) ---------
+                   @@BitKeyName = @@Base || '_' || @@Bit;
+;**    [CommentBlockStart     (March 11, 2005 3:52:30 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|                   @@BitKeyName = @@Base || '_' || translate(@@Bit);
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (March 11, 2005 3:52:30 PM EST, Dennis)
+
+;call info "BBBBBBBBBBBBBBBBB: " || @@BitKeyName
+                   ;--- Ensure name not too long and only has valid characters --
+                   @@BitKeyName = translate(@@BitKeyName);  ;;19Jan2008: Must be translated or bits of a long the directory tree can disappear
+                   @@BitKeyName = GetId('MakeDirTree', 'MAXCHARS', @@BitKeyName, '_.', <$TABLES_LNG_DIRECTORY_COLUMN>-1)   ;;Probably need to improve this...
+;call info "AAAAAAAAAAAAAAAAA: " || @@BitKeyName
+
+                   ;--- Always start with "_" -------------------------------
+               ;;if  @@BitCnt = 1 then
+                       @@BitKeyName = '_' || @@BitKeyName;   ;;This is a trick (be careful replacing the prefix)
+
+                   ;--- Adjust the directories key --------------------------
+                   <$DIRTREE_REXXCODE_TO_ADJUST_GENERATED_DIRECTORY_KEY KeyVar="@@BitKeyName">
+               end;
+
+               ;--- Don't make items previously made ------------------------
+               #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                    <$DBG_SAY> 'Processing part "' || @@Bit || '"';
+                    <$DBG_INC>
+               #endif
+               @@Marker = '@@' || c2x(@@BitKeyName);       ;;Name of macro which indicates we have already make this component
+               if  symbol(@@Marker) <> 'LIT' then
+               do
+                   ;--- Already exists --------------------------------------
+                   #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                       <$DBG_SAY> 'Key: "' || @@BitKeyName || '" already exists...'
+                   #endif
+               end;
+               else
+               do
+                   ;--- Mark as made ----------------------------------------
+                   call value @@Marker, '';
+
+                   ;--- Generate the "Directory" command --------------------
+                   #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                       <$DBG_SAY> 'Creating key: "' || @@BitKeyName || '"'
+                       <$DBG_SAY> 'Parent   key: "' || @@Base    || '"'
+                   #endif
+                   DTVBS = DTVBS || '<' || '$Directory KEY=^' || @@BitKeyName || '^ Parent=^' || @@Base || '^ Dir=^' || @@Bit || '^>' || d2c(10);
+
+                   ;--- Work out what the original user directory was and save the mapping ---
+                   if  @@Dir = '' then
+                       @@UserDir = @@DirOrg
+                   else
+                       @@UserDir = left(@@DirOrg, length(@@DirOrg)-length(@@Dir)-1)
+                   if  right(@@UserDir, 1) = '\' then
+                       @@UserDir = left(@@UserDir, length(@@UserDir)-1);
+                   @@Key = 'DT_USER2KEY_' || c2x(translate(@@UserDir));
+                   call value @@Key, @@BitKeyName;    ;;DIRNAME by user directory as key
+                   #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                        <$DBG_SAY> 'Full name: ' || @@UserDir
+                   #endif
+
+                   ;--- Now Save directory name as KEY to user dir ----------
+                   @@Key = 'DT_KEY2USER_' || c2x(translate(@@BitKeyName));
+                   call value @@Key, @@UserDir;    ;;USER DIR (c:\a\b) by directory name as key
+
+                   ;--- Now Save directory name as KEY to user dir (mapped) -
+                   @@Key = 'DT_KEY2USER_MAPPED_' || c2x(translate(@@BitKeyName));
+                   @@UserDirM = left(@@DirAfterMapping, length(@@DirAfterMapping)-length(@@Dir)-1)
+                   if  right(@@UserDirM, 1) = '\' then
+                       @@UserDirM = left(@@UserDirM, length(@@UserDirM)-1);
+                   call value @@Key, @@UserDirM;    ;;USER DIR (c:\a\b) by directory name as key
+               end;
+               #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                    <$DBG_DEC>
+               #endif
+
+
+               ;--- Now have a new "Parent" (base) --------------------------
+               @@Base = @@BitKeyName;
+           end;
+           DT_KEYNAME = @@BitKeyName;                     ;;Key Name of last dir
+           #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+                <$DBG_DEC>
+           #endif
+       end;
+   end
+
+   ;--- Do "NAME" validation ------------------------------------------------
+   if  @@Name <> '' then
+   do
+       #if  ['<$DBG_DIRECTORY_TREE>' <> 'N']
+           ;<$DBG_NEWLINE>
+           <$DBG_SAY> 'Creating the key "' || @@Name || '" is an alias for "' || DT_KEYNAME || '"'
+           ;<$DBG_INC>
+       #endif
+
+       ;error('Could not name "' || @@DirOrg || '"', 'The NAME "' || @@Name || '" was not applied (already named "' || DT_KEYNAME || '")');
+       @@MakeAlias = '<' || '$Directory ASIS=^Y^ DIR=^.^ KEY=^' || @@Name || '^ Parent=^' || DT_KEYNAME || '^>' || d2c(10);
+       ;say "++> " || @@MakeAlias
+       DTVBS = DTVBS || @@MakeAlias;
+       DT_KEYNAME = @@Name;                 ;;Fix the current "key" name
+   end;
+
+
+   ;--- "CHANGE" parameter, Do we wish to update the feature to make this dir the root? ---
+   <$DIR_Rexx2UpdateFeatureDir DirKeyVar="DT_KEYNAME" ResultVar='@@FeatCode' {$?}>
+   DTVBS = DTVBS || @@FeatCode;
+
+   ;--- Handle the "ACCESS" parameter ---------------------------------------
+   @@Access = '{$Access=^<$DEFAULT_DIRECTORYTREE_ACCESS>^}';
+   if   @@Access = '' then
+        @@AccessCode = ''
+   else
+   do
+        ;--- User wants to adjust permissions -------------------------------
+        @@KeyVar = '{$Key}';
+        <$RexxToSetAccess AliasVar="@@Access" TableVar="@@CreateFolderTable" KeyVar="@@KeyVar" ResultVar="@@AccessCode">
+   end;
+   DTVBS = DTVBS || @@AccessCode;
+
+   ;--- If this is a "system key" we need to define it! ---------------------
+   @@SysKey = "DirKeyCreatedOnDemand." || c2x(DT_KEYNAME);
+   if   Defined(@@SysKey) = 'Y' then
+   do
+        ;--- It is a system key ---------------------------------------------
+        #if ['<$DBG_DIRECTORY_TREE>' <> 'N']
+            <$DBG_SAY> 'Conditional directory "' || DT_KEYNAME || '" has been demanded!'
+        #endif
+        @@ToDo = MacroGet(@@SysKey);
+        call MacroUndef @@SysKey;
+        DTVBS = @@ToDo || d2c(10) || DTVBS;
+   end;
+
+   ;--- END   DEBUG ---------------------------------------------------------
+   #if ['<$DBG_DIRECTORY_TREE>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_SAY> 'OUTPUTS'
+       <$DBG_SAY> '~~~~~~~'
+       <$DBG_SAY> 'DT_KEYNAME: ' || DT_KEYNAME;
+       <$DBG_DEC>
+       <$DBG_NEWLINE>
+   #endif
+
+
+   ;=========================================================================
+   ;=== OUTPUTS from this rexx ==============================================
+   ;=========================================================================
+   ; DTVBS      : Contains any required "DIRECTORY" commands to build
+   ;              the directory
+   ; DT_KEYNAME : The key for this directory.
+   ;=========================================================================
+#DefineRexx
+
+
+;--- "PRIMARYFOLDER/ARPINSTALLLOCATION" -------------------------------------
+#define? DIRTREE_PRIMARYFOLDER_SEQNUMBER CostFinalize-
+#(
+    #define DirHandlePrimaryFolderParameter
+
+    #if ['{$PrimaryFolder=^N^ $$UPPER}' = 'Y']
+        <$PrimaryFolder Key=^{$Key}^>
+    #endif
+#)
+#(
+    #define PrimaryFolder
+
+    ;--- Set "ARPINSTALLLOCATION" ---------------------------------------
+    <$PropertyCa "ARPINSTALLLOCATION"  VALUE=^[{$Key}]^ Seq="<$DIRTREE_PRIMARYFOLDER_SEQNUMBER>">
+
+    ;--- Set "PRIMARYFOLDER" --------------------------------------------
+    <$PropertyCa "PRIMARYFOLDER"  VALUE=^[{$Key}]^ Seq="<$DIRTREE_PRIMARYFOLDER_SEQNUMBER>">
+#)
+
+
+
+#NextId UNLOCK "DIRTREE.MMH"
+
+
+

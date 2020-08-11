@@ -1,0 +1,836 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   TABLES.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.29  $
+;          $Date:   16 Nov 2017 11:28:42  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Tables.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;    Note if you change some table column information this only takes effect
+;    when a table is created.
+;----------------------------------------------------------------------------
+
+
+;----------------------------------------------------------------------------
+;--- SIZE/LIMIT OPTIONS -----------------------------------------------------
+;----------------------------------------------------------------------------
+#define? MS_DEFINED_MAX_OLE_DATA_STREAM_KEY_LENGTH  62   ;;TableName.KeyName must not exceed this or database will be corrupted!
+#define? TABLES_FILE_SEQ_NUMBER_LIMIT               2      ;;2=Restricted to 32,767 OR 4=Huge number (Windows Installer + MAKEMSI will both be VERY slow)
+#define? TABLES_LNG_FEATURE_COLUMN                  38     ;;MS use 32 & 38 (appears newer)
+#define? TABLES_LNG_FILE_COLUMN                     72
+#define? TABLES_LNG_COMPONENT_COLUMN                72
+#define? TABLES_LNG_DIRECTORY_COLUMN                72
+#define? TABLES_LNG_TBLFLD_CONTROL_HELP             50
+#define? TABLES_LNG_TBLFLD_RADIOBUTTON_HELP         50
+#define? TABLES_LNG_MEDIA_DISKPROMPT                64
+#define? TABLES_LNG_MEDIA_VOLUMELABEL               32
+#define? TABLES_TYPE_CustomAction_Target            S255   ;;If you have a long string override with "S0"
+
+;----------------------------------------------------------------------------
+;--- WANT TO DEFINE ALL COLUMNS? --------------------------------------------
+;----------------------------------------------------------------------------
+#define? TABLES_SHORTCUT_DEFINE_WI_4_COLS           Y      ;;Define extra 4 columns in Windows Installer 4.0
+#define? TABLES_DEFINE.CustomAction.ExtendedType    Y      ;;New column in WI 4.5+ introduced to support the "PatchUninstall" attribute
+
+
+
+;----------------------------------------------------------------------------
+;--- Define "normal" tables -------------------------------------------------
+;----------------------------------------------------------------------------
+#define? HOOK_TABLES_BEFORE_DEFINING_ANY_TABLES             ;;Allow you to override tables created below without later deleting it first.
+<$HOOK_TABLES_BEFORE_DEFINING_ANY_TABLES>
+#ifndef TABLES_DONT_DEFINE_ANY_TABLES
+   ;--- Define MAKEMSI tables -----------------------------------------------
+   #define? TABLES_FILESOURCE_CabinetAlias_MAX_LENGTH   50
+   <$TableDefinition "<$MAKEMSI_TABLENAME_FILESOURCE>">
+           <$Column "File_"        TYPE="s<$TABLES_LNG_FILE_COLUMN>"   KEY="Y">          ;;Key into "File" table
+           <$Column "SourceFile"   TYPE="s255">                                          ;;Full name of source
+           <$Column "Date"         TYPE="s10">                                           ;;YYYY-MM-DD
+           <$Column "Time"         TYPE="s8">                                            ;;HH:MM:MM
+           <$Column "CabinetAlias" TYPE="s<$TABLES_FILESOURCE_CabinetAlias_MAX_LENGTH>"> ;;Alias of "Cabinet" command
+   <$/TableDefinition>
+   <$TableDefinition "<$MAKEMSI_TABLENAME_CABS>">
+       #DefineRexx ''
+            ;--- Work out longest possible key length -----------------------
+            @@PrefixLng = length('<$MAKEMSI_TABLENAME_CABS>.');
+            @@MaxKeyLng = <$MS_DEFINED_MAX_OLE_DATA_STREAM_KEY_LENGTH> - @@PrefixLng
+       #DefineRexx
+       <$Column "Name"  TYPE="s<??@@MaxKeyLng>"  KEY="Y">  ;;Define max length for key within OLE restrictions
+       <$Column "Data"  TYPE="V0">                         ;;Contains the actual CAB file
+   <$/TableDefinition>
+
+
+   ;--- OK want some, want "common" ones? -----------------------------------
+   #ifndef TABLES_DONT_DEFINE_COMMON_TABLES
+       ;--- Set up COMMON tables (mainly ones use by ANY MAKEMSI macro) -----
+       <$TableDefinition "MsiFileHash">
+           <$Column "File_"       TYPE="s<$TABLES_LNG_FILE_COLUMN>" KEY="Y">
+           <$Column "Options"     TYPE="i2">
+           <$Column "HashPart1"   TYPE="i4">
+           <$Column "HashPart2"   TYPE="i4">
+           <$Column "HashPart3"   TYPE="i4">
+           <$Column "HashPart4"   TYPE="i4">
+       <$/TableDefinition>
+       <$TableDefinition "ActionText">
+           <$Column "Action"       TYPE="s72"  KEY="Y">
+           <$Column "Description"  TYPE="L0">
+           <$Column "Template"     TYPE="L0">
+       <$/TableDefinition>
+       <$TableDefinition "AdminExecuteSequence">
+           <$Column "Action"     TYPE="s72"   KEY="Y">
+           <$Column "Condition"  TYPE="S255">
+           <$Column "Sequence"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "AdminUISequence">
+           <$Column "Action"     TYPE="s72"   KEY="Y">
+           <$Column "Condition"  TYPE="S255">
+           <$Column "Sequence"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "AdvtExecuteSequence">
+           <$Column "Action"     TYPE="s72"   KEY="Y">
+           <$Column "Condition"  TYPE="S255">
+           <$Column "Sequence"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "AdvtUISequence">
+           <$Column "Action"     TYPE="s72"   KEY="Y">
+           <$Column "Condition"  TYPE="S255">
+           <$Column "Sequence"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "AppSearch">
+           <$Column "Property"    TYPE="s72"  KEY="Y">
+           <$Column "Signature_"  TYPE="s72"  KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "Binary">
+           <$Column "Name"  TYPE="s72"  KEY="Y">
+           <$Column "Data"  TYPE="v0">
+       <$/TableDefinition>
+       <$TableDefinition "Component">
+           <$Column "Component"    TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"   KEY="Y">
+           <$Column "ComponentId"  TYPE="S38">
+           <$Column "Directory_"   TYPE="s<$TABLES_LNG_DIRECTORY_COLUMN>">
+           <$Column "Attributes"   TYPE="i2">
+           <$Column "Condition"    TYPE="S255">
+           <$Column "KeyPath"      TYPE="S72">
+       <$/TableDefinition>
+       <$TableDefinition "CreateFolder">
+           <$Column "Directory_"  TYPE="s<$TABLES_LNG_DIRECTORY_COLUMN>"  KEY="Y">
+           <$Column "Component_"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"  KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "Directory">
+           <$Column "Directory"         TYPE="s<$TABLES_LNG_DIRECTORY_COLUMN>"   KEY="Y">
+           <$Column "Directory_Parent"  TYPE="S<$TABLES_LNG_DIRECTORY_COLUMN>">
+           <$Column "DefaultDir"        TYPE="l255">
+       <$/TableDefinition>
+       <$TableDefinition "DrLocator">
+           <$Column "Signature_"  TYPE="s72"   KEY="Y">
+           <$Column "Parent"      TYPE="S72"   KEY="Y">
+           <$Column "Path"        TYPE="S255"  KEY="Y">
+           <$Column "Depth"       TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "Environment">
+           <$Column "Environment"  TYPE="s72"   KEY="Y">
+           <$Column "Name"         TYPE="l255">
+           <$Column "Value"        TYPE="L255">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "Error">
+           <$Column "Error"    TYPE="i2"  KEY="Y">
+           <$Column "Message"  TYPE="L0">
+       <$/TableDefinition>
+       <$TableDefinition "Feature">
+           <$Column "Feature"         TYPE="s<$TABLES_LNG_FEATURE_COLUMN>"   KEY="Y">
+           <$Column "Feature_Parent"  TYPE="S<$TABLES_LNG_FEATURE_COLUMN>">
+           <$Column "Title"           TYPE="L64">
+           <$Column "Description"     TYPE="L255">
+           <$Column "Display"         TYPE="I2">
+           <$Column "Level"           TYPE="i2">
+           <$Column "Directory_"      TYPE="S<$TABLES_LNG_DIRECTORY_COLUMN>">
+           <$Column "Attributes"      TYPE="i2">
+       <$/TableDefinition>
+       <$TableDefinition "FeatureComponents">
+           <$Column "Feature_"    TYPE="s<$TABLES_LNG_FEATURE_COLUMN>"    KEY="Y">
+           <$Column "Component_"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"  KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "File">
+           <$Column "File"        TYPE="s<$TABLES_LNG_FILE_COLUMN>"   KEY="Y">
+           <$Column "Component_"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "FileName"    TYPE="l255">
+           <$Column "FileSize"    TYPE="i4">
+           <$Column "Version"     TYPE="S72">
+           <$Column "Language"    TYPE="S20">
+           <$Column "Attributes"  TYPE="I2">
+           <$Column "Sequence"    TYPE="i<$TABLES_FILE_SEQ_NUMBER_LIMIT>">
+       <$/TableDefinition>
+       <$TableDefinition "Icon">
+           <$Column "Name"  TYPE="s72"  KEY="Y">
+           <$Column "Data"  TYPE="v0">
+       <$/TableDefinition>
+       <$TableDefinition "IniFile">
+           <$Column "IniFile"      TYPE="s72"   KEY="Y">
+           <$Column "FileName"     TYPE="l255">
+           <$Column "DirProperty"  TYPE="S72">
+           <$Column "Section"      TYPE="l96">
+           <$Column "Key"          TYPE="l128">
+           <$Column "Value"        TYPE="l255">
+           <$Column "Action"       TYPE="i2">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "InstallExecuteSequence">
+           <$Column "Action"     TYPE="s72"   KEY="Y">
+           <$Column "Condition"  TYPE="S255">
+           <$Column "Sequence"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "InstallUISequence">
+           <$Column "Action"     TYPE="s72"   KEY="Y">
+           <$Column "Condition"  TYPE="S255">
+           <$Column "Sequence"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "LaunchCondition">
+           <$Column "Condition"    TYPE="s255"  KEY="Y">
+           <$Column "Description"  TYPE="l255">
+       <$/TableDefinition>
+       <$TableDefinition "LockPermissions">
+           <$Column "LockObject"  TYPE="s72"   KEY="Y">
+           <$Column "Table"       TYPE="s32"   KEY="Y">
+           <$Column "Domain"      TYPE="S255"  KEY="Y">
+           <$Column "User"        TYPE="s255"  KEY="Y">
+           ;<$Column "Permission"  TYPE="I4">            ;;Original and documented value - HOWEVER darice say it should not be null
+           <$Column "Permission"  TYPE="i4">             ;;Cause failure if null passed
+       <$/TableDefinition>
+       <$TableDefinition "Media">
+           <$Column "DiskId"        TYPE="i2"    KEY="Y">
+           <$Column "LastSequence"  TYPE="i<$TABLES_FILE_SEQ_NUMBER_LIMIT>">
+           <$Column "DiskPrompt"    TYPE="L<$TABLES_LNG_MEDIA_DISKPROMPT>">
+           <$Column "Cabinet"       TYPE="S255">
+           <$Column "VolumeLabel"   TYPE="S<$TABLES_LNG_MEDIA_VOLUMELABEL>">
+           <$Column "Source"        TYPE="S32">
+       <$/TableDefinition>
+       <$TableDefinition "Property">
+           <$Column "Property"  TYPE="s72"  KEY="Y">
+           <$Column "Value"     TYPE="l0">
+       <$/TableDefinition>
+       <$TableDefinition "Registry">
+           <$Column "Registry"    TYPE="s72"   KEY="Y">
+           <$Column "Root"        TYPE="i2">
+           <$Column "Key"         TYPE="l255">
+           <$Column "Name"        TYPE="L255">
+           <$Column "Value"       TYPE="L0">
+           <$Column "Component_"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "RegLocator">
+           <$Column "Signature_"  TYPE="s72"   KEY="Y">
+           <$Column "Root"        TYPE="i2">
+           <$Column "Key"         TYPE="s255">
+           <$Column "Name"        TYPE="S255">
+           <$Column "Type"        TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "SelfReg">
+           <$Column "File_"  TYPE="s<$TABLES_LNG_FILE_COLUMN>"  KEY="Y">
+           <$Column "Cost"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "ServiceControl">
+           <$Column "ServiceControl"  TYPE="s72"   KEY="Y">
+           <$Column "Name"            TYPE="l255">
+           <$Column "Event"           TYPE="i2">
+           <$Column "Arguments"       TYPE="L255">
+           <$Column "Wait"            TYPE="I2">
+           <$Column "Component_"      TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "ServiceInstall">
+           <$Column "ServiceInstall"  TYPE="s72"   KEY="Y">
+           <$Column "Name"            TYPE="s255">
+           <$Column "DisplayName"     TYPE="L255">
+           <$Column "ServiceType"     TYPE="i4">
+           <$Column "StartType"       TYPE="i4">
+           <$Column "ErrorControl"    TYPE="i4">
+           <$Column "LoadOrderGroup"  TYPE="S255">
+           <$Column "Dependencies"    TYPE="S255">
+           <$Column "StartName"       TYPE="S255">
+           <$Column "Password"        TYPE="S255">
+           <$Column "Arguments"       TYPE="S255">
+           <$Column "Component_"      TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "Description"     TYPE="L255">
+       <$/TableDefinition>
+       <$TableDefinition "Shortcut">
+           <$Column "Shortcut"     TYPE="s72"   KEY="Y">
+           <$Column "Directory_"   TYPE="s<$TABLES_LNG_DIRECTORY_COLUMN>">
+           <$Column "Name"         TYPE="l128">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "Target"       TYPE="s72">
+           <$Column "Arguments"    TYPE="S255">
+           <$Column "Description"  TYPE="L255">
+           <$Column "Hotkey"       TYPE="I2">
+           <$Column "Icon_"        TYPE="S72">
+           <$Column "IconIndex"    TYPE="I2">
+           <$Column "ShowCmd"      TYPE="I2">
+           <$Column "WkDir"        TYPE="S72">
+           #if  ['<$TABLES_SHORTCUT_DEFINE_WI_4_COLS $$UPPER>' <> 'N']
+                ;--- Only defined In Windows Installer V4 (previous versions should ignore) ---
+                <$Column "DisplayResourceDLL"      TYPE="S100">
+                <$Column "DisplayResourceId"       TYPE="I4">
+                <$Column "DescriptionResourceDLL"  TYPE="S100">
+                <$Column "DescriptionResourceId"   TYPE="I4">
+
+                ;--- Do we want to be nagged about schema? ------------------
+                #define? TABLES_SHORTCUT_NAG_ABOUT_NEEDING_WI4 N
+                #if ['<$TABLES_SHORTCUT_NAG_ABOUT_NEEDING_WI4 $$UPPER>' = 'N']
+                    ;--- Ignore the ICE66 message ---------------------------
+                    <$MsiValFilter "Complete functionality of the Shortcut table is only available with Windows Installer version 4.0" Comment=^Prevents nagging if not generating msis requiring Windows Installer version 4^>
+                #endif
+           #endif
+       <$/TableDefinition>
+       <$TableDefinition "Signature">
+           <$Column "Signature"   TYPE="s72"   KEY="Y">
+           <$Column "FileName"    TYPE="s255">
+           <$Column "MinVersion"  TYPE="S20">
+           <$Column "MaxVersion"  TYPE="S20">
+           <$Column "MinSize"     TYPE="I4">
+           <$Column "MaxSize"     TYPE="I4">
+           <$Column "MinDate"     TYPE="I4">
+           <$Column "MaxDate"     TYPE="I4">
+           <$Column "Languages"   TYPE="S255">
+       <$/TableDefinition>
+       <$TableDefinition "Upgrade">
+           <$Column "UpgradeCode"     TYPE="s38"   KEY="Y">
+           <$Column "VersionMin"      TYPE="S20"   KEY="Y">
+           <$Column "VersionMax"      TYPE="S20"   KEY="Y">
+           <$Column "Language"        TYPE="S255"  KEY="Y">
+           <$Column "Attributes"      TYPE="i4"    KEY="Y">
+           <$Column "Remove"          TYPE="S255">
+           <$Column "ActionProperty"  TYPE="s72">
+       <$/TableDefinition>
+       <$TableDefinition "_InstallValidate">
+           <$Column "Action"       TYPE="s50"   KEY="Y">
+           <$Column "SectionFlag"  TYPE="i2">
+           <$Column "Description"  TYPE="S255">
+       <$/TableDefinition>
+       <$TableDefinition "_Required">
+           <$Column "Table"        TYPE="s50"   KEY="Y">
+           <$Column "Value"        TYPE="s255"  KEY="Y">
+           <$Column "KeyCount"     TYPE="i2">
+           <$Column "Description"  TYPE="S255">
+       <$/TableDefinition>
+       <$TableDefinition "_Sequence">
+           <$Column "Action"       TYPE="s50"  KEY="Y">
+           <$Column "Dependent"    TYPE="s50"  KEY="Y">
+           <$Column "After"        TYPE="i2">
+           <$Column "Optional"     TYPE="i2">
+       <$/TableDefinition>
+       <$TableDefinition "_Streams">
+           <$Column "Name"         TYPE="s62"  KEY="Y">
+           <$Column "Data"         TYPE="V0">
+       <$/TableDefinition>
+       <$TableDefinition "_Storages">
+           <$Column "Name"         TYPE="s62"  KEY="Y">
+           <$Column "Data"         TYPE="V0">
+       <$/TableDefinition>
+       <$TableDefinition "_Validation">
+           <$Column "Table"        TYPE="s32"   KEY="Y">
+           <$Column "Column"       TYPE="s32"   KEY="Y">
+           <$Column "Nullable"     TYPE="s4">
+           <$Column "MinValue"     TYPE="I4">
+           <$Column "MaxValue"     TYPE="I4">
+           <$Column "KeyTable"     TYPE="S255">
+           <$Column "KeyColumn"    TYPE="I2">
+           <$Column "Category"     TYPE="S32">
+           <$Column "Set"          TYPE="S255">
+           <$Column "Description"  TYPE="S255">
+       <$/TableDefinition>
+   #endif
+
+   ;--- Want Merge module related tables? -----------------------------------
+   #ifndef TABLES_DONT_DEFINE_MERGE_MODULE_TABLES
+       #(
+           #define @@MmSeqTable
+           <$TableDefinition "{$#1}">
+               <$Column "Action"     TYPE="s64"  KEY="Y">
+               <$Column "Sequence"   TYPE="I2">
+               <$Column "BaseAction" TYPE="S64">
+               <$Column "After"      TYPE="I2">
+               <$Column "Condition"  TYPE="S255">
+           <$/TableDefinition>
+       #)
+       <$@@MmSeqTable "ModuleAdminExecuteSequence">
+       <$@@MmSeqTable "ModuleAdminUISequence">
+       <$@@MmSeqTable "ModuleAdvtExecuteSequence">
+       <$@@MmSeqTable "ModuleAdvtUISequence">
+       <$@@MmSeqTable "ModuleInstallExecuteSequence">
+       <$@@MmSeqTable "ModuleInstallUISequence">
+       <$TableDefinition "ModuleComponents">
+           <$Column "Component" TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>" KEY="Y">
+           <$Column "ModuleID"  TYPE="s72"                             KEY="Y">
+           <$Column "Language"  TYPE="i2"                              KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "ModuleDependency">
+           <$Column "ModuleID"         TYPE="s72" KEY="Y">
+           <$Column "ModuleLanguage"   TYPE="i2"  KEY="Y">
+           <$Column "RequiredID"       TYPE="s72" KEY="Y">
+           <$Column "RequiredLanguage" TYPE="i2"  KEY="Y">
+           <$Column "RequiredVersion"  TYPE="S32">
+       <$/TableDefinition>
+       <$TableDefinition "ModuleExclusion">
+           <$Column "ModuleID"           TYPE="s72" KEY="Y">
+           <$Column "ModuleLanguage"     TYPE="i2"  KEY="Y">
+           <$Column "ExcludedID"         TYPE="s72" KEY="Y">
+           <$Column "ExcludedLanguage"   TYPE="i2"  KEY="Y">
+           <$Column "ExcludedMinVersion" TYPE="S32">
+           <$Column "ExcludedMaxVersion" TYPE="S32">
+       <$/TableDefinition>
+       <$TableDefinition "ModuleIgnoreTable">
+           <$Column "Table" TYPE="s72" KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "ModuleSignature">
+           <$Column "ModuleID"  TYPE="s72"  KEY="Y">
+           <$Column "Language"  TYPE="i2"   KEY="Y">
+           <$Column "Version"   TYPE="s32">
+       <$/TableDefinition>
+   #endif
+
+   ;--- Want other standard MSI tables --------------------------------------
+   #ifndef TABLES_DONT_DEFINE_OTHER_TABLES
+       ;--- Set up standard tables not already mentioned above --------------
+       <$TableDefinition "AppId">
+           <$Column "AppId"                 TYPE="s38"   KEY="Y">
+           <$Column "RemoteServerName"      TYPE="S255">
+           <$Column "LocalService"          TYPE="S255">
+           <$Column "ServiceParameters"     TYPE="S255">
+           <$Column "DllSurrogate"          TYPE="S255">
+           <$Column "ActivateAtStorage"     TYPE="I2">
+           <$Column "RunAsInteractiveUser"  TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "BBControl">
+           <$Column "Billboard_"  TYPE="s50"  KEY="Y">
+           <$Column "BBControl"   TYPE="s50"  KEY="Y">
+           <$Column "Type"        TYPE="s50">
+           <$Column "X"           TYPE="i2">
+           <$Column "Y"           TYPE="i2">
+           <$Column "Width"       TYPE="i2">
+           <$Column "Height"      TYPE="i2">
+           <$Column "Attributes"  TYPE="I4">
+           <$Column "Text"        TYPE="L50">
+       <$/TableDefinition>
+       <$TableDefinition "Billboard">
+           <$Column "Billboard"  TYPE="s50"  KEY="Y">
+           <$Column "Feature_"   TYPE="s<$TABLES_LNG_FEATURE_COLUMN>">
+           <$Column "Action"     TYPE="S50">
+           <$Column "Ordering"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "BindImage">
+           <$Column "File_"  TYPE="s<$TABLES_LNG_FILE_COLUMN>"   KEY="Y">
+           <$Column "Path"   TYPE="S255">
+       <$/TableDefinition>
+       <$TableDefinition "CCPSearch">
+           <$Column "Signature_"  TYPE="s72"  KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "CheckBox">
+           <$Column "Property"  TYPE="s72"  KEY="Y">
+           <$Column "Value"     TYPE="S64">
+       <$/TableDefinition>
+       <$TableDefinition "Class">
+           <$Column "CLSID"             TYPE="s38"   KEY="Y">
+           <$Column "Context"           TYPE="s32"   KEY="Y">
+           <$Column "Component_"        TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"   KEY="Y">
+           <$Column "ProgId_Default"    TYPE="S255">
+           <$Column "Description"       TYPE="L255">
+           <$Column "AppId_"            TYPE="S38">
+           <$Column "FileTypeMask"      TYPE="S255">
+           <$Column "Icon_"             TYPE="S72">
+           <$Column "IconIndex"         TYPE="I2">
+           <$Column "DefInprocHandler"  TYPE="S32">
+           <$Column "Argument"          TYPE="S255">
+           <$Column "Feature_"          TYPE="s<$TABLES_LNG_FEATURE_COLUMN>">
+           <$Column "Attributes"        TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "ComboBox">
+           <$Column "Property"  TYPE="s72"  KEY="Y">
+           <$Column "Order"     TYPE="i2"   KEY="Y">
+           <$Column "Value"     TYPE="s64">
+           <$Column "Text"      TYPE="L64">
+       <$/TableDefinition>
+       <$TableDefinition "CompLocator">
+           <$Column "Signature_"   TYPE="s72"  KEY="Y">
+           <$Column "ComponentId"  TYPE="s38">
+           <$Column "Type"         TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "Complus">
+           <$Column "Component_"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"  KEY="Y">
+           <$Column "ExpType"     TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "Condition">
+           <$Column "Feature_"   TYPE="s<$TABLES_LNG_FEATURE_COLUMN>"   KEY="Y">
+           <$Column "Level"      TYPE="i2"    KEY="Y">
+           <$Column "Condition"  TYPE="S255">
+       <$/TableDefinition>
+       <$TableDefinition "Control">
+           <$Column "Dialog_"       TYPE="s72"  KEY="Y">
+           <$Column "Control"       TYPE="s50"  KEY="Y">
+           <$Column "Type"          TYPE="s20">
+           <$Column "X"             TYPE="i2">
+           <$Column "Y"             TYPE="i2">
+           <$Column "Width"         TYPE="i2">
+           <$Column "Height"        TYPE="i2">
+           <$Column "Attributes"    TYPE="I4">
+           <$Column "Property"      TYPE="S50">
+           <$Column "Text"          TYPE="L0">
+           <$Column "Control_Next"  TYPE="S50">
+           <$Column "Help"          TYPE="L<$TABLES_LNG_TBLFLD_CONTROL_HELP>">
+       <$/TableDefinition>
+       <$TableDefinition "ControlCondition">
+           <$Column "Dialog_"    TYPE="s72"   KEY="Y">
+           <$Column "Control_"   TYPE="s50"   KEY="Y">
+           <$Column "Action"     TYPE="s50"   KEY="Y">
+           <$Column "Condition"  TYPE="s255"  KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "ControlEvent">
+           <$Column "Dialog_"    TYPE="s72"   KEY="Y">
+           <$Column "Control_"   TYPE="s50"   KEY="Y">
+           <$Column "Event"      TYPE="s50"   KEY="Y">
+           <$Column "Argument"   TYPE="s255"  KEY="Y">
+           <$Column "Condition"  TYPE="S255"  KEY="Y">
+           <$Column "Ordering"   TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "CustomAction">
+           <$Column "Action"        TYPE="s72"   KEY="Y">
+           <$Column "Type"          TYPE="i2">    ;;Overflows into "ExtendedType"
+           <$Column "Source"        TYPE="S64">
+           <$Column "Target"        TYPE="<$TABLES_TYPE_CustomAction_Target>">
+           #if  ['<$TABLES_DEFINE.CustomAction.ExtendedType $$UPPER>' <> 'N']
+                <$Column "ExtendedType"  TYPE="I4">
+           #endif
+       <$/TableDefinition>
+       <$TableDefinition "Dialog">
+           <$Column "Dialog"           TYPE="s72"   KEY="Y">
+           <$Column "HCentering"       TYPE="i2">
+           <$Column "VCentering"       TYPE="i2">
+           <$Column "Width"            TYPE="i2">
+           <$Column "Height"           TYPE="i2">
+           <$Column "Attributes"       TYPE="I4">
+           <$Column "Title"            TYPE="L128">
+           <$Column "Control_First"    TYPE="s50">
+           <$Column "Control_Default"  TYPE="S50">
+           <$Column "Control_Cancel"   TYPE="S50">
+       <$/TableDefinition>
+       <$TableDefinition "DuplicateFile">
+           <$Column "FileKey"     TYPE="s72"   KEY="Y">
+           <$Column "Component_"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "File_"       TYPE="s<$TABLES_LNG_FILE_COLUMN>">
+           <$Column "DestName"    TYPE="L255">
+           <$Column "DestFolder"  TYPE="S32">
+       <$/TableDefinition>
+       <$TableDefinition "EventMapping">
+           <$Column "Dialog_"    TYPE="s72"  KEY="Y">
+           <$Column "Control_"   TYPE="s50"  KEY="Y">
+           <$Column "Event"      TYPE="s50"  KEY="Y">
+           <$Column "Attribute"  TYPE="s50">
+       <$/TableDefinition>
+       <$TableDefinition "Extension">
+           <$Column "Extension"   TYPE="s255"  KEY="Y">
+           <$Column "Component_"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"   KEY="Y">
+           <$Column "ProgId_"     TYPE="S255">
+           <$Column "MIME_"       TYPE="S64">
+           <$Column "Feature_"    TYPE="s<$TABLES_LNG_FEATURE_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "FileSFPCatalog">
+           <$Column "File_"        TYPE="s<$TABLES_LNG_FILE_COLUMN>"   KEY="Y">
+           <$Column "SFPCatalog_"  TYPE="s255"  KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "Font">
+           <$Column "File_"      TYPE="s<$TABLES_LNG_FILE_COLUMN>"   KEY="Y">
+           <$Column "FontTitle"  TYPE="S128">
+       <$/TableDefinition>
+       <$TableDefinition "IniLocator">
+           <$Column "Signature_"  TYPE="s72"   KEY="Y">
+           <$Column "FileName"    TYPE="s255">
+           <$Column "Section"     TYPE="s96">
+           <$Column "Key"         TYPE="s128">
+           <$Column "Field"       TYPE="I2">
+           <$Column "Type"        TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "IsolatedComponent">
+           <$Column "Component_Shared"       TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"  KEY="Y">
+           <$Column "Component_Application"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"  KEY="Y">
+       <$/TableDefinition>
+       <$TableDefinition "ListBox">
+           <$Column "Property"  TYPE="s72"  KEY="Y">
+           <$Column "Order"     TYPE="i2"   KEY="Y">
+           <$Column "Value"     TYPE="s64">
+           <$Column "Text"      TYPE="L64">
+       <$/TableDefinition>
+       <$TableDefinition "ListView">
+           <$Column "Property"  TYPE="s72"  KEY="Y">
+           <$Column "Order"     TYPE="i2"   KEY="Y">
+           <$Column "Value"     TYPE="s64">
+           <$Column "Text"      TYPE="L64">
+           <$Column "Binary_"   TYPE="S72">
+       <$/TableDefinition>
+       <$TableDefinition "MIME">
+           <$Column "ContentType"  TYPE="s64"   KEY="Y">
+           <$Column "Extension_"   TYPE="s255">
+           <$Column "CLSID"        TYPE="S38">
+       <$/TableDefinition>
+       <$TableDefinition "MoveFile">
+           <$Column "FileKey"       TYPE="s72"   KEY="Y">
+           <$Column "Component_"    TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "SourceName"    TYPE="L255">
+           <$Column "DestName"      TYPE="L255">
+           <$Column "SourceFolder"  TYPE="S72">
+           <$Column "DestFolder"    TYPE="s72">
+           <$Column "Options"       TYPE="i2">
+       <$/TableDefinition>
+       <$TableDefinition "MsiAssembly">
+            <$Column "Component_"       TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>" KEY="Y">
+            <$Column "Feature_"         TYPE="s<$TABLES_LNG_FEATURE_COLUMN>">
+            <$Column "File_Manifest"    TYPE="S<$TABLES_LNG_FILE_COLUMN>">
+            <$Column "File_Application" TYPE="S<$TABLES_LNG_FILE_COLUMN>">
+            <$Column "Attributes"       TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "MsiAssemblyName">
+            <$Column "Component_" TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>" KEY="Y">
+            <$Column "Name"       TYPE="s255" KEY="Y">
+            <$Column "Value"      TYPE="s255">
+       <$/TableDefinition>
+       <$TableDefinition "MsiDigitalCertificate">
+            <$Column "DigitalCertificate"  TYPE="s72"  KEY="Y">
+            <$Column "CertData"            TYPE="v0">
+       <$/TableDefinition>
+       <$TableDefinition "MsiDigitalSignature">
+           <$Column "Table"                TYPE="s32"  KEY="Y">
+           <$Column "SignObject"           TYPE="s72"  KEY="Y">
+           <$Column "DigitalCertificate_"  TYPE="s72">
+           <$Column "Hash"                 TYPE="V0">
+       <$/TableDefinition>
+       <$TableDefinition "MsiPatchHeaders">
+           <$Column "StreamRef"  TYPE="s38"  KEY="Y">
+           <$Column "Header"     TYPE="v0">
+       <$/TableDefinition>
+       <$TableDefinition "ODBCAttribute">
+           <$Column "Driver_"    TYPE="s72"   KEY="Y">
+           <$Column "Attribute"  TYPE="s40"   KEY="Y">
+           <$Column "Value"      TYPE="L255">
+       <$/TableDefinition>
+       <$TableDefinition "ODBCDataSource">
+           <$Column "DataSource"         TYPE="s72"   KEY="Y">
+           <$Column "Component_"         TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "Description"        TYPE="s255">
+           <$Column "DriverDescription"  TYPE="s255">
+           <$Column "Registration"       TYPE="i2">
+       <$/TableDefinition>
+       <$TableDefinition "ODBCDriver">
+           <$Column "Driver"       TYPE="s72"   KEY="Y">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "Description"  TYPE="s255">
+           <$Column "File_"        TYPE="s<$TABLES_LNG_FILE_COLUMN>">
+           <$Column "File_Setup"   TYPE="S<$TABLES_LNG_FILE_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "ODBCSourceAttribute">
+           <$Column "DataSource_"  TYPE="s72"   KEY="Y">
+           <$Column "Attribute"    TYPE="s32"   KEY="Y">
+           <$Column "Value"        TYPE="L255">
+       <$/TableDefinition>
+       <$TableDefinition "ODBCTranslator">
+           <$Column "Translator"   TYPE="s72"   KEY="Y">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "Description"  TYPE="s255">
+           <$Column "File_"        TYPE="s<$TABLES_LNG_FILE_COLUMN>">
+           <$Column "File_Setup"   TYPE="S<$TABLES_LNG_FILE_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "Patch">
+           <$Column "File_"       TYPE="s<$TABLES_LNG_FILE_COLUMN>"        KEY="Y">
+           <$Column "Sequence"    TYPE="i<$TABLES_FILE_SEQ_NUMBER_LIMIT>"  KEY="Y">
+           <$Column "PatchSize"   TYPE="i4">
+           <$Column "Attributes"  TYPE="i2">
+           <$Column "Header"      TYPE="v0">
+           <$Column "StreamRef_"  TYPE="S38">
+       <$/TableDefinition>
+       <$TableDefinition "PatchPackage">
+           <$Column "PatchId"  TYPE="s38"  KEY="Y">
+           <$Column "Media_"   TYPE="i2">
+       <$/TableDefinition>
+       <$TableDefinition "ProgId">
+           <$Column "ProgId"         TYPE="s255"  KEY="Y">
+           <$Column "ProgId_Parent"  TYPE="S255">
+           <$Column "Class_"         TYPE="S38">
+           <$Column "Description"    TYPE="L255">
+           <$Column "Icon_"          TYPE="S72">
+           <$Column "IconIndex"      TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "PublishComponent">
+           <$Column "ComponentId"  TYPE="s38"   KEY="Y">
+           <$Column "Qualifier"    TYPE="s255"  KEY="Y">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"   KEY="Y">
+           <$Column "AppData"      TYPE="L255">
+           <$Column "Feature_"     TYPE="s<$TABLES_LNG_FEATURE_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "RadioButton">
+           <$Column "Property"  TYPE="s72"  KEY="Y">
+           <$Column "Order"     TYPE="i2"   KEY="Y">
+           <$Column "Value"     TYPE="s64">
+           <$Column "X"         TYPE="i2">
+           <$Column "Y"         TYPE="i2">
+           <$Column "Width"     TYPE="i2">
+           <$Column "Height"    TYPE="i2">
+           <$Column "Text"      TYPE="L64">
+           <$Column "Help"      TYPE="L<$TABLES_LNG_TBLFLD_RADIOBUTTON_HELP>">
+       <$/TableDefinition>
+       <$TableDefinition "RemoveFile">
+           <$Column "FileKey"      TYPE="s72"   KEY="Y">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "FileName"     TYPE="L255">
+           <$Column "DirProperty"  TYPE="s72">
+           <$Column "InstallMode"  TYPE="i2">
+       <$/TableDefinition>
+       <$TableDefinition "RemoveIniFile">
+           <$Column "RemoveIniFile"  TYPE="s72"   KEY="Y">
+           <$Column "FileName"       TYPE="l255">
+           <$Column "DirProperty"    TYPE="S72">
+           <$Column "Section"        TYPE="l96">
+           <$Column "Key"            TYPE="l128">
+           <$Column "Value"          TYPE="L255">
+           <$Column "Action"         TYPE="i2">
+           <$Column "Component_"     TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "RemoveRegistry">
+           <$Column "RemoveRegistry"  TYPE="s72"   KEY="Y">
+           <$Column "Root"            TYPE="i2">
+           <$Column "Key"             TYPE="l255">
+           <$Column "Name"            TYPE="L255">
+           <$Column "Component_"      TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+       <$/TableDefinition>
+       <$TableDefinition "ReserveCost">
+           <$Column "ReserveKey"     TYPE="s72"  KEY="Y">
+           <$Column "Component_"     TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>">
+           <$Column "ReserveFolder"  TYPE="S72">
+           <$Column "ReserveLocal"   TYPE="i4">
+           <$Column "ReserveSource"  TYPE="i4">
+       <$/TableDefinition>
+       <$TableDefinition "SFPCatalog">
+           <$Column "SFPCatalog"  TYPE="s255"  KEY="Y">
+           <$Column "Catalog"     TYPE="v0">
+           <$Column "Dependency"  TYPE="S0">
+       <$/TableDefinition>
+       <$TableDefinition "TextStyle">
+           <$Column "TextStyle"  TYPE="s72"  KEY="Y">
+           <$Column "FaceName"   TYPE="s32">
+           <$Column "Size"       TYPE="i2">
+           <$Column "Color"      TYPE="I4">
+           <$Column "StyleBits"  TYPE="I2">
+       <$/TableDefinition>
+       <$TableDefinition "TypeLib">
+           <$Column "LibID"        TYPE="s38"   KEY="Y">
+           <$Column "Language"     TYPE="i2"    KEY="Y">
+           <$Column "Component_"   TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"   KEY="Y">
+           <$Column "Version"      TYPE="I4">
+           <$Column "Description"  TYPE="L128">
+           <$Column "Directory_"   TYPE="S<$TABLES_LNG_DIRECTORY_COLUMN>">
+           <$Column "Feature_"     TYPE="s<$TABLES_LNG_FEATURE_COLUMN>">
+           <$Column "Cost"         TYPE="I4">
+       <$/TableDefinition>
+       <$TableDefinition "UIText">
+           <$Column "Key"   TYPE="s72"   KEY="Y">
+           <$Column "Text"  TYPE="L255">
+       <$/TableDefinition>
+       <$TableDefinition "Verb">
+           <$Column "Extension_"  TYPE="s255"  KEY="Y">
+           <$Column "Verb"        TYPE="s32"   KEY="Y">
+           <$Column "Sequence"    TYPE="I2">
+           <$Column "Command"     TYPE="L255">
+           <$Column "Argument"    TYPE="L255">
+       <$/TableDefinition>
+   #endif
+
+   ;--- Want Device Driver Frameworks tables? -------------------------------
+   #define TABLES_DEFINE_DIFxAPP_TABLES  Y
+   #if  ['<$TABLES_DEFINE_DIFxAPP_TABLES>' <> 'N']
+        <$TableDefinition "MsiDriverPackages">      ;;Schema obtained from the 2.01 "DIFxApp.msm" (doco certainly wrong)
+           <$Column "Component"  TYPE="s<$TABLES_LNG_COMPONENT_COLUMN>"  KEY="Y">
+           <$Column "Flags"      TYPE="i4">
+           <$Column "Sequence"   TYPE="I4">
+        <$/TableDefinition>
+   #endif
+
+   ;--- Want other standard MSI tables --------------------------------------
+   #define TABLES_DEFINE_PATCH_PCH_FILE_TABLES  Y
+   #if  ['<$TABLES_DEFINE_PATCH_PCH_FILE_TABLES>' <> 'N']
+        ;--- Tables for ".PCH" files ----------------------------------------
+        <$TableDefinition "ExternalFiles">
+           <$Column "Family"         TYPE="s8"    KEY="Y">
+           <$Column "FTK"            TYPE="s128"  KEY="Y">
+           <$Column "FilePath"       TYPE="s255"  KEY="Y">
+           <$Column "SymbolPaths"    TYPE="S255">
+           <$Column "IgnoreOffsets"  TYPE="S255">
+           <$Column "IgnoreLengths"  TYPE="S255">
+           <$Column "RetainOffsets"  TYPE="S255">
+           <$Column "Order"          TYPE="i2">
+        <$/TableDefinition>
+        <$TableDefinition "FamilyFileRanges">
+           <$Column "Family"         TYPE="s13"   KEY="Y">
+           <$Column "FTK"            TYPE="s128"  KEY="Y">
+           <$Column "RetainOffsets"  TYPE="s128">
+           <$Column "RetainLengths"  TYPE="s128">
+        <$/TableDefinition>
+        <$TableDefinition "ImageFamilies">
+           <$Column "Family"             TYPE="s8"    KEY="Y">
+           <$Column "MediaSrcPropName"   TYPE="S72">
+           <$Column "MediaDiskId"        TYPE="I2">
+           <$Column "FileSequenceStart"  TYPE="I2">
+           <$Column "DiskPrompt"         TYPE="S128">
+           <$Column "VolumeLabel"        TYPE="S32">
+        <$/TableDefinition>
+        <$TableDefinition "Properties">
+           <$Column "Name"   TYPE="s72"  KEY="Y">
+           <$Column "Value"  TYPE="L0">
+        <$/TableDefinition>
+        <$TableDefinition "PatchSequence">
+           <$Column "PatchFamily"  TYPE="s72"  KEY="Y">
+           <$Column "Target"       TYPE="S38"  KEY="Y">
+           <$Column "Sequence"     TYPE="S72">
+           <$Column "Supersede"    TYPE="I4">
+        <$/TableDefinition>
+        <$TableDefinition "TargetFiles_OptionalData">
+           <$Column "Target"         TYPE="s13"   KEY="Y">
+           <$Column "FTK"            TYPE="s255"  KEY="Y">
+           <$Column "SymbolPaths"    TYPE="S255">
+           <$Column "IgnoreOffsets"  TYPE="S255">
+           <$Column "IgnoreLengths"  TYPE="S255">
+           <$Column "RetainOffsets"  TYPE="S255">
+        <$/TableDefinition>
+        <$TableDefinition "TargetImages">
+           <$Column "Target"                 TYPE="s13"   KEY="Y">
+           <$Column "MsiPath"                TYPE="s255">
+           <$Column "SymbolPaths"            TYPE="S255">
+           <$Column "Upgraded"               TYPE="s13">
+           <$Column "Order"                  TYPE="i2">
+           <$Column "ProductValidateFlags"   TYPE="S16">
+           <$Column "IgnoreMissingSrcFiles"  TYPE="i2">
+        <$/TableDefinition>
+        <$TableDefinition "UpgradedFiles_OptionalData">
+           <$Column "Upgraded"                 TYPE="s13"   KEY="Y">
+           <$Column "FTK"                      TYPE="s255"  KEY="Y">
+           <$Column "SymbolPaths"              TYPE="S255">
+           <$Column "AllowIgnoreOnPatchError"  TYPE="I2">
+           <$Column "IncludeWholeFile"         TYPE="I2">
+        <$/TableDefinition>
+        <$TableDefinition "UpgradedFilesToIgnore">
+           <$Column "Upgraded"  TYPE="s13"   KEY="Y">
+           <$Column "FTK"       TYPE="s255"  KEY="Y">
+        <$/TableDefinition>
+        <$TableDefinition "UpgradedImages">
+           <$Column "Upgraded"      TYPE="s13"   KEY="Y">
+           <$Column "MsiPath"       TYPE="s255">
+           <$Column "PatchMsiPath"  TYPE="S255">
+           <$Column "SymbolPaths"   TYPE="S255">
+           <$Column "Family"        TYPE="s8">
+        <$/TableDefinition>
+        <$TableDefinition "PatchMetadata">
+           <$Column "Company"   TYPE="S72"  KEY="Y">
+           <$Column "Property"  TYPE="s72"  KEY="Y">
+           <$Column "Value"     TYPE="l0">
+        <$/TableDefinition>
+   #endif
+#endif

@@ -1,0 +1,250 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ImportTranslations.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   25 Oct 2005 18:14:42  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ImportTranslations.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;                   Holds small general purpose "utilities" and definitions.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "ImportTranslations.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? IMPORTTRANS_INITIALIZATION_HOOK_BEFORE
+#define? IMPORTTRANS_INITIALIZATION_HOOK_AFTER
+
+
+;----------------------------------------------------------------------------
+;--- Some files we generate -------------------------------------------------
+;----------------------------------------------------------------------------
+#define GetSpecialFolders.VBS <$MAKEMSI_NONCA_SCRIPT_DIR>\GetSpecialFolders.vbs
+#define GetSpecialFolders.TXT <$MAKEMSI_NONCA_SCRIPT_DIR>\GetSpecialFoldersOutput.txt
+
+
+;----------------------------------------------------------------------------
+;--- INITIALIZATION CODE (only done one when needed) ------------------------
+;----------------------------------------------------------------------------
+#(  ''
+    ;--- Invoked when "IniImport" or "RegistryImport" commands used ---------
+    #define IMPORTTRANS_INITIALIZATION
+
+    ;--- Do the work --------------------------------------------------------
+    <$IMPORTTRANS_INITIALIZATION_HOOK_BEFORE>
+    <$IMPORTTRANS_INITIALIZATION_STANDARD>
+    <$IMPORTTRANS_INITIALIZATION_HOOK_AFTER>
+
+    ;--- Only do the initialization once ------------------------------------
+    #define+ IMPORTTRANS_INITIALIZATION
+#)
+#(  ''
+    ;--- Adds all "standard" initializations --------------------------------
+    #define? IMPORTTRANS_INITIALIZATION_STANDARD
+
+    ;--- Work out some basic ------------------------------------------------
+    #DefineRexx ''
+        ;--- C:\WINDOWS -----------------------------------------------------
+        @@WindowsFolder  = GetEnv("SystemRoot", 'Y') || '\';
+        @@SystemFolder   = @@WindowsFolder || 'System32\';
+        @@SystemFolder16 = @@WindowsFolder || 'System\';
+        <$Rexx4ImportTranslationAdd FromExp=^@@SystemFolder^            ToExp=^'[SystemFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^@@SystemFolder16^          ToExp=^'[System16Folder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'%SystemRoot%\System32\'^  ToExp=^'[SystemFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'%SystemRoot%\System\'^    ToExp=^'[System16Folder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'%WinDir%\System32\'^      ToExp=^'[SystemFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'%WinDir%\System\'^        ToExp=^'[System16Folder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\WinNT\System32\'^      ToExp=^'[SystemFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\WinNT\System\'^        ToExp=^'[System16Folder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\Windows\System32\'^    ToExp=^'[SystemFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\Windows\System\'^      ToExp=^'[System16Folder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^@@WindowsFolder^           ToExp=^'[WindowsFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\WinNT\'^               ToExp=^'[WindowsFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\Windows\'^             ToExp=^'[WindowsFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'%SystemRoot%\'^           ToExp=^'[WindowsFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'%WinDir%\'^               ToExp=^'[WindowsFolder]'^>;
+
+        ;--- C:\Program Files -----------------------------------------------
+        @@ProgramFilesFolder       = GetEnv("ProgramFiles",       'Y') || '\';
+        @@CommonProgramFilesFolder = GetEnv("CommonProgramFiles", 'Y') || '\';
+        <$Rexx4ImportTranslationAdd FromExp=^@@CommonProgramFilesFolder^ ToExp=^'[CommonFilesFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^@@ProgramFilesFolder^       ToExp=^'[ProgramFilesFolder]'^>;
+
+        ;--- C:\WINDOWS\TEMP ------------------------------------------------
+        @@TempFolder = GetEnv("Temp", 'Y') || '\';
+        <$Rexx4ImportTranslationAdd FromExp=^@@TempFolder^      ToExp=^'[TempFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\temp'^         ToExp=^'[TempFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\windows\temp'^ ToExp=^'[TempFolder]'^>;
+        <$Rexx4ImportTranslationAdd FromExp=^'C:\WinNT\temp'^   ToExp=^'[TempFolder]'^>;
+
+        ;--- Others ---------------------------------------------------------
+        @@AppDataFolder = GetEnv("APPDATA", 'Y') || '\';
+        <$Rexx4ImportTranslationAdd FromExp=^@@AppDataFolder^ ToExp=^'[AppDataFolder]'^>;
+    #DefineRexx
+
+    ;--- Get more information via executed VBSCRIPT -------------------------
+    <$@@AddSpecialFolders>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- ADD TRANSLATIONS -------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@UpdatesCnt = 0               ;;Number of translations stored
+#(
+    #define ImportTranslationAdd
+    #evaluate ^^ ^<$Rexx4ImportTranslationAdd {$?}>^
+#)
+#DefineRexx 'Rexx4ImportTranslationAdd'
+    ;--- Add the translation ------------------------------------------------
+    @@UpdatesCnt               = @@UpdatesCnt + 1;
+    @@UpdatesFrom.@@UpdatesCnt = {$FromExp};
+    @@UpdatesTo.@@UpdatesCnt   = {$ToExp};
+
+    ;--- Output debug info --------------------------------------------------
+    call DBG  "Rexx4ImportTranslationAdd:"
+    call DBG  ""
+    call DBG  "  FROM: " || @@UpdatesFrom.@@UpdatesCnt;
+    call DBG  "    To: " || @@UpdatesTo.@@UpdatesCnt;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- ADD STANDARD TRANSLATIONS ----------------------------------------------
+;----------------------------------------------------------------------------
+#define @@SF_PREFIX  FOLDER:
+#(
+    #define @@AddSpecialFolders
+
+    ;--- Create the Script we need to run -----------------------------------
+    #( '<?NewLine>'
+    <$FileMake "<$GetSpecialFolders.VBS>">
+        '---
+        '--- Used to determine some folder locations for imported data translations
+        '---
+        <?SyntaxCheck>
+        set oShell = CreateObject("WScript.Shell")
+        Dump "AllUsersDesktop"
+        Dump "Desktop"
+        Dump "AllUsersStartMenu"
+        Dump "StartMenu"
+        Dump "AllUsersPrograms"
+        Dump "Programs"
+        Dump "Favorites"
+        Dump "AllUsersStartup"
+        Dump "Startup"
+        Dump "MyDocuments"
+        Dump "Templates"
+        Dump "Fonts"
+        Dump "SendTo"
+        'Dump "Recent"
+        set oShell = Nothing
+        wscript.quit 333
+
+        <?NewLine><?NewLine>
+        '=======================
+        sub Dump(FolderName)
+        '=======================
+            on error resume next
+            FolderValue = oShell.SpecialFolders(FolderName)
+            if  FolderValue <> "" then
+                wscript.echo "<$@@SF_PREFIX FOLDER> " & FolderName & "=" & FolderValue
+            end if
+        end sub
+    <$/FileMake>
+    #)
+
+    ;--- Execute the script and process results -----------------------------
+    #evaluate ^^ ^<$@@Rexx2ProcessSpecialFolderOutput>^
+#)
+#DefineRexx '@@Rexx2ProcessSpecialFolderOutput'
+    ;--- Execute the script -------------------------------------------------
+    @@TxtFile = '<$GetSpecialFolders.TXT>'
+    call FileDelete @@TxtFile;
+    @@Rc = AddressCmd('cscript.exe //NoLogo "<$GetSpecialFolders.VBS>" > "' || @@TxtFile || '" 2>&1');
+
+    ;--- Read results -------------------------------------------------------
+    if  FileQueryExists(@@TxtFile) <> '' then
+    do
+        do  while lines(@@TxtFile) <> 0
+            parse value linein(@@TxtFile) with '<$@@SF_PREFIX FOLDER> ' @@FolderName '=' @@FolderValue
+            if  @@FolderValue = '' then
+                @@ConvertTo = ''
+            else
+            do
+                select
+                    ;=============================================
+                    when @@FolderName = 'AllUsersPrograms' | @@FolderName = 'Programs' then
+                    ;=============================================
+                        @@ConvertTo = '[ProgramMenuFolder]';
+                    ;=============================================
+                    when @@FolderName = 'AllUsersDesktop' | @@FolderName = 'Desktop' then
+                    ;=============================================
+                        @@ConvertTo = '[DesktopFolder]';
+                    ;=============================================
+                    when @@FolderName = 'AllUsersStartMenu' | @@FolderName = 'StartMenu' then
+                    ;=============================================
+                        @@ConvertTo = '[StartMenuFolder]';
+                    ;=============================================
+                    when @@FolderName = 'AllUsersStartup' | @@FolderName = 'Startup' then
+                    ;=============================================
+                        @@ConvertTo = '[StartupFolder]';
+                    ;=============================================
+                    when @@FolderName = 'Templates' then
+                    ;=============================================
+                        @@ConvertTo = '[TemplateFolder]';
+                    ;=============================================
+                    when @@FolderName = 'Fonts' then
+                    ;=============================================
+                        @@ConvertTo = '[FontsFolder]';
+                    ;=============================================
+                    when @@FolderName = 'MyDocuments' then
+                    ;=============================================
+                        @@ConvertTo = '[PersonalFolder]';
+                    ;=============================================
+                    when @@FolderName = 'MyDocuments' then
+                    ;=============================================
+                        @@ConvertTo = '[FavouritesFolder]';
+                    ;=============================================
+                    when @@FolderName = 'SendTo' then
+                    ;=============================================
+                        @@ConvertTo = '[SendToFolder]';
+                    ;=============================================
+                    otherwise
+                    ;=============================================
+                        @@ConvertTo = ''
+                end;
+            end;
+            if  @@ConvertTo <> '' then
+            do
+                @@FolderValue = @@FolderValue || '\';
+                <$Rexx4ImportTranslationAdd FromExp=^@@FolderValue^  ToExp=^@@ConvertTo^>
+            end;
+        end;
+        call FileClose @@TxtFile;
+    end;
+#DefineRexx
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Makes the changes ------------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'ImportTranslationMake'
+    do  @@j = 1 to @@UpdatesCnt while pos('\', {$Var}) <> 0;
+        {$Var} = ReplaceStringCI({$Var}, @@UpdatesFrom.@@j, @@UpdatesTo.@@j);
+    end;
+#DefineRexx
+
+
+#NextId UNLOCK "ImportTranslations.MMH"

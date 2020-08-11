@@ -1,0 +1,295 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   TOOLTIPS.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.66  $
+;          $Date:   13 Aug 2017 14:37:56  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ToolTips.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;--- VBSCA macros/functions -------------------------------------------------
+<$Tooltip Id="VbsCaEntryName"      Text=^This is the name of the current entry point. MUST be used to modify the return code.^>
+<$Tooltip Id="CaCreateFolder"      Text=^CaCreateFolder() is a VBSCRIPT function to create a directory (makes as many parent directories as required).^>
+<$Tooltip Id="CaDeleteFile"        Text=^CaDeleteFile() is a VBSCRIPT function to delete a file if it exists.^>
+<$Tooltip Id="CaSleep"             Text=^CaSleep() is a VBSCRIPT function to pause processing for the specified number of seconds.^>
+<$Tooltip Id="CaMsgBox"            Text=^CaMsgBox() is a VBSCRIPT/JSCRIPT function to display a message box.^>
+<$Tooltip Id="VbsCaCadGet"         Text=^VbsCaCadGet() is a VBSCRIPT function to retrieve CustomActionData parameters.^>
+<$Tooltip Id="VbsCaCadGetValidate" Text=^VbsCaCadGetValidate() is a VBSCRIPT function to retrieve CustomActionData parameters and validate the value.^>
+<$Tooltip Id="VbsCaRunSync"        Text=^VbsCaRunSync() is a VBSCRIPT function to execute a command line (with logging).^>
+<$Tooltip Id="VbsCaCadReplace"     Text=^VbsCaCadReplace() is a VBSCRIPT function to replace marked symbols in a template.^>
+<$Tooltip Id="CaDebug"             Text=^CaDebug() is a VBSCRIPT/JSCRIPT function to update the progress bar line #2 and log.^>
+<$Tooltip Id="CaGetEnv"            Text=^CaGetEnv() is a VBSCRIPT/JSCRIPT function to get the value of an environment variable.^>
+<$Tooltip Id="CaMkObject"          Text=^CaMkObject() is a VBSCRIPT function to create an object, displays a message and terminates on error.^>
+<$Tooltip Id="VbsCaRaiseError"     Text=^VbsCaRaiseError() is a VBSCRIPT function to generate a VBS trap.^>
+<$Tooltip Id="VbsCaPropertyGet"    Text=^VbsCaPropertyGet() gets the value of a Windows Installer property.^>
+<$Tooltip Id="GetSeqNumber"        Text=^GetSeqNumber() gets an unallocated sequence number in the specified table.^>
+
+;--- COMMANDS ---------------------------------------------------------------
+<$Tooltip Id="CodePage"            Text=^Can be used to set a database's code page.^>
+<$Tooltip Id="ComPlusApp"          Text=^Starts the definition of a COM+ application.^>
+<$Tooltip Id="/ComPlusApp"         Text=^Ends the definition of a COM+ application.^>
+<$Tooltip Id="ComPlusComp"         Text=^Adds a DLL to a COM+ application (contains one or more components).^>
+<$Tooltip Id="ComPlusCompUpdate"   Text=^Starts a block which identifies one or more components to be updated.^>
+<$Tooltip Id="/ComPlusCompUpdate"  Text=^Ends a block which identifies one or more components to be updated.^>
+<$Tooltip Id="ComPlusProperty"     Text=^Sets a property for a COM+ application or its component(s).^>
+<$Tooltip Id="ComPlusRole"         Text=^Defines a role to an application or adds roles to a component.^>
+<$Tooltip Id="ComPlusExport"       Text=^Exports a COM+ application (or its proxy).^>
+<$Tooltip Id="/Component"          Text=^End a block of commands started with the "Component" command.^>
+<$Tooltip Id="/Feature"            Text=^End a block of commands started with the "Feature" command.^>
+<$Tooltip Id="/Msi"                Text=^Close MSI and create HTML documentation.^>
+<$Tooltip ID="MsiExtraFiles"       Text=^Place file(s) relative to the generated MSI.^>
+<$Tooltip ID="MsiValFilter"        Text=^Add to the MSI validation filtering.^>
+<$Tooltip Id="/Row"                Text=^Rarely needed command to complete Row processing.^>
+<$Tooltip Id="/Schedule"           Text=^Marks the end of a task specification.^>
+<$Tooltip Id="/Table"              Text=^Defines the end of actions which apply to a table.^>
+<$Tooltip Id="/TableDefinition"    Text=^End s table definition.^>
+<$Tooltip Id="AbortIf"             Text=^Tests a condition and aborts if true.^>
+<$Tooltip Id="Access"              Text=^Defines basic access permissions for users which can be used by other commands.^>
+<$Tooltip Id="AccessApply"         Text=^Useful for adding security information to pre-existing items.^>
+<$Tooltip Id="Binary"              Text=^Adds a file to the MSI "Binary" table.^>
+<$Tooltip Id="Column"              Text=^Defines the format of a single MSI table's column.^>
+<$Tooltip Id="Compile"             Text=^The "compile" command compiles all files added since last compile.^>
+<$Tooltip Id="Commands"            Text=^Commands such as 'Feature' are implemented as PPWIZARD macros. You can of course create your own commands.^>
+<$Tooltip Id="Component"           Text=^Used to create or update a component or make it the default.^>
+<$Tooltip Id="Component?"          Text=^Gets the name of the "current" component (will fail by default if no "current").^>
+<$Tooltip Id="ComponentFind"       Text=^See if a component is installed (component install path returned if so).^>
+<$Tooltip Id="ProductFind"         Text=^Check if product(s) matching an UpgradeCode is installed.^>
+<$Tooltip Id="Feature?"            Text=^Gets the name of the "current" feature (will fail by default if no "current").^>
+<$Tooltip Id="Dialog"              Text=^Start of a block which creates a new dialog.^>
+<$Tooltip Id="/Dialog"             Text=^End of a block which creates a new dialog.^>
+<$Tooltip Id="DialogEntry"         Text=^Create a new entry field along with its label.^>
+<$Tooltip Id="DialogPreview"       Text=^Preview one or more dialogs (all matching the regular expression).^>
+<$Tooltip Id="DialogRemove"        Text=^Remove a dialog from the UI sequence.^>
+<$Tooltip Id="Directory"           Text=^Defines a single (simple) directory in the "Directory" table (or assigns a value via a custom action).^>
+<$Tooltip Id="DirectoryCompress"   Text="This command compresses one or more directories (to save disk space).">
+<$Tooltip Id="DirectoryTree"       Text=^Defines a directory TREE (in MSI "Directory" table). Optionally makes a "CreateFolder" record.^>
+<$Tooltip Id="DllCa"               Text=^Creates a DLL based custom action. DLL from "Binary" table or installed file.^>
+<$Tooltip Id="DllCa-C"             Text=^Starts a block of C/C++ DLL CA code. Creates complete source, compiles and links it to produce a DLL and adds to the MSI.^>
+<$Tooltip Id="/DllCa-C"            Text=^Ends a block of C/C++  DLL CA code.^>
+<$Tooltip Id="DllCaEntry?"         Text=^Provides the "internal" decorated name the provided DLL entry point was exported with.^>
+<$Tooltip Id="DllCaEntry"          Text=^Defines the start of a DLL function to be exported and used by the MSI.^>
+<$Tooltip Id="/DllCaEntry"         Text=^Defines the end of a DLL function to be exported and used by the MSI.^>
+<$Tooltip Id="Environment"         Text=^Manipulates environment variables.^>
+<$Tooltip Id="Feature"             Text=^Used to create or update a feature or make it the default.^>
+<$Tooltip Id="File"                Text=^Adds a single file to the MSI (can create components).^>
+<$Tooltip Id="Files"               Text=^Adds all files matching a filemask (can create components).^>
+<$Tooltip Id="FilesExclude"        Text=^Adds to a file exclude list.^>
+<$Tooltip Id="FilesExcludeClear"   Text=^Clears a file exclude list.^>
+<$Tooltip Id="FileComment"         Text=^Define a comment for a file or extension.^>
+<$Tooltip Id="/FileComment"        Text=^Define the end of a FileComment block.^>
+<$Tooltip Id="FileMake"            Text=^Creates a new file. Only overwrites existing file if "significant" changes in the file!^>
+<$Tooltip Id="/FileMake"           Text=^Marks the end of a file started with the "FileMake" command.^>
+<$Tooltip Id="FileMakeIgnore"      Text=^Starts a section of the file being built which you wish to ignore (what follows is not "significant").^>
+<$Tooltip Id="/FileMakeIgnore"     Text=^Marks the end of a section of the file being built which you wish to ignore (what follows is "significant" - don't ignore).^>
+<$Tooltip Id="RegistryComment"     Text=^Define a comment for a registry entry or key.^>
+<$Tooltip Id="/RegistryComment"    Text=^Define the end of a RegistryComment block.^>
+<$Tooltip Id="FileFind"            Text=^Look for a file that matches your specification (or validate directory existance).^>
+<$Tooltip Id="Launch Conditions"   Text=^A launch condition is a validation that must be passed for the installation to continue.^>
+<$Tooltip Id="Guid"                Text=^Reads GUID from .VER or GUIDS file.^>
+<$Tooltip Id="HookInto"            Text=^The HookInto command is the recommended way of using MAKEMSI hooks.^>
+<$Tooltip Id="MacroCfg"            Text=^The "MacroCfg" command saves a macro's state and optional specify a new value for it.^>
+<$Tooltip Id="/MacroCfg"           Text=^The "/MacroCfg" command restores a previously saved macro's state.^>
+<$Tooltip Id="HtmlDirTable"        Text=^Displays a file listing in the HTML report (Optionally adds these files to list of files verified by the "verify" button).^>
+<$Tooltip Id="Icon"                Text=^Adds an icon file to the MSI "Icon" table.^>
+<$Tooltip Id="MapUserDir"          Text=^Used to map one directory a user might specify to another.^>
+<$Tooltip Id="MergeModule"         Text=^Used to include a merge module.^>
+<$Tooltip Id="Extn"                Text=^Starts a file extension definition.^>
+<$Tooltip Id="ExtnAction"          Text=^Define an action which can be performed on an extension.^>
+<$Tooltip Id="FolderIcon"          Text=^Define an icon, tooltip etc for a directory/folder.^>
+<$Tooltip Id="MajorUpgrade"        Text=^Define products to be uninstalled during this products installation.^>
+<$Tooltip Id="IniImport"           Text=^The IniImport command imports all or parts of an INI file.^>
+<$Tooltip Id="IniFile"             Text=^Define the start of a block of INI file updates.^>
+<$Tooltip Id="/IniFile"            Text=^Define the end of a block of INI file updates.^>
+<$Tooltip Id="IniSection"          Text=^Define the start of an INI file section.^>
+<$Tooltip Id="/IniSection"         Text=^Define the end of an INI file section.^>
+<$Tooltip Id="Adsi"                Text=^Define the start of the creation or update of a ADSI (Active Directory Services Interface) object.^>
+<$Tooltip Id="/Adsi"               Text=^Define the end of the creation or update of a ADSI (Active Directory Services Interface) object.^>
+<$Tooltip Id="Ini"                 Text=^Define a single INI file entry.^>
+<$Tooltip Id="/Extn"               Text=^Ends a file extension definition.^>
+<$Tooltip Id="Msi"                 Text=^Open new or existing MSI (can create new from template).^>
+<$Tooltip Id="Path"                Text=^Used to manipulate "path like" environment variables.^>
+<$Tooltip Id="Platform"            Text=^Define a supported platform.^>
+<$Tooltip Id="Property"            Text=^Updates existing or creates new MSI property.^>
+<$Tooltip Id="PropertyCa"          Text=^Sets up a property at a scheduled time (custom action type 51).^>
+<$Tooltip Id="PropertyList"        Text=^Adds to or creates a property containing a list of items separated by a delimiter.^>
+<$Tooltip Id="Registry"            Text=^Create registry entries.^>
+<$Tooltip Id="RegistryImport"      Text=^Import some or all registry entries in ".reg" file (REGEDIT4 format only).^>
+<$Tooltip Id="RegistryRead"        Text=^Read a registry value into a Windows Installer property.^>
+<$Tooltip Id="RemoveFile"          Text="Removes file(s) or directory on uninstall and/or install.">
+<$Tooltip Id="Row"                 Text=^Creates new row or updates one or more rows of an MSI table.^>
+<$Tooltip Id="Schedule"            Text=^Marks the start of a task specification.^>
+<$Tooltip Id="Transform"           Text=^Creates a ".mst" (transform).^>
+<$Tooltip Id="Vbs"                 Text=^Indicates the start of a user block of VBSCRIPT code.^>
+<$Tooltip Id="/Vbs"                Text=^Indicates the end of a user block of VBSCRIPT code.^>
+<$Tooltip Id="ExeCa"               Text=^Creates an EXE custom action. EXE from "Binary" table or on filesystem.^>
+<$Tooltip Id="RunCmd"              Text=^Will execute an external or OS command (file passed).^>
+<$Tooltip Id="/RunCmd"             Text=^Marks the end of the file to be passed to the "RUNCMD" command.^>
+<$Tooltip Id="VbsCa"               Text=^Defines the start of VBSCRIPT being added to the "Binary" table.^>
+<$Tooltip Id="/VbsCa"              Text=^Defines the end of VBSCRIPT being added to the "Binary" table.^>
+<$Tooltip Id="VbsCaSetup"          Text=^Sets up a VBSCRIPT based custom action.^>
+<$Tooltip Id="VbsCaEntry"          Text=^Defines the start of a VBSCRIPT custom action function (entry point).^>
+<$Tooltip Id="/VbsCaEntry"         Text=^Defines the end of a VBSCRIPT custom action function (entry point).^>
+<$Tooltip Id="JsCa"               Text=^Defines the start of JSCRIPT being added to the "Binary" table.^>
+<$Tooltip Id="/JsCa"              Text=^Defines the end of JSCRIPT being added to the "Binary" table.^>
+<$Tooltip Id="JsCaSetup"          Text=^Sets up a JSCRIPT based custom action.^>
+<$Tooltip Id="JsCaEntry"          Text=^Defines the start of a JSCRIPT custom action function (entry point).^>
+<$Tooltip Id="/JsCaEntry"         Text=^Defines the end of a JSCRIPT custom action function (entry point).^>
+<$Tooltip Id="RowsDelete"          Text=^Delete any row matching an SQL "WHERE" clause.^>
+<$Tooltip Id="RowsDeleteAll"       Text=^Delete all table rows.^>
+;<$Tooltip Id="SelfRegImport"       Text=^Captured Self Registration information of EXE, DLL and OCX binaries.^>
+<$Tooltip Id="SelfRegister"        Text=^Self register a binary executable file.^>
+<$Tooltip Id="ServiceControl"      Text=^Stops, starts or deletes services during install or uninstall.^>
+<$Tooltip Id="ServiceInstall"      Text=^Creates a system service.^>
+<$Tooltip Id="SourceFile"          Text=^Add file to HTML report, record details in property etc...^>
+<$Tooltip Id="Shortcut"            Text=^Creates a shortcut.^>
+<$Tooltip Id="ShortcutUrl"         Text=^Creates a shortcut to a URL such as "http://www.google.com".^>
+<$Tooltip Id="Summary"             Text=^Sets a summary information property.^>
+<$Tooltip Id="Table"               Text=^Changes the "Current Table". Following commands apply to the named table.^>
+<$Tooltip Id="TableCreate"         Text=^Create an MSI table.^>
+<$Tooltip Id="TableDefinition"     Text=^Define a table (MAKEMSI needs to know what each table looks like).^>
+<$Tooltip Id="TableDelete"         Text=^Deletes an MSI table.^>
+<$Tooltip Id="TableExportToIdt"    Text=^Export tables(s) to ".IDT" files (extracting any associated binary files).^>
+<$Tooltip Id="TableImportFromIdt"  Text=^Import ".IDT" files (perhaps exported by ORCA).^>
+<$Tooltip Id="WrapInstall"         Text=^Used to invoke a separate product's installer at install (and also usually at uninstall).^>
+
+
+;--- Tools ------------------------------------------------------------------
+<$Tooltip Id="Tools"              Text=^Collection of MSI or MAKEMSI related tools and MSI related documentation and web links.^>
+<$Tooltip Id="DTREG.EXE"          Text="DTREG.EXE - A command line based tool for registry manipulation.">
+<$Tooltip Id="FindMult.VBS"       Text="FindMult.VBS - A tool used to filter MSI validation messages.">
+<$Tooltip Id="MsiSync.VBS"        Text="MsiSync.VBS - Ensures that a users installed MSIs match those in a common location.">
+<$Tooltip Id="Install Assistant.EXE" Text="Wraps an MSI to create an EXE program.">
+<$Tooltip Id="GPRESULT.EXE"       Text=^GPRESULT.EXE - A Microsoft "Resource Pro Kit" utility to dump group policy settings.^>
+<$Tooltip Id="JT.EXE"             Text=^JT.EXE - A Microsoft utility to create task schedules (under NT, 2000 and XP).^>
+<$Tooltip Id="SCHTASKS.EXE"       Text=^SCHTASKS.EXE - A Microsoft utility to create task schedules (for XP and 2000, installed with XP).^>
+<$Tooltip Id="MAKECAB.EXE"        Text=^MAKECAB.EXE - A free Microsoft tool for creating ".CAB" files.^>
+<$Tooltip Id="WIndows Installer SDK"   Text=^Free Tools from Microsoft. Badly organised random collection of "stuff" (some quite useful).^>
+<$Tooltip Id="MSI.CHM"            Text="MSI.CHM - Microsoft's MSI documentation. Not very good but still its all there is...">
+<$Tooltip Id="MSIDIFF.VBS"        Text=^MsiDiff.VBS - A tool which either dumps (decompiles) an MSI, or dumps the differences between 2 versions.^>
+<$Tooltip Id="MSIVAL2"            Text="MSIVAL2.EXE - Command line based MSI Validation tool.">
+<$Tooltip Id="ORCA"               Text="ORCA.EXE - Manipulates MSI tables/rows. Can be useful for double checking MAKEMSI output.">
+<$Tooltip Id="Windows Installer CleanUp Utility" Text=^Useful tool to remove most traces of an installed product that may be difficult to uninstall (doesn't remove resources - files etc)^>
+<$Tooltip Id="PROCESS EXPLORER"   Text=^A must have replacement for the standard Task Manager. Provides much more information including process command line.^>
+<$Tooltip Id="Virtual Machines"   Text=^Virtual machines are very useful as they provide a stardard test environment and/or remove the need for many physical machines.^>
+<$Tooltip Id="SC.EXE"             Text="SC.EXE - A command line program used for communicating/configuring the NT Service Controller and services.">
+<$Tooltip Id="OSQL.EXE"           Text=^Apply ".SQL" files to a database.^>
+<$Tooltip Id="PPWIZARD"           Text=^PPWIZARD - Very powerful and free preprocessor. Processes MAKEMSI commands.^>
+;<$Tooltip Id="SelfRegCapture.exe" Text=^SelfRegCapture.exe - A tool which monitors self registration of EXE, DLL and OCX binaries.^>
+<$Tooltip Id="SRVSTART.EXE"       Text=^SRVSTART.EXE - A free tool that allows VBSCRIPTs or other command line based processes to be used as Windows NT/2000 services.^>
+<$Tooltip Id="STRFINFO.EXE"       Text=^STRFINFO.EXE - Tool to capture file version information.^>
+<$Tooltip Id="TEE.REX"            Text=^TEE.REX - Tool to copy stdout to a file (splits output).^>
+
+;--- Windows Installer Basics -----------------------------------------------
+<$ToolTip ID="Windows Installer Basics" Text=^Provides basic Windows Installer information and links (not a replacement for Windows Installer documentation).^>
+<$ToolTip ID="Advertising"       Text=^Windows Installer Advertising allows self-repair of damaged applications as well as install on demand.^>
+<$ToolTip ID="Components"        Text=^A Windows Installer "component" is the smallest installation unit.^>
+<$ToolTip ID="Conditions"        Text=^A Windows Installer "condition" is used to decide when or if something should be done.^>
+<$ToolTip ID="Custom Actions"    Text=^A "custom action" is what is used to do things that Windows Installer does not directly support.^>
+<$ToolTip ID="Features"          Text=^A Windows Installer "feature" generally reflects a choice a user will make at installation time (to install or not to install). It can also be used to control the destination directories of files you wish to install.^>
+<$ToolTip ID="Directories"       Text=^Windows Installer identifies each installation directory via a "KEY" and you may allow a user to alter the default installation location.^>
+<$ToolTip ID="Shortcuts"         Text=^Explains Windows Installer shortcuts (advertised and "traditional").^>
+<$ToolTip ID="Formatted Strings" Text=^Windows Installer has a very basic syntax which allows you to refer to properties.^>
+
+
+;--- ICE related ------------------------------------------------------------
+<$ToolTip ID="Ice"              Text=^This command defines the start of a validation.^>
+<$ToolTip ID="/Ice"             Text=^This command defines the end of a validation.^>
+<$ToolTip ID="IceEndMainline"   Text=^This command indicates the end of your validation mainline and the start of called functions and subroutines.^>
+<$ToolTip ID="IceCheck4Err()"   Text="IceCheck4Err(): Displays a error message if err.number if non-zero.">
+<$ToolTip ID="IceFatal()"       Text="IceFatal(): Displays a fatal error to do with the validation process itself (rather than the database being validated).">
+<$ToolTip ID="IceDebug()"       Text=^IceDebug(): Output some debug text (method configurable).^>
+<$ToolTip ID="IceInfo()"        Text=^IceInfo(): Generates a validation INFORMATIONAL message.^>
+<$ToolTip ID="IceError()"       Text=^IceError(): Generates a validation ERROR message.^>
+<$ToolTip ID="IceLocation()"    Text=^IceLocation(): Tells ORCA what table/row/column the message applies to.^>
+<$ToolTip ID="IceWarning()"     Text=^IceWarning(): Generates a validation WARNING message.^>
+<$ToolTip ID="IceViewClose()"   Text=^IceViewClose(): Closes a previously opened SQL query.^>
+<$ToolTip ID="IceViewOpen()"    Text=^IceViewOpen(): Opens a view given an SQL query.^>
+<$ToolTip ID="IceViewFetch()"   Text=^IceViewFetch(): Retrieves the next record in a previously opened SQL query.^>
+
+<$ToolTip ID="MsmSuffix"          Text=^Outputs the Microsoft recommended key suffix (ensures no key clashes on merges).^>
+<$ToolTip ID="MsmSystemDirectory" Text=^Correctly defines a system directory in a merge module.^>
+
+;--- Parameters -------------------------------------------------------------
+<$ToolTip ID="Parameter Quoting"     Text=^Describes how parameters can be quoted.^>
+<$ToolTip ID="Mandatory Parameters"  Text=^Manditory parameters must always be supplied. Virtually any character can be used as a quote.^>
+<$ToolTip ID="Optional Parameters"   Text=^Optional parameters may not always be required. Virtually any character can be used as a quote.^>
+<$ToolTip ID="Unnamed Parameters"    Text=^An unnamed parameter. Double and single quotes are preferred, any other characters must be preceeded by an EQUAL sign.^>
+
+
+;--- OTHER ------------------------------------------------------------------
+<$Tooltip ID="VbExp"               Text=^The "VbExp" macro allows you to imbed an expression which is evaluated at INSTALLATION time, into most commands that otherwise only take literal values.^>
+<$Tooltip ID="Configuration Header Files" Text=^A configuration header file you use to personalise (and generally load) MAKEMSI. It frequently sets up macros, MAKEMSI options/defaults and user interface options.^>
+<$Tooltip Id="CustomActionData"   Text=^The only Windows Installer mechanism to pass parameters to a deferred custom action.^>
+<$Tooltip Id="MM"                 Text=^Batch file used to invoke MAKEMSI.^>
+<$Tooltip Id="ME.MMH"             Text=^"ME.MMH" is an example of how you should configure the MSI creation framework (with your graphics, text and options).^>
+<$Tooltip Id="DENNIS.MMH"         Text=^"DENNIS.MMH" is an example of how you should configure the MSI creation framework (with your graphics, text and options).^>
+<$Tooltip Id="DEPT.MMH"           Text=^"DEPT.MMH" should never be included (directly) by your script. Holds team specific options and script. Typically included via a configuration header file you create (see "DENNIS.MMH").^>
+<$Tooltip Id="COMPANY.MMH"        Text=^"COMPANY.MMH" should never be included (directly) by your script. Holds company wide type options and script.^>
+<$Tooltip ID="Tweeks"                       Text=^Information about how default MAKEMSI processing can be altered.^>
+<$Tooltip ID=^Compare -&gt; MAKEMSI Format^ Text="Compares two Windows Installer databases. Differences are displayed in a very easy to read format which MAKEMSI can also process.">
+<$Tooltip ID="ScheduleCa"             Text=^Custom Actions need to be scheduled.  This describes the order they are executed (which tables and their sequence number).^>
+<$Tooltip ID="MSI Validation"         Text="MAKEMSI usually performs a final validations step after the MSI updating/creation is completed. This tests for overall consistancy as well as common problems. You can add your own checks if you wish.">
+<$Tooltip ID="Row Validation"         Text="MAKEMSI supports a number of validations options at a single change (database row) level. This can check foreign keys or for invalid null values etc.">
+<$Tooltip ID=^Formatted Strings^      Text=^Windows Installer formatting can be used to substitute properties, directory locations and other information^>
+<$Tooltip ID=^Security Related Tools^ Text=^This section describes security related tools such as those that can be used to set user permissions on printers, services, files, directories and registry entries.^>
+<$ToolTip ID="Directory Tree Specification" Text=^MAKEMSI has its own syntax for defining directories.^>
+<$ToolTip ID="Options for Commands"         Text=^A configurable value (macro) which you can change to alter the behaviour of MAKEMSI commands.^>
+<$ToolTip ID=^UpgradeCode^                  Text=^This GUID identifies a family of products, only one of which should be installed at any time.^>
+<$ToolTip ID=^GUIDS^                        Text=^A GUID is a unique identifier. Windows Installer has its own format which looks like: '{094CDD21-7B68-4E79-8C87-7974E316F4AF}'.^>
+<$ToolTip ID=^Properties^                   Text=^Properties can be pre-configured in the 'Property' table, passed on command line or set by custom actions. They frequently hold configuration, state, or directory information.^>
+<$ToolTip ID=^msiexec.exe^                  Text=^MSIEXEC.EXE is the Windows Installer program that installs msis.^>
+<$ToolTip ID=^Per-User Installations^       Text=^Current User (or per-user) installations install the product for the current user only.^>
+<$ToolTip ID=^Per-Machine Installations^    Text=^All user (or per-machine) installations install the product for all users.^>
+
+
+;--- Take care of documented error codes ------------------------------------
+#(  ';'
+    #define TOOLTIP_WI_ERROR_CODES
+
+    ;--- Error code and tooltip (don't use double quotes) -------------------
+    1309=CXan't read file (check exists and permissions)
+    1327=Invalid Drive
+    1335=Cab corrupt (or file install failed)
+    1606=Could not access network location
+    1704=An installation is currently suspended
+    1719=Can't start Windows Installer service!
+    1720=Script Failed
+    1904=Self Registration Failed (prerequisite missing?)
+    1909=Can't create Shortcut
+    2203=Msi can't be opened
+    2205=Table doesn't exist
+    2213=Can't save tables (database probably corrupt)
+    2228=Unknown table used in SQL query
+    2262=Table doesn't exist
+    2705=Could not be linked as tree?
+    2716=Component names not unique to 'x' characters
+    2728=Component table definition error
+    2731=Selection Manager not initialized
+    2756=Directory ID unknown
+    2762=Probably Deferred CA incorrectly sequenced
+    2826=Control placement issue (trivial, ignore them)
+#)
+#DefineRexx ''
+    ;--- Define Tooltip for each code ---------------------------------------
+    @@List  = "<$TOOLTIP_WI_ERROR_CODES>"
+    @@TTCDE = ''
+    @@LT    = '<'
+    do  while @@List <> ''
+        ;--- Get next pair --------------------------------------------------
+        parse var @@List @@CodeAndTT ';' @@List;
+        parse var @@CodeAndTT @@Code '=' @@TT;
+
+        ;--- Save ToolTip ---------------------------------------------------
+        @@TTCDE = @@TTCDE || @@LT || '$ToolTip ID=^' || @@Code || '^ Text=^Windows Installer code for: ' || @@TT || '^>' || d2c(10);
+
+        ;--- Flag that this code has been defined... ------------------------
+        call MacroSet "WI_CODE_" || @@Code, ""
+    end;
+#DefineRexx
+<??@@TTCDE>

@@ -1,0 +1,97 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   STAMP.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.9  $
+;          $Date:   10 Aug 2005 18:43:44  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Stamp.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "STAMP.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- StampSourceDetailsIntoProperty -----------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define    StampSourceDetailsIntoProperty
+   #evaluate ^^ ^<$Rexx4StampSourceDetailsIntoProperty {$?}>^
+#)
+#RexxVar   RxHdrStampCnt = 0
+#DefineRexx 'Rexx4StampSourceDetailsIntoProperty'
+   ;--- Work out the property name ------------------------------------------
+   @@HdrFileName = '{$FileName=^<?InputComponent>^}';
+   @@ShortName   = translate(FilePart('n', @@HdrFileName));   ;;Don't want 2 properties only differing by case
+   @@Type        = '{$Type=^^}';
+   if   @@Type = '' then
+        @@Type = 'Header';
+   @@Property  = '<$MAKEMSI_PROPERTY_PREFIX>' || @@Type || '_' || @@ShortName;
+
+   ;--- Make sure the propery name is a valid identifier (filename used!) ---
+   <$Rexx2FixMsiId IDVAR="@@Property">
+
+   ;--- Work out the value --------------------------------------------------
+   @@Size = AddCommasToDecimalNumber(FileQuerySize(@@HdrFileName));
+   @@Time  = FileQueryDateTime(@@HdrFileName);
+   {$Version=^^ $$RxVar:@@Version}
+   if   @@Version <> "" then
+   do
+        if  @@Version = "?" then
+            @@Version = '';
+        else
+            @@Version = 'v' || @@Version || ', ';
+   end;
+   @@Value = @@HdrFileName || ' (' || @@Version || @@Size || ' bytes, dated ' || @@Time || ')'
+
+   ;--- We may not be able to generate properies at ths time ----------------
+   RxHdrStampCnt            = RxHdrStampCnt + 1;
+   RxHdrStamp.RxHdrStampCnt = @@Property || '00'x || @@Value;
+
+   ;--- Do we wish the file in the HTML report (source code)? ---------------
+   if  '{$ShowFile=^^}' <> '' then
+       error('The "SHOWFILE" parameter is no longer supported', 'Use the "HTML" parameter on the "SourceFile" command instead.');
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Called when package is being closed (applies requests) -----------------
+;----------------------------------------------------------------------------
+#ifdef MSI_ONOPEN_LEAVE_PROPERTIES_ALONE
+    ;--- User does not want other properties so probably doesn't want these ---
+    #define? STAMP_GENERATE_FILE_DETAIL_PROPERTIES N
+#elseif
+    ;--- User probably wants these as well ----------------------------------
+    #define? STAMP_GENERATE_FILE_DETAIL_PROPERTIES Y
+#endif
+#( ''
+   #define    _StampSourceDetailsIntoProperty       ;;Invoked by "/MSI" command
+   #if ['<$STAMP_GENERATE_FILE_DETAIL_PROPERTIES>' <> 'N']
+       ;--- Only generate if creating MSI from scratch ----------------------
+       #evaluate ^^ ^<$@@Rexx4_StampSourceDetailsIntoProperty {$?}>^
+       <??@@Vbs><?RestartLine>
+   #endif
+#)
+#DefineRexx '@@Rexx4_StampSourceDetailsIntoProperty'
+   @@Vbs = ''
+   do  @@I = 1 to RxHdrStampCnt
+       ;--- Split back into property name and value -------------------------
+       parse var RxHdrStamp.@@I @@Name '00'x @@Value;
+
+       ;--- Add to code -----------------------------------------------------
+       @@Vbs = @@Vbs || '<' || '$Property #1="' || @@Name || '"  VALUE=' || Quoted(@@Value) || '><?NewLine>'
+   end;
+#DefineRexx
+
+
+
+
+#NextId UNLOCK "STAMP.MMH"
+

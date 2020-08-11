@@ -1,0 +1,24 @@
+#####################################################################################
+#################################[ SUPPORT ] ########################################
+#####################################################################################
+### This file logs what you see on the console plus much more useful stuff for    ###
+### problem resolution.  There are options that allow you to alter the level      ###
+### of detail in this file.                                                       ###
+### ############################################################################# ###
+### The best place to get help for MAKEMSI specific questions is the MAKEMSI      ###
+### group, see:                                                                   ###
+###                                                                               ###
+###         http://makemsi-manual.dennisbareis.com/the_makemsi_group.htm          ###
+###                                                                               ###
+### For Windows Installer related help its best to ask questions in other forums, ###
+### there are also many sources of msi informations, I have collected a good      ###
+### range of links at:                                                            ###
+###                                                                               ###
+###         http://makemsi-manual.dennisbareis.com/links.htm                      ###
+###                                                                               ###
+### I will probably want you to supply at LEAST this file and the source          ###
+### code ZIPPED up if reporting a problems or bugs...                             ###
+###                                                                               ###
+### Note that I may not be able to help if you are on an old version of MAKEMSI,  ###
+### please try on the latest version before reporting issues.                     ###
+#####################################################################################

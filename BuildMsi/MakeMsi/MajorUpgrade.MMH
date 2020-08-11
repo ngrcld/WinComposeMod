@@ -1,0 +1,362 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MajorUpgrade.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.0  $
+;          $Date:   13 Aug 2017 14:37:50  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MajorUpgrade.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2006
+;                   All rights reserved.
+;      MORE INFO
+;      ~~~~~~~~~
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "MajorUpgrade.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- CONSTANTS for the "CONFIG" parameter -----------------------------------
+;----------------------------------------------------------------------------
+;###[MajorUpgradeOptions]#####################################################################
+;--- The HTML (summary row) Related Options ---------------------------------
+#( '<br>'
+    #define? MAJORUPGRADE_HTMLSUMMROW_DESC
+
+    Any products with these
+       upgrade codes are
+    automatically removed when
+      installing this package
+#)
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_REMOVE        N
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_REQUESTED_AT  Y
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_PROPERTY      N
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_MIN_VERSION   Y
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_MAX_VERSION   Y
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_LANGUAGE      Y
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_REMOVE        N
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_ATTRIBUTES    N
+#define? MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_COMMENT       Y
+
+
+
+;###[MajorUpgradeOptions]#####################################################################
+
+
+
+;----------------------------------------------------------------------------
+;--- CONSTANTS for the "CONFIG" parameter -----------------------------------
+;----------------------------------------------------------------------------
+;###[$MajorUpgradeOptions-DefaultSet]#####################################################################
+;--- See the "config" parameter (which defaults to "DEFAULT") ---------------
+#define? MAJORUPGRADE_DEFAULT_VALIDATE            NEW     ;;Validation performed when row inserted (Don't allow overwrite of info).
+#define? MAJORUPGRADE_DEFAULT_REMOVE              ALL
+#define? MAJORUPGRADE_DEFAULT_COMMENT                     ;;For html report
+#define? MAJORUPGRADE_DEFAULT_VERSION_MIN
+#define? MAJORUPGRADE_DEFAULT_VERSION_MAX
+#define? MAJORUPGRADE_DEFAULT_LANGUAGE
+#define? MAJORUPGRADE_DEFAULT_PREFIX              UPGRADECODE.#.    ;;# = unique number
+#define? MAJORUPGRADE_DEFAULT_PREFIX_MACRO        <$MajorUpgrade_DEFAULT_PREFIX>
+#define? MAJORUPGRADE_DEFAULT_PREFIX_VBVARIABLE   <$MajorUpgrade_DEFAULT_PREFIX>
+#define? MAJORUPGRADE_DEFAULT_PREFIX_GUID         <$MajorUpgrade_DEFAULT_PREFIX>
+#(
+    #define? MAJORUPGRADE_DEFAULT_ATTRIBUTES
+
+    (msidbUpgradeAttributesVersionMinInclusive
+    or
+    msidbUpgradeAttributesVersionMaxInclusive
+    or
+    msidbUpgradeAttributesLanguagesExclusive)
+#)
+;###[$MajorUpgradeOptions-DefaultSet]#####################################################################
+
+;--- Init -------------------------------------------------------------------
+#RexxVar 'ExtraUgCodesCnt' = 0
+#RexxVar '@@MajUpgCmdCnt'  = 0
+
+
+;----------------------------------------------------------------------------
+;--- UpgradeTable Handling --------------------------------------------------
+;----------------------------------------------------------------------------
+#(  ''
+    #define MajorUpgrade
+    ;---
+    ;--- Takes a space separated list of one of these type of values:
+    ;---
+    ;--- 1. A plain GUID (UpgradeCode).
+    ;---    Not recommended as its less obvious what it represents when
+    ;---    looking at the MSI or any verbose logs.
+    ;---
+    ;--- 2. A macro Name (contents is a GUID)
+    ;---    This is the prefered mechanism as it provides an "alias" to the
+    ;---    GUID making it easier to see whats going on in the generated MSI
+    ;---    or verbose logs.
+    ;---
+    ;---    The name must only include characters A-Z, 0-9, "." or "_" (that is
+    ;---    any character valid in an MSI identifier).
+    ;---
+    ;---    Allows for per GUID configuration.
+    ;---
+    ;--- 3. The name of a VBSCRIPT variable (contents is a GUID)
+    ;---    Value determined at Run Time.
+    ;---    The name is prefixed with "=" to flag variable follows.
+    ;---
+    ;---    The name must only include characters A-Z, 0-9, "." or "_" (that is
+    ;---    any character valid in an MSI identifier).
+
+    ;--- Mark location in debug log -----------------------------------------
+    <$UpdateMmLocation>
+
+    ;--- Get parameters, validation etc -------------------------------------
+    #evaluate ^^ ^<$@@Rexx4UpgradeTable {$?}>^
+
+    ;--- Work through the supplied list -------------------------------------
+    #{  set "EXTRA={ }<??@@UpgradeCodes>"
+        ;--- Handle 3 different types of info we can be passed --------------
+        #DefineRexx ''
+            ;--- Increment count --------------------------------------------
+            ExtraUgCodesCnt = ExtraUgCodesCnt + 1;
+
+            ;--- See if a macro ---------------------------------------------
+            if  defined('<??SET_EXTRA>', 'I') = 'Y' then;
+            do;
+                ;--- It is a macro name (which MUST be valid as a property) ---
+                @@DefaultProperty = ToUpperCase('<$MajorUpgrade_[@@UgCfg]_PREFIX_MACRO>' || SET_EXTRA);
+                @@OverrideCfg     = SET_EXTRA;
+                @@MacValue        = MacroGet(SET_EXTRA);
+                @@ExtraGuidInfo   = SET_EXTRA;
+                @@GuidExp         = '"' || @@MacValue || '"';              ;;Literal string GUID
+            end;
+            else;
+            do;
+                ;--- Could be a reference to a VBSCRIPT variable ------------
+                if  left(SET_EXTRA, 1) = '=' then;
+                do;
+                    ;--- This is a reference to a VBSCRIPT variable! --------
+                    @@ExtraGuidInfo   = "";
+                    @@GuidExp         = substr(SET_EXTRA, 2);              ;;Just use the VB variable
+                    @@DefaultProperty = ToUpperCase('<$MajorUpgrade_[@@UgCfg]_PREFIX_VBVARIABLE>' || @@GuidExp);
+                    @@OverrideCfg     = @@GuidExp;                         ;;Use name of VB variable
+                    <?xRexxEos>     ;;Fix "Clause > 1024 characters"
+                end;
+                else;
+                do;
+                    ;--- Should be a GUID -----------------------------------
+                    if  left(SET_EXTRA, 1) <> '{' | right(SET_EXTRA, 1) <> '}' | length(SET_EXTRA) <> 38 then;
+                        error('The supplied UpgradeCode of "' || SET_EXTRA || '" doesn''t appear to be a valid GUID!');
+                    else;
+                    do;
+                        ;--- Is a GUID ------------------------------------------
+                        @@ExtraGuidInfo   = "";
+                        @@GuidExp         = '"' || SET_EXTRA || '"';            ;;Literal string GUID
+                        @@Identifier      = translate(substr(SET_EXTRA, 2, length(SET_EXTRA)-2), '_', '-');  ;;Convert GUID to something valid in "Identifier"
+                        @@DefaultProperty = ToUpperCase('<$MajorUpgrade_[@@UgCfg]_PREFIX_GUID>' || @@Identifier);
+                        @@OverrideCfg     = SET_EXTRA;                         ;;Use the actual GUID
+                    end;
+                end;
+            end;
+        #DefineRexx
+        #DefineRexx ''
+            ;--- "#" represents the number in the property ------------------
+            @@DefaultProperty = ReplaceString(@@DefaultProperty, "#", ExtraUgCodesCnt);
+
+            ;--- Set Properties ---------------------------------------------
+            <$@@Rexx2GetUpgradeTableEntryValue "VALIDATE"        PASSED="{$VALIDATE=^^    $$IsPassed}" VALUE=^{$VALIDATE}^>;
+            <$@@Rexx2GetUpgradeTableEntryValue "ATTRIBUTES"      PASSED="{$ATTRIBUTES=^^  $$IsPassed}" VALUE=^{$ATTRIBUTES}^>;
+            <$@@Rexx2GetUpgradeTableEntryValue "REMOVE"          PASSED="{$REMOVE=^^      $$IsPassed}" VALUE=^{$REMOVE}^>;
+            <$@@Rexx2GetUpgradeTableEntryValue "VERSION_MIN"     PASSED="{$VERSION_MIN=^^ $$IsPassed}" VALUE=^{$VERSION_MIN}^>;
+            <$@@Rexx2GetUpgradeTableEntryValue "VERSION_MAX"     PASSED="{$VERSION_MAX=^^ $$IsPassed}" VALUE=^{$VERSION_MAX}^>;
+            <$@@Rexx2GetUpgradeTableEntryValue "LANGUAGE"        PASSED="{$LANGUAGE=^^    $$IsPassed}" VALUE=^{$LANGUAGE}^>;
+            <$@@Rexx2GetUpgradeTableEntryValue "PROPERTY"        PASSED="{$PROPERTY=^^    $$IsPassed}" VALUE=^{$PROPERTY}^    DefValueExpression=^@@DefaultProperty^>;
+            <$@@Rexx2GetUpgradeTableEntryValue "COMMENT"         PASSED="N"                            VALUE="">;
+        #DefineRexx
+
+        ;--- Handle the GUID expression and the return of its value for the HTML report ---
+        #define+ @@GUIDVAR  Guid4MajUpgrade<??ExtraUgCodesCnt>
+        dim <$@@GUIDVAR> : <$@@GUIDVAR> = <??@@GuidExp><?NewLine>
+        VbsReturnGuid "MU#.<??ExtraUgCodesCnt>", <$@@GUIDVAR><?NewLine>
+
+        ;--- Make the change ------------------------------------------------
+        <$Table "Upgrade">
+               ;--- Add upgrade code entry ----------------------------------
+               #(
+                   <$Row
+                         *UpgradeCode=^<$@@GUIDVAR>^
+                           Attributes="<??@@UG_Attributes>"
+                               Remove="<??@@UG_REMOVE>"
+                       ActionProperty="<??@@UG_PROPERTY>"
+                           VersionMin=^<??@@UG_VERSION_MIN>^
+                           VersionMax=^<??@@UG_VERSION_MAX>^
+                             Language=^<??@@UG_LANGUAGE>^
+                            @Validate="<??@@UG_VALIDATE>"
+                   >
+               #)
+        <$/Table>
+
+        ;--- Save info for the HTML report ----------------------------------
+        #( ';'
+            #DefineRexx ''
+                ;--- We have 2 comment sources ------------------------------
+                if  @@UG_COMMENT = '' then
+                    @@Comment = @@CmdComment
+                else
+                do
+                    if  @@CmdComment = '' then
+                        @@Comment = @@UG_COMMENT
+                    else
+                        @@Comment = @@CmdComment & "<p><i>" & @@UG_COMMENT || '</i>'
+                end
+
+                ;--- Get location -------------------------------------------
+                <$Rexx4UpdateRxMmLocationOnly>
+
+                ;--- Save it ------------------------------------------------
+                ExtraUgCodes.ExtraUgCodesCnt = @@ExtraGuidInfo || '00'x || @@UG_Attributes || '00'x || @@UG_REMOVE || '00'x || @@UG_PROPERTY || '00'x || @@UG_VERSION_MIN || '00'x || @@UG_VERSION_MAX || '00'x || @@UG_LANGUAGE || '00'x || @@UG_VALIDATE || '00'x || RxMmLocation || '00'x || @@Comment
+                ExtraUgCodes.0 = ExtraUgCodesCnt
+            #DefineRexx
+        #)
+
+        ;--- Property used must be passed to WI "server" processing ---------
+        <$PropertyList "SecureCustomProperties" Value=^<??@@UG_PROPERTY>^> ;;Property created at runtime by above entry
+     #}
+#)
+#DefineRexx '@@Rexx4UpgradeTable'
+    ;--- Validate parameters ------------------------------------------------
+    {$!:#1,Config,Comment,VALIDATE,ATTRIBUTES,REMOVE,VERSION_MIN,VERSION_MAX,LANGUAGE,PROPERTY}
+    {$Comment='' $$RxVar:@@CmdComment}
+    @@MajUpgCmdCnt = @@MajUpgCmdCnt + 1
+
+    ;--- Validate List of upgrade codes not empty ---------------------------
+    @@UpgradeCodes = '{$#1}';            ;;List of Upgrade codes (GUIDS or macros containing)
+    <$DBG_SAY> 'Macro MajorUpdate: #' || @@MajUpgCmdCnt || ': ' || @@UpgradeCodes;
+    if  @@UpgradeCodes = '' then
+        error('You supplied an empty list of upgrade code GUIDS...');
+
+    ;--- Convert some other delimiters to spaces ----------------------------
+    @@UpgradeCodes = translate(@@UpgradeCodes, ' ',  ';');
+    @@UpgradeCodes = translate(@@UpgradeCodes, ' ',  ',');
+
+    ;--- Validate CFG parameter -------------------------------------------------
+    @@UgCfg  = '{$Config=^DEFAULT^}';   ;;Name of a configuration set of macros
+    @@TestCfgMacro = 'MAJORUPGRADE_' || @@UgCfg || '_ATTRIBUTES';
+    if  defined(@@TestCfgMacro, "I") = 'N' then
+        error('The configuration set "' || @@UgCfg || '" was not found.',,'We looked for the macro "' || @@TestCfgMacro || '" (which didn''t exist)!');
+#DefineRexx
+#DefineRexx '@@Rexx2GetUpgradeTableEntryValue'
+    ;--- What item are we handling? -----------------------------------------
+    <?xRexxEos>     ;;Fix "Clause > 1024 characters"
+    @@What      = '{$#1}';                        ;;"ATTRIBUTES", "VERSION_MIN" etc
+    @@Passed    = '{$PASSED}'
+    {$Value $$RxVar:@@PassedVal}
+    @@ResultMacName       = '@@UG_' || @@What;
+
+    <$DBG_SAY> 'PROCESSING ATTRIBUTE: "' || @@What || '" (passed on macro = "' || @@Passed || '")'
+    <$DBG_INC>
+        if  @@Passed = 'Y' then
+        do
+            @@Value = @@PassedVal
+            <$DBG_SAY> "Value was passed: " || @@PassedVal
+        end
+        else
+        do
+            <$DBG_SAY> "Value wasn't passed on the command"
+            <$DBG_INC>
+                @@WhatSpecificMacName = @@OverrideCfg              || '_' || @@What;
+                @@GenericMacName      = 'MAJORUPGRADE_' || @@UgCfg || '_' || @@What;
+                <$DBG_SAY> 'Looking for config in macro: ' || @@WhatSpecificMacName
+                <$DBG_INC>
+                    if  defined(@@WhatSpecificMacName) = 'Y' then
+                    do
+                        @@Value = MacroGet(@@WhatSpecificMacName);      ;;User supplied an overriding value
+                        <$DBG_SAY> 'Value found: ' || @@Value
+                    end;
+                    else
+                    do
+                        <$DBG_SAY> 'Not found so getting value from: ' || @@GenericMacName
+                        <$DBG_INC>
+                            @@Value = {$DefValueExpression=^MacroGet(@@GenericMacName)^};           ;;Use the default
+                            <$DBG_SAY> 'Value found: ' || @@Value
+                        <$DBG_DEC>
+                    end;
+                <$DBG_DEC>
+            <$DBG_DEC>
+        end
+
+        ;--- Remember the value ---------------------------------------------
+        call value @@ResultMacName, @@Value;
+    <$DBG_DEC>
+#DefineRexx
+
+
+#(  ''
+    #define? UPGRADECODE_ADD_SUMMARY_ROW
+
+    ;--- There should be at least one (ourselves) ---------------------------
+    #if [ExtraUgCodesCnt <> 0]
+        #evaluate ^^ ^@@List = ReplaceString(strip('<$ProdInfo.UpgradeCodes>'), ' ', '<li>')^
+        <TR<$HTMLSUMM_EXTRA_UPGRADE_CODES_TT>>
+            <TD align="center">
+                <$MAJORUPGRADE_HTMLSUMMROW_DESC>
+            </TD>
+            <TD>
+                <ol>
+                    #( ';'
+                        #DefineRexx ''
+                           @@ES = '</span>'
+                           @@SN =         ' <span class="MmCmtName">'
+                           @@SV = @@ES || ' <span class="MmCmtValue">'
+                           @@S = ''
+                           do  @@Ug = 1 to ExtraUgCodesCnt      ;;The 1st entry is upgrading ourselves
+                               parse var ExtraUgCodes.@@Ug @@GuidDesc '00'x @@UG_Attributes '00'x @@UG_REMOVE '00'x @@UG_PROPERTY '00'x @@UG_VERSION_MIN '00'x @@UG_VERSION_MAX '00'x @@UG_LANGUAGE '00'x @@UG_VALIDATE '00'x @@DefinedAt '00'x @@CmdComment
+                               @@Guid = MacroGet("VBSRET.GUID.MU#." || @@Ug)
+                               if   @@GuidDesc = '' then
+                                    @@GuidDesc = @@Guid
+                               else
+                                    @@GuidDesc = @@Guid || ' - <b>' || @@GuidDesc || '</b>'
+                               @@1 = ''
+                               @@S = @@S || '<li>' || @@GuidDesc
+                                   <?xRexxEos>     ;;Fix "Clause > 1024 characters"
+                                   <$@@Rexx2AddToHtmlDetails DESC=^REQUESTED AT^ VAR=^@@DefinedAt^>
+                                   <$@@Rexx2AddToHtmlDetails DESC=^PROPERTY^     VAR=^@@UG_PROPERTY^>
+                                   <$@@Rexx2AddToHtmlDetails DESC=^MIN VERSION^  VAR=^@@UG_VERSION_MIN^>
+                                   <$@@Rexx2AddToHtmlDetails DESC=^MAX VERSION^  VAR=^@@UG_VERSION_MAX^>
+                                   <$@@Rexx2AddToHtmlDetails DESC=^LANGUAGE^     VAR=^@@UG_LANGUAGE^>
+                                   <$@@Rexx2AddToHtmlDetails DESC=^REMOVE^       VAR=^@@UG_REMOVE^>
+                                   <$@@Rexx2AddToHtmlDetails DESC=^ATTRIBUTES^   VAR=^@@UG_Attributes^  PreFix=^<br>^>
+                                   <$@@Rexx2AddToHtmlDetails DESC=^COMMENT^      VAR=^@@CmdComment^     PreFix=^<br>^>
+                               if @@1 <> '' then
+                                  @@S = @@S || '<br>' || strip(@@1)
+                               if @@Ug <> ExtraUgCodesCnt then @@S = @@S || '<p>'
+                           end;
+                        #DefineRexx
+                    #)
+                    <??@@S>
+                </ol>
+            </TD>
+        </TR>
+    #endif
+#)
+
+
+#DefineRexx '@@Rexx2AddToHtmlDetails'
+    if {$VAR} <> "" then
+    do
+        ;--- The value is not empty, do we want to display it? --------------
+        @@ShowMac = translate("MAJORUPGRADE_HTMLSUMMROW_DETAIL_SHOW_{$DESC}", '_', ' ')
+        @@Show = "Y"
+        if  defined(@@ShowMac) = "Y" then
+        do
+            if  MacroGet(@@ShowMac) = "N" then @@Show = "N"
+        end
+
+        ;--- Display it if its wanted ---------------------------------------
+        if  @@Show = "Y" then
+            @@1 = @@1 || @@SN || '{$PreFix=''}{$DESC}:' || @@SV || {$VAR}    || @@ES
+    end
+#DefineRexx
+
+
+
+
+#NextId UNLOCK "MajorUpgrade.MMH"

@@ -1,0 +1,181 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DLLCA.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.11  $
+;          $Date:   20 Feb 2010 18:12:46  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DllCa.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "DLLCA.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_DLLCA_SEQTABLE  InstallExecuteSequence
+#define? DLLCA_DEFAULT_TYPE_ATTRIBUTES
+
+
+;----------------------------------------------------------------------------
+;--- Custom Action conditions -----------------------------------------------
+;----------------------------------------------------------------------------
+#define? DLLCA_CONDITION_INSTALL_ONLY    <$CONDITION_INSTALL_ONLY>
+#define? DLLCA_CONDITION_UNINSTALL_ONLY  <$CONDITION_UNINSTALL_ONLY>
+
+
+
+;----------------------------------------------------------------------------
+;--- Indicates the start of a VBS custom action Script ----------------------
+;----------------------------------------------------------------------------
+#RexxVar @@DLLCACnt = 0
+#DefineRexx '@@Rexx4DLLCA' NoPack
+   ;--- Get space seperated list of table names -----------------------------
+   @@SeqTables = '{$SeqTable=^<$DEFAULT_DLLCA_SEQTABLE>^}';
+   ;@@SeqTables = translate(@@SeqTables,, <$SUNDRY_STANDARD_DELIMITERS_REXXEXP> || ',;', ' ');
+   <$Rexx2ConvertDelimitersToSpaces RxVar="@@SeqTables">
+
+   ;--- Run DLL from Binary table or it it an installed file? ---------------
+   @@KeyBinary = '{$Binary=^^}';
+   @@KeyFile   = '{$File=^^}';
+   @@DllName   = '{$Dll=^^}';
+   if   @@KeyBinary = '' & @@KeyFile = '' then
+        error('The DLL runs from either the "Binary" or "File" MSI tables!', 'Pass the appropriate parameter to indicate which!');
+   if   @@KeyBinary <> '' & @@KeyFile <> '' then
+        error('The DLL runs from either the "Binary" or "File" MSI tables (NOT BOTH)!');
+   if  @@KeyBinary = "" then
+   do
+       ;--- DLL run from filesystem -----------------------------------------
+       if   @@DllName <> "" then
+            error('You should not supply the DLL parameter, the file should already have been included in the MSI!');
+       @@Attributes  = '<$CATYPE_DLL_FROM_INSTALLED_FILE>'
+       @@TypeLetter  = 'F';
+       @@CaDllSource = @@KeyFile;         ;;User supplied the file key (file assumed to already have been added)
+   end;
+   else
+   do
+       ;--- DLL run from binary table ---------------------------------------
+       @@TypeLetter  = 'B';
+       @@Attributes  = '<$CATYPE_DLL_IN_BINARY_TABLE>'
+       if  @@KeyBinary <> '?' then
+           @@CaDllSource = @@KeyBinary;    ;;The user is choosing the binary key
+       else
+       do
+           ;--- User is allowing us to choose the key (so must supply "DLL") ---
+           @@CaDllSource = '';
+           if  @@DllName = '' then
+               error("You must supply the build time name of the DLL being added to the binary table!");
+       end;
+   end;
+
+   ;--- Work out the Custom Action Type -------------------------------------
+   @@TypeAttributes = '<$DLLCA_DEFAULT_TYPE_ATTRIBUTES> {$Type=^^}';
+   <$CaType.Rexx2ProcessCaAttributes {$?} TypeVar=^@@Type^ TypeExVar=^@@TypeEx^ AttributeVar=^@@Attributes^ TypeAttributesVar=^@@TypeAttributes^>
+
+   ;--- Work out default key suffixes ---------------------------------------
+   @@DLLCACnt = @@DLLCACnt + 1
+   if  @@DLLCACnt < 10 then
+       @@KeySuffix = @@TypeLetter || right(@@DLLCACnt, 2, '0');
+   else
+       @@KeySuffix = @@TypeLetter || @@DLLCACnt;
+
+   ;--- Do we wish to build a source name ("Binary" key or property name) ---
+   if  @@CaDllSource = "" then
+       @@CaDllSource = 'DllCa' || @@KeySuffix
+
+   ;--- What should be the Custom Action Key? -------------------------------
+   @@CaDllKey = '{$Key=""}'
+   if  @@CaDllKey = "" then
+       @@CaDllKey = 'DLLCAKey' || @@KeySuffix
+
+   ;--- The Custom Action's description? ------------------------------------
+   @@CaDllDesc = '{$Description=~~}'
+   if  @@CaDllDesc = '' then
+   do
+       if   @@DllName <> '' then
+            @@CaDllDesc = 'Custom Action: "' || FilePart('n', @@DllName) || '"'
+   end;
+
+   ;--- Work out sequence numbers -------------------------------------------
+   @@Seq = '{$Seq}';
+   <$SeqNumberRexx2CreateSequenceNumberExpression SEQ="@@Seq" Macro="@@SeqExpression" Number="1">;
+#DefineRexx
+#( '<?NewLine>'
+   #define DLLCA
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Init ----------------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4DLLCA {$?}>^
+
+   ;--- Load the binary up if required --------------------------------------
+   #if  [@@DllName <> ""]
+        <$Binary "<??@@DllName>" KEY=^<??@@CaDllSource>^>
+   #endif
+
+   ;--- Define the custom action --------------------------------------------
+   <$TABLE "CustomAction">
+        #if [@@TypeEx = '']
+           #(
+               <$Row
+                   Action=`<??@@CaDllKey>`         ;;CA key
+                   Source=`<??@@CaDllSource>`      ;;Name or property or key into Binary table
+                    *Type=`<??@@Type>`
+                   Target=`{$Entry}`               ;;DLL Entry Point
+               >
+           #)
+        #elseif
+           #(
+               <$Row
+                   Action=`<??@@CaDllKey>`         ;;CA key
+                   Source=`<??@@CaDllSource>`      ;;Name or property or key into Binary table
+                    *Type=`<??@@Type>`
+            *ExtendedType=`<??@@TypeEx>`
+                   Target=`{$Entry}`               ;;DLL Entry Point
+               >
+           #)
+        #endif
+   <$/TABLE>
+
+   ;--- Install in SEQUENCE table(s) ----------------------------------------
+   #if  [@@SeqTables = '']
+        #if [@@Seq <> 0]
+            #error ^No sequence tables were specified and the sequence number was not 0 (zero)!^
+        #endif
+   #endif
+   #{ SET "SeqTable={ }<??@@SeqTables>"
+       ;--- Install in the specified table ----------------------------------
+       SeqNo = <$@@SeqExpression "<??SET_SeqTable>"> ;;Set the VBS variable "SeqNo"
+       <$TABLE "<??SET_SeqTable>">
+       #(
+           <$Row
+                  Action=`<??@@CaDllKey>`        ;;CA Key
+               Condition=`{$Condition}`          ;;Execute under what condition?
+               *Sequence="SeqNo"                 ;;Set up property when?
+           >
+       #)
+       <$/TABLE>
+   #}
+
+   ;--- Add action text -----------------------------------------------------
+   #if  [@@CaDllDesc <> '']
+       <$TABLE "ActionText">
+       #(
+           <$Row
+                   Action="<??@@CaDllKey>"
+              Description=`<??@@CaDllDesc>`
+           >
+       #)
+       <$/TABLE>
+   #endif
+#)
+
+
+#NextId UNLOCK "DLLCA.MMH"
+

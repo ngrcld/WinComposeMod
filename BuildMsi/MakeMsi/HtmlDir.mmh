@@ -1,0 +1,361 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   HTMLDIR.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.9  $
+;          $Date:   10 Aug 2005 18:43:36  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/HtmlDir.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;                   This header is only included after MSI generation etc
+;                   so that processing is only performed if everything is
+;                   OK (why waste time)...
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- Create namespace -------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "HTMLDIR.MMH"
+
+
+
+#RexxVar @@MMLOCATION           = ''
+#RexxVar @@VerifyArraySetupCmds = ''
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define  HTMLDIR_NEXTID          @@
+#define? HTMLDIR_HTMLRPT_HR      <$SUNDRY_HTMLRPT_HR>
+#define  DEFAULT_HTMLDIR_NO_MATCHES_OK N
+#( '<?NewLine>'
+   #define? HTMLDIR_STYLES
+
+   .HtmlDirCmtPlus              {font-size:9pt;}
+   .HtmlDirCmtName              {<$HTMLRPT_STYLE_VALUES_KEY>}
+   .HtmlDirCmtValue             {<$HTMLRPT_STYLE_VALUES_VALUE>}
+#)
+#( '<?NewLine>'
+   #define? HTMLDIR_REPORT_START
+   <CENTER>
+   <span title='<??@@ToolTip>'>
+   <TABLE COLS="6" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH title="File name (without extension)">Name</TH>
+       <TH title="File Extension">Ext</TH>
+       <TH title="Files time" SortType="Date">Time</TH>
+       <TH title="Files size" SortType="NumberComma">Size</TH>
+       <TH title="Where is the file installed?&#10;&#10;Can include MSI details (on the first occurance of each destination location)">Destination<BR>Directory</TH>
+       <TH title="Any other interesting information">Comments</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? HTMLDIR_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+       <TD><??@@FileBaseNE></TD>
+       <TD><??@@FileExtn></TD>
+       <TD><??@@FileTime></TD>
+       <TD><??@@FileSizeCma></TD>
+       <TD><??@@FileDirRel></TD>
+       <TD><??@@CommentCol></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? HTMLDIR_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@TotalFileSize $$AddComma> bytes in <??@@SrcFiles.0> file(s).
+   </span>
+   </CENTER>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- GENERATE HTML ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define  HTMLDIR_SET_UP_FILE_VERIFICATION <??@@VerifyArraySetupCmds>
+#RexxVar @@UsedCnt = 0
+#( ''
+   #define HtmlDirTable
+
+   ;--- Get list of the files -----------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4HtmlDirTable {$?}>^
+
+   ;--- Output a title if the user wished this ------------------------------
+   #if [@@Title <> '']
+       <$HTMLRPT_HEADING TEXT="<??@@Title>">
+   #endif
+
+   ;--- Start the report ----------------------------------------------------
+   <$HTMLDIR_REPORT_START>
+
+   ;--- Generate VBSCRIPT to calculate MD5 information ----------------------
+   #define+ @@HtmlDirMd5Vbs        <$MAKEMSI_OTHER_DIR>\HtmlDirMd5-<??@@UsedCnt>.vbs
+   #define+ @@HtmlDirMd5Output     <$MAKEMSI_OTHER_DIR>\HtmlDirMd5-<??@@UsedCnt>.output.txt
+   #evaluate ^^ ^call FileDelete '<$@@HtmlDirMd5Output>'^
+   #output "<$@@HtmlDirMd5Vbs>" ASIS
+   #(  '<?NewLine>'
+       ;--- Initialization --------------------------------------------------
+        <?SyntaxCheck>
+        dim oInstaller : set oInstaller = CreateObject("WindowsInstaller.Installer")
+        dim oFS        : set oFS        = CreateObject("Scripting.FileSystemObject")
+        dim oStream    : set oStream    = oFS.CreateTextFile("<$@@HtmlDirMd5Output>", True)
+
+        ;--- Process each file ----------------------------------------------
+        <?NewLine><?NewLine>
+        #{  FOR @@Index = 1 to @@SrcFiles.0
+            OutputMd5("<??@@SrcFiles.@@Index>")
+        #}
+        <?NewLine><?NewLine>
+
+       ;--- Close the file --------------------------------------------------
+       oStream.close
+
+       <?NewLine><?NewLine>
+       '=========================================================
+       sub OutputMd5(FileName)
+       '=========================================================
+          ;--- Get MD5 (ignore any errors) ----------------------------------
+          on error resume next
+          dim oMD5 : set oMD5 = oInstaller.FileHash(FileName, 0)
+
+          ;--- Generate REXX code to "store" information --------------------
+          oStream.WriteLine "call value '<??@@HtmlDirMd5Prefix>' || c2x('" & FileName & "'), '" & PrettyHash(oMD5) & "'"
+        end sub
+
+       ;--- Include Common MD5 code -----------------------------------------
+       #include "PrettyMd5.VH"
+   #)
+   #output
+
+   ;--- Execute the VBS and capture MD5 Information -------------------------
+   #DefineRexx ''
+        @@Cmd = '<$MAKEMSI_CSCRIPT.EXE> "<$@@HtmlDirMd5Vbs>"';
+        @@Cmd = 'cmd.exe /c "' || @@Cmd || '"';          ;;Windows crap...
+        call AddressCmd @@Cmd, '<$@@HtmlDirMd5Output>';
+   #DefineRexx
+   #if FileQueryExists('<$@@HtmlDirMd5Output>') <> ''
+       #DefineRexx ''
+            ;--- Include the generate Rexx code to store MD5 info -----------
+            #include '<$@@HtmlDirMd5Output>'
+       #DefineRexx
+   #endif
+
+   ;--- Sort ----------------------------------------------------------------
+   #DefineRexx '' NOPACK
+       ;--- Sort file table entries -----------------------------------------
+       do @@x = 1 to @@SrcFiles.0;
+          @@FileName = @@SrcFiles.@@x;
+          @@SortKey = FilePart('S', @@FileName) || '00'x || FilePart('N', @@FileName);
+          @@SrcFiles.@@x = @@SortKey || '00'x || @@FileName;
+       end;
+       call ArraySort    '@@SrcFiles';
+   #DefineRexx
+
+  ;--- Generate guts of report ----------------------------------------------
+  #RexxVar @@TotalFileSize = 0
+  #{  FOR @@Index = 1 to @@SrcFiles.0
+       ;--- Split off components --------------------------------------------
+       #evaluate ^^ ^<$Rexx4GutsofHtmlDirReport>^
+
+       ;--- Generate the HTML for this file ---------------------------------
+       <$HTMLDIR_REPORT_ROW>
+  #}
+
+  ;--- End the HTML table ---------------------------------------------------
+  <$HTMLDIR_REPORT_END>
+#)
+#DefineRexx '@@Rexx4HtmlDirTable'
+   ;--- Increment used count ------------------------------------------------
+   @@UsedCnt = @@UsedCnt + 1;
+   @@HtmlDirVerifyPrefix = '@@Ver' || @@UsedCnt || '_';
+   @@HtmlDirMd5Prefix    = '@@MD5' || @@UsedCnt || '_';
+
+   ;--- Output a comment ----------------------------------------------------
+   @@VerifyArraySetupCmds = @@VerifyArraySetupCmds '<?x0A><?x0A>//--- HTMLDIR #' || @@UsedCnt || '<?x0A>';
+
+   ;--- Any title text? -----------------------------------------------------
+   {$Title=^^ $$RxVar:@@Title}
+   {$TT=^^    $$RxVar:@@ToolTip}
+   @@AlternateDirStart = '{$DirRoot=^^}';
+   @@Verify            = translate('{$Verify=^N^}');   ;;Add to file verification report?
+
+   ;--- Processing Exclude list? --------------------------------------------
+   @@ExName = '{$EXLIST=^^}';
+   if   @@ExName = '' then
+        @@ExHandle4HtmlDir = '';          ;;No exclude list!
+   else
+   do
+        <$List.Rexx.GetHandle HandleVar="@@ExHandle4HtmlDir" CategoryVar="RxExListCategory" NameVar="@@ExName">;
+   end;
+
+   ;--- Load stem with complete list of source files ------------------------
+   @@Masks       = '{$#1}'                  ;;No default
+   @@MaskList    = @@Masks;                 ;;Keep for error message
+   @@SrcFilesCnt = 0;
+   @@SrcDir      = '';
+   @@SrcDirFull  = ''
+   do  until @@Masks = ''
+       ;--- Split of next mask ----------------------------------------------
+       parse var @@Masks @@Mask ';' @@Masks;
+
+       ;--- The mask must not be a directory! -------------------------------
+       if   right(@@Mask,1) = '\' | DirQueryExists(@@Mask) <> '' then
+            error('Expected a file mask but got the directory:',, '    ' || @@Mask);
+
+       ;--- Remove any drive/path (make sure dir exists) --------------------
+       @@MaskDir  = FilePart('S', @@Mask);
+       @@MaskName = FilePart('N', @@Mask);
+       if  @@MaskDir = '' then
+       do
+           ;--- No mask directory, use previous if available ----------------
+           if  @@SrcDir = '' then
+               @@MaskDir = '.'         ;;Don't have previous, use current dir
+           else
+               @@MaskDir = @@SrcDir    ;;Don't have previous, use current dir
+       end;
+       @@FullMaskDir = DirQueryExists(@@MaskDir);
+       if  @@FullMaskDir = '' then
+           error('Could not find the directory "' || @@MaskDir || '"!');
+
+       ;--- Now handle this directory ---------------------------------------
+       if  @@SrcDir = '' then
+       do
+           @@SrcDir     = @@MaskDir;
+           @@SrcDirFull = @@FullMaskDir;     ;;Needed for TREE mode
+       end;
+       else
+       do
+           ;--- Not the first time ------------------------------------------
+           if  translate(@@SrcDirFull) <> translate(@@FullMaskDir) then
+               error('All file masks must refer to the same directory!', 'Failed on mask "' || @@Mask || '"');
+       end;
+
+       ;--- Now get list of files matching this mask ------------------------
+       @@Mask = @@MaskDir  || '\' || @@MaskName;
+       @@Files.0 = 0;
+       call Files4Mask @@Mask, "@@Files", 'Y';
+       if  @@Files.0 = 0 then
+       do
+           ;--- No files found, is this alright? ----------------------------
+           if  '{$NoneOk=^<$DEFAULT_HTMLDIR_NO_MATCHES_OK>^}' <> 'Y' then
+               error('No files matched the include mask "' || @@Mask || '"!');
+       end;
+       else
+       do
+           ;--- Add to source file array ------------------------------------
+           do  @@Index = 1 to @@Files.0
+               ;--- Have exclude list? ----------------------------------------------
+               @@ThisFile = @@Files.@@Index;
+               if  @@ExHandle4HtmlDir <> '' then
+               do
+                   ;--- We have a list, see if file in it! --------------------------
+                   @@Look4 = translate(@@ThisFile);
+                   <$List.Rexx.IsInListGivenHandle HandleVar=^@@ExHandle4HtmlDir^ AnswerVar=^@@IsExcluded^ ItemVar="@@Look4">;
+                   if  @@IsExcluded = 'Y' then
+                       iterate;                    ;;This file is not wanted!
+
+                   ;--- Add this file to the exclude list ---------------------------
+                   <$List.Rexx.AddToListGivenHandle HandleVar=^@@ExHandle4HtmlDir^ AnswerVar=^@@IsExcluded^ ItemVar="@@Look4">;
+               end;
+
+               ;--- Process the file ----------------------------------------
+               call value @@HtmlDirVerifyPrefix || c2x(@@ThisFile), @@Verify;
+               @@SrcFilesCnt            = @@SrcFilesCnt + 1;
+               @@SrcFiles.@@SrcFilesCnt = @@ThisFile;
+           end;
+       end;
+   end;
+   @@SrcFiles.0 = @@SrcFilesCnt;
+#DefineRexx
+#define? HTMLDIR_REXX_HOOK_BEFORE_PREPARING_ROW_INFO
+#define? HTMLDIR_REXX_HOOK_AFTER_PREPARING_ROW_INFO
+#DefineRexx 'Rexx4GutsofHtmlDirReport'
+   ;--- Get full name of the file -------------------------------------------
+   parse var @@SrcFiles.@@Index . '00'x . '00'x @@FullFileName;
+
+   ;--- Get some information ------------------------------------------------
+   <$HTMLDIR_REXX_HOOK_BEFORE_PREPARING_ROW_INFO>
+   @@FileDir    = FilePart('S', @@FullFileName);
+   @@FileBaseNE = FilePart('B', @@FullFileName);
+   @@FileExtn   = FilePart('E', @@FullFileName);
+   @@FileTs     = GetFileTimeStamp(@@FullFileName);
+   @@FileTime   = FileQueryDateTime(@@FullFileName, '<$HTMLRPT_DATETIME_FORMAT>',, 'Y');
+   @@FileSize   = FileQuerySize(@@FullFileName);
+   @@FileSizeCma = AddCommasToDecimalNumber(@@FileSize);
+   @@PrefixLen   = length(@@SrcDirFull) + 1;
+   @@FileDirRel  = @@AlternateDirStart || substr(@@FileDir, @@PrefixLen + 1);
+   @@DestFileName= @@FileDirRel
+   if   right(@@DestFileName, 1) <> '\' then
+        @@DestFileName = @@DestFileName || '\';
+   @@DestFileName = @@DestFileName || FilePart('N', @@FullFileName);
+   if   right(@@FileDirRel, 1) = '\' then
+        @@FileDirRel = left(@@FileDirRel, length(@@FileDirRel)-1);
+   if   @@FileDirRel = '' then
+        @@FileDirRel = '&nbsp;';
+   else
+        @@FileDirRel = wbr(@@FileDirRel);
+   <$HTMLDIR_REXX_HOOK_AFTER_PREPARING_ROW_INFO>
+
+   ;--- Get any precalculated MD5 info --------------------------------------
+   @@Md5Key = @@HtmlDirMd5Prefix || c2x(@@FullFileName)
+   if   symbol(@@Md5Key) <> 'VAR' then
+        @@Md5 = '';
+   else
+        @@Md5 = value(@@Md5Key);
+
+   ;--- Get verify info -----------------------------------------------------
+   @@VerifyKey = @@HtmlDirVerifyPrefix || c2x(@@FullFileName)
+   if   symbol(@@VerifyKey) <> 'VAR' then
+        @@Verify = 'N';
+   else
+        @@Verify = value(@@VerifyKey);
+
+   ;--- Combine information -------------------------------------------------
+   @@CommentCol = '<div class="HtmlDirCmtPlus">';
+   @@HaveInfo   = 'N';
+   if   @@Md5 <> '' then
+   do
+       ;--- Add MD5 info ----------------------------------------------------
+       @@HaveInfo   = 'Y';
+       @@CommentCol = @@CommentCol || ' <span class="HtmlDirCmtName">MD5</span> <span class="HtmlDirCmtValue">' || Wbr(@@Md5) || '</span>';
+   end;
+   <$FileInfoRexx2ExtractDocumentProperties FileVar="@@FullFileName" SfiVar="@@SFI">
+   if  @@SFI <> '' then
+   do
+       ;--- We have file information ----------------------------------------
+       if   @@HaveInfo = 'Y' then
+            @@CommentCol = @@CommentCol || '<$HTMLDIR_HTMLRPT_HR>';
+       @@CommentCol = @@CommentCol || '<span class="FileCmtSFI" title="Document properties">' || @@SFI || '</span>'
+   end;
+   @@CommentCol = @@CommentCol || '</div>';
+
+   ;--- Add to verify list --------------------------------------------------
+   if   @@Verify <> 'N' then
+   do
+        ;--- Can't know -----------------------------------------------------
+        @@Component      = '';
+        @@FileVersion    = '';
+        @@FileAttributes = 0;
+
+        ;--- Add verify request ---------------------------------------------
+        @@VerifyArraySetupCmds = @@VerifyArraySetupCmds || 'Add2VerifyList "' || @@DestFileName || '", "' || @@FileSize || '", "' || @@FileTs || '", "' || @@FileVersion || '", "' || @@Md5 || '", ' || @@FileAttributes || ', "' || @@Component || '"<?x0A>';
+
+;Before Add2VerifyList "c:\tmp\ZenoDiff.txt", "3376", "20041123105652", "", "78241CB0-B68A9EFD-D6F5F997-F15EF799", ""
+   end;
+
+   ;--- Update total file size ----------------------------------------------
+   @@TotalFileSize = @@TotalFileSize + @@FileSize
+#DefineRexx
+
+
+#NextId UNLOCK "HTMLDIR.MMH"

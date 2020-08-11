@@ -1,0 +1,810 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SHORTCUTURL.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.11  $
+;          $Date:   16 Feb 2018 16:53:46  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ShortcutUrl.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK   "ShortcutUrl.MMH"
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoShortcutUrl-(Generic)-Options]---
+#define? DEFAULT_SHORTCUTURL_HOW                  BASIC   ;;Default mechanism used to create URL Shortcuts
+#define? DEFAULT_ADD_GENERATED_RESOURCES_TO_DOCO  N
+;---[4DocoShortcutUrl-(Generic)-Options]---
+
+
+;----------------------------------------------------------------------------
+;--- HOW=BASIC OPTIONS ------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoShortcutUrl-BASIC-Options]---
+#define? SHORTCUTURL_BASIC_KEYPATH_TYPE_FOR_COMPONENTS  CU=Y    ;;Current User Keypath by default
+#define? SHORTCUTURL_BASIC_EXTRA_INI_COMMANDS                   ;;Any MAKEMSI commands for other valid URL keywords
+;---[4DocoShortcutUrl-BASIC-Options]---
+
+
+;----------------------------------------------------------------------------
+;--- HOW=IE OPTIONS ---------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoShortcutUrl-IE-Options]---
+#define? DEFAULT_SHORTCUTURL_IE_INSTALLDIR                             ;;BLANK=parameter required, else default DIR KEY
+#define? SHORTCUTURL_IE_VBSCRIPT_INITIALIZATION_CODE                   ;;Hook for defining variables etc...
+#define? SHORTCUTURL_IE_VBSCRIPT_SUPPORTING_FUNCTIONS_AND_SUBROUTINES  ;;Hook for adding your own functions (which your inserted code will use)
+#define? SHORTCUTURL_IE_REUSE_EXISTING_WINDOW_IF_POSSIBLE  Y           ;;Look for and use any already open URL?
+#define? SHORTCUTURL_IE_RESIZING_CRITICAL                  N           ;;Should we abort if we can't correctly size the window (IE7 security etc)?
+#define? DEFAULT_SHORTCUTURL_IE_FEATURE                    .           ;;Blank means non-advertised shortcut or feature name or "." or "\"
+#define? SHORTCUTURL_IE_KEYPATH_TYPE_FOR_COMPONENTS  CU=Y              ;;Current User Keypath by default (for non advertised IE shortcuts)
+#(  '<?NewLine>'
+    #define? SHORTCUTURL_LOGLINE_INITIALIZATION
+
+    '--- First time in? -------------------------------------------------
+    if  ScLogFile <> "" then
+        '--- We have already initialized everything :-) ---------------------
+        How = LogAppend
+    else
+        '--- Need to initialize things :-) ------------------------------
+        How = LogCreate
+
+        '--- Determine the filename (use "CreateDirectoryTree()" to create directories) ---
+        LogsDir   = GetEnvDieOpt("TEMP", false)
+        ScLogFile = LogsDir & "\ShortcutUrl_4_" & WantedTitle &  ".log.txt"
+    end if
+#)
+#(  '<?NewLine>'
+    #define? SHORTCUTURL_IE_VBSCRIPT_DIE_DISPLAY_MESSAGE
+
+    ;--- Some available Variables -------------------------------------------
+    ; Text   - The message passed to Die()
+
+    Text = "Sorry but we couldn't launch the browser." & vbCRLF & vbCRLF & Text
+    LogLine "MSGBOX - SHORTCUTURL_IE_VBSCRIPT_DIE_DISPLAY_MESSAGE"
+    LogLine "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    LogLine Text
+    MsgBox Text, vbCritical+vbSystemModal, "<$ProdInfo.ProductName> ERROR"
+#)
+#(  '<?NewLine>'
+    #define? SHORTCUTURL_IE_HOOK_OBJECT_UPDATE                         ;;Code to do any unsupported object manipulations
+
+    ;--- Some available Variables -------------------------------------------
+    ; oIE    - IE automation object
+    ; Die()  - Subroutine to display error message (only parameter) and abort
+#)
+#(  '<?NewLine>'
+    #define? SHORTCUTURL_IE_HOOK_UPDATE_URL_JUST_BEFORE_LAUNCH_NEW_IE_SESSION  ;;Intended to allow you to add parameters to the URL etc.
+
+    ;--- Some available Variables -------------------------------------------
+    ; URL    - Contains the URL we are about to launch (you can add parameters etc)
+    ; Die()  - Subroutine to display error message (only parameter) and abort
+#)
+#(  '<?NewLine>'
+    #define? SHORTCUTURL_IE_UPDATE_TITLE_VB_STATEMENTS                 ;;How should the Window Title be set (if at all)
+
+    ;--- Some available Variables -------------------------------------------
+    ; oWindow - Window Object of the IE session containing the launched window
+    ; Die()   - Subroutine to display error message (only parameter) and abort
+    <?NewLine>
+
+    '--- The old DEFAULT was very simple, just set it (from "IeTitleBar" parameter) -----
+    'oWindow.document.title = WantedTitle
+    <?NewLine>
+
+    ;--- Some pages will try to change the title back.... -------------------
+    LogLine ""
+    LogLine ""
+    LogLine "ImproveIeTitleBarTitle(""" & WantedTitle & """)"
+    LogInc()
+        if  WantedTitle = "" then
+            ;--- Dont Want the title changed --------------------------------
+            LogLine "We have not been asked to change the title after all..."
+        else
+            '--- Default very simple, just set it (from "IeTitleBar" parameter) ---
+            dim NagCnt
+            for NagCnt = 1 to 20
+                ;--- Sleep for 500ms --------------------------------------------
+                wscript.Sleep 500
+                dim CurrentTitle : CurrentTitle = "?unknown?" : CurrentTitle = oWindow.document.title
+                err.clear()
+                LogLine "#" & NagCnt & ", CURRENT TITLE: " & CurrentTitle
+
+                ;--- Is the title already correct? --------------------------
+                if  CurrentTitle <> WantedTitle then
+                    ;--- Current title is not what we want ------------------
+                    LogInc()
+                        ;--- Try to change the title -------------------------
+                        err.clear()
+                        oWindow.document.title = WantedTitle
+                        if  err.number = 0 then
+                            LogLine "Successfully changed the title..."
+                        else
+                            ;--- Failed to set the title, show reason -------
+                            dim ErrNumber : ErrNumber = err.number
+                            LogLine "Failed setting the new title! Reason: 0x" & hex(ErrNumber) & " - " & err.description
+
+                            ;--- Did the above fail due to the issue we have a workaround for? ---
+                            FixMicrosoftsIeIntegrityIssueIfRequired ErrNumber, oWindow
+                        end if
+                    LogDec()
+                end if
+            next
+        end if
+        LogLine "ImproveIeTitleBarTitle() - FINISHED"
+    LogDec()
+#)
+#(  '<?NewLine>'
+    ;--- Actual code included into the function -----------------------------
+    #define? DEFAULT_SHORTCUTURL_IECOMPARE
+
+    ;--- Some available Variables -------------------------------------------
+    ; oWindow        - Window Object of an IE session we are looking at
+    ; AlreadyStarted - Return code - You must set to true or false
+    ; LaunchUrl      - Copy of the URL being launched (you can modify if you wish - won't change whats launched)
+    ; Die()          - Subroutine to display error message (only parameter) and abort
+
+    ;--- By default window matches if window URL begins with wanted URL (less any page info) ----
+    <$SHORTCUTURL_IE_WINDOW_COMPARE_VBSCRIPT-WINDOW_URL_STARTS_WITH_WANTED_URL_LOCATION>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Two different "sample" types of IE Window comparison mechanisms --------
+;----------------------------------------------------------------------------
+#(  '<?NewLine>'
+    ;--- Simple compare, the windows URL begins with the launch URL (minus any page info) ---------
+    #define? SHORTCUTURL_IE_WINDOW_COMPARE_VBSCRIPT-WINDOW_URL_STARTS_WITH_WANTED_URL_LOCATION
+
+    ;--- Log What we are doing ----------------------------------------------
+    LogLine "SHORTCUTURL_IE_WINDOW_COMPARE_VBSCRIPT-WINDOW_URL_STARTS_WITH_WANTED_URL_LOCATION, Window's URL is: " & oWindow.LocationURL
+    LogInc()
+        ;--- If a page attached to URL then remove it ---------------------------
+        if  right(LaunchUrl, 1) <> "/" then
+            ;--- The Launch URL contains page information (directories end with "/") ---
+            dim Pos : Pos = InStrRev(LaunchUrl, "/")
+            if  Pos <> 0 then
+                ;--- Make sure we haven't found "protocol://" -------------------
+                if  mid(LaunchUrl, Pos-1, 1) <> "/" then
+                    ;--- No unexplained error, so shorten URL to bit we care about ---
+                    LaunchUrl = left(LaunchUrl, Pos)
+                end if
+            end if
+        end if
+        LogLine " Matching against the launch URL: " & LaunchUrl
+        dim MatchLength : MatchLength = len(ucase(LaunchUrl))
+        AlreadyStarted = ucase(left(oWindow.LocationURL, MatchLength)) = ucase(LaunchUrl)
+    LogDec()
+#)
+#(  '<?NewLine>'
+    ;--- Simple compare, the windows URL begins with the launch URL ---------
+    #define? SHORTCUTURL_IE_WINDOW_COMPARE_VBSCRIPT-WINDOW_URL_STARTS_WITH_WANTED_URL
+
+    ;--- Log What we are doing ----------------------------------------------
+    LogLine "SHORTCUTURL_IE_WINDOW_COMPARE_VBSCRIPT-WINDOW_URL_STARTS_WITH_WANTED_URL, Window's URL is: " & oWindow.LocationURL
+
+    dim MatchLength : MatchLength = len(ucase(LaunchUrl))
+    AlreadyStarted = ucase(left(oWindow.LocationURL, MatchLength)) = ucase(LaunchUrl)
+#)
+;---[4DocoShortcutUrl-IE-Options]---
+
+
+
+;----------------------------------------------------------------------------
+;--- Used to safely invoke a URL --------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@ShortcutUrlCounter = 0
+#(
+    #define ShortcutUrl
+
+    ;--- Basic check here as invoked macros will check parameters names -----
+    {$!KEYWORDS}                               ;;Don't Expect any keywords!
+
+    ;--- Mark command -------------------------------------------------------
+    <$UpdateMmLocation>
+
+    ;--- Use Unique keys -----------------------------------------------------
+    #RexxVar @@ShortcutUrlCounter + 1
+    #define+ @@UniqueKey Sc2Url_<??@@ShortcutUrlCounter>
+
+    ;--- Convert the SChorcuts location into a directory key ----------------
+    #DefineRexx ''
+        ;--- Handle the "DIR" parameter -------------------------------------
+        <$Rexx4MakeDirectoryTree DIR=^{$DIR="<$DEFAULT_SHORTCUT_DIR>"}^>;
+        RxScDirKey = DT_KEYNAME;
+    #DefineRexx
+    <??DTVBS><?RestartLine>
+
+    ;--- Invoke the code to handle the request (you can define your own handler ---
+    #evaluate+ ^^ ^@@HOW = '{$How=~<$DEFAULT_SHORTCUTURL_HOW>~}'^
+    #ifndef  ShortcutUrl-Implementation-[@@HOW]
+        #error ^The ShortcutURL method "<??@@HOW>" is unknown ("ShortcutUrl-Implementation-<??@@HOW>" is undefined).^
+    #elseif
+        ;--- Call the handler -----------------------------------------------
+        <$ShortcutUrl-Implementation-[@@HOW] {$?}>
+    #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- BASIC Launch Mechanism (safest most generic method) --------------------
+;----------------------------------------------------------------------------
+#(
+    #define? ShortcutUrl-Implementation-BASIC
+
+    ;--- Ensure all parameters are used by this command ---------------------
+    {$!:Url,DIR,TITLE,IconFileAt,HotKey,IconIndex}
+
+    ;--- Start a component --------------------------------------------------
+    #DefineRexx ''
+        @@C = '<' || '$Component "<$@@UniqueKey>" Create="Y" Directory_="<??RxScDirKey>"';
+        @@C = @@C || ' ' || ReplaceMacros(MacroGet("SHORTCUTURL_BASIC_KEYPATH_TYPE_FOR_COMPONENTS")) || '>' || '0A'x;
+    #DefineRexx
+    <??@@C>
+        ;--- Create Shortcut via INI file -----------------------------------
+        <$IniFile "{$Title}.url" DIR="<??RxScDirKey>">
+           <$IniSection "InternetShortcut">
+               ;--- Define the URL ------------------------------------------
+               <$Ini "URL" Value="{$Url}" DOCO="<$DEFAULT_ADD_GENERATED_RESOURCES_TO_DOCO>">
+
+               ;--- Define the Icon -----------------------------------------
+               #if  ['{$IconFileAt=^^}' <> '']
+                    <$Ini "IconFile" Value="{$IconFileAt}"     DOCO="<$DEFAULT_ADD_GENERATED_RESOURCES_TO_DOCO>">
+                    <$Ini "IconIndex" Value="{$IconIndex=^0^}" DOCO="<$DEFAULT_ADD_GENERATED_RESOURCES_TO_DOCO>">
+               #endif
+
+               ;--- Define the HotKey ---------------------------------------
+               #if  ['{$HotKey=^^}' <> '']
+                    <$Ini "HotKey" Value="{$HotKey}" DOCO="<$DEFAULT_ADD_GENERATED_RESOURCES_TO_DOCO>">
+               #endif
+
+               ;--- Any other usr defined commands --------------------------
+               <$SHORTCUTURL_BASIC_EXTRA_INI_COMMANDS>
+           <$/IniSection>
+       <$/IniFile>
+    <$/Component>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Launch URL using IE AUTOMATION -----------------------------------------
+;----------------------------------------------------------------------------
+#(
+    #define? ShortcutUrl-Implementation-IE
+
+    ;--- Ensure all parameters are used by this command ---------------------
+    {$!:How,Url,DIR,TITLE,DESCRIPTION,Feature,ICONFILE,IconIndex,HotKey,INSTALLDIR,IeTitleBar,IeWidth,IeHeight,IeAddressBar,IeMenuBar,IeToolBar,IeStatusBar,IeFullScreen,IeResizable,IeStatusText}
+
+    ;--- Where are we going to install the file we will generate? -----------
+    #RexxVar @@FileDirKey = ^{$INSTALLDIR=^<$DEFAULT_SHORTCUTURL_IE_INSTALLDIR>^}^
+    #if [@@FileDirKey = '']
+        #error ^You must supply the "INSTALLDIR" parameter!{NL}The "ShortcutUrl" command has been configured to require it.^
+    #endif
+
+    ;--- Create Launch Script ------------------------------------------------
+    #define+ LAUNCH.VBS ShortcutUrl-{$Title}-<??RxScDirKey>.vbs
+    <$FileMake "<$MAKEMSI_NONCA_SCRIPT_DIR>\<$LAUNCH.VBS>">
+        #(  '<?NewLine>'
+            ;--- Syntax check -----------------------------------------------
+            option explicit
+            <?SyntaxCheck>
+
+            ;--- Initialization ---------------------------------------------
+            dim oShell        : set oShell       = MkObject("WScript.Shell")
+            dim oIE           : set oIE          = Nothing              ;;Only used when opening a new IE session
+            dim WantedTitle   : WantedTitle      = "{$IeTitleBar=^{$Title}^}"
+            dim Url           : Url              = "{$Url}"     ;;2017-03-21 - Make testing easier (this becomes the default)
+            if  wscript.arguments.count <> 0 then
+                URL = wscript.arguments(0)
+            end if
+            dim EnvOverRide   : EnvOverRide      = "SCURL_{$Title}"       ;;Name of environment variable that can override the URL on shortcut (good for testing)
+            dim ValOverRide   : ValOverRide      = GetEnv(EnvOverRide)    ;;Value from environment variable or ""
+            if  ValOverRide <> "" then
+                Url = ValOverRide
+            end if
+
+            ;--- Logging Init -----------------------------------------------
+            <?NewLine><?NewLine>
+            dim oMyFS  : set oMyFS = MkObject("Scripting.FileSystemObject")
+            const LogAppend = 8
+            const LogCreate = 2
+            dim LogIndent : LogIndent = 0
+            dim ScLogFile : ScLogFile = ""      'Logging initialized first time LogLine() invoked
+            dim   LogsDir : LogsDir   = ""      'This is the directory that contains "ScLogFile".
+            <?NewLine><?NewLine>
+
+            ;--- Log the basics ---------------------------------------------
+            LogLine "PRODUCT: <$ProdInfo.ProductName> version <$ProductVersion>" & vbCRLF
+            LogLine "URL    : " & Url & vbCRLF
+
+            ;--- Any user code ----------------------------------------------
+            <?NewLine><?NewLine>
+            <$SHORTCUTURL_IE_VBSCRIPT_INITIALIZATION_CODE>
+            <?NewLine><?NewLine>
+
+            ;--- Start HOD session (or bring into focus) --------------------
+            StartIeSession()
+
+            ;--- Finished ---------------------------------------------------
+            set oShell       = Nothing
+            wscript.quit 0
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            function FixMicrosoftsIeIntegrityIssueIfRequired(ByVal ErrNumber, ByRef oWindow)
+            '        Microsoft design flaw needs to be worked around, one of these
+            '        days they will be small enough that they will start to care about
+            '        backwards compatability and documentation....
+            '
+            '        This function returns true if "oWindow" was updated to fix an
+            '        "Integrity Issue" (oWindow updated), this is a non-perfact solution
+            '============================================================================
+                ;--- Init -----------------------------------------------------------
+                on error resume next
+                dim IntegrityIssue : IntegrityIssue = &H800706B5  'Decimal -2147023179 - http://stackoverflow.com/questions/1427370/error-800706b5-when-calling-iwebbrowser2-get-document
+                FixMicrosoftsIeIntegrityIssueIfRequired = false
+
+                ;--- We don't do anything unless its the "Integrity" Issue ---
+                if  ErrNumber = IntegrityIssue then
+                    ;--- We can work around this ----------------
+                    LogLine "We can workaround the ""Integrity Issue"" (disconnected from object)..."
+                    LogInc()
+                        LogLine "Looking for an IE window containing: " & Url
+                        dim oApplication  : set oApplication = MkObject("Shell.Application")
+                        dim oWindow2
+                        for each oWindow2 in oApplication.Windows
+                            if  AlreadyStarted(oWindow2, Url) then
+                                LogLine "Found the window, updating the Window Handle..."
+                                set oWindow = oWindow2
+                            end if
+                        next
+                        set oWindow2     = Nothing
+                        set oApplication = Nothing
+                    LogDec()
+                end if
+            end function
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            sub StartIeSession()
+            '============================================================================
+                ;--- Is there already a session running? --------------------
+                LogLine "StartIeSession()"
+                #if ['<$SHORTCUTURL_IE_REUSE_EXISTING_WINDOW_IF_POSSIBLE $$UPPER>' <> 'N']
+                    '--- We will look for an existing window that "we like" ---
+                    LogLine "Looking for an existing IE Window..."
+                    LogInc()
+                        dim oApplication  : set oApplication = MkObject("Shell.Application")
+                        dim oWindow
+                        for each oWindow in oApplication.Windows
+                            ;--- Check this session ---------------------------------
+                            if  AlreadyStarted(oWindow, Url) then
+                                ;--- Bring the window into focus --------------------
+                                BringExistingSessionIntoUsersFocus(oWindow)
+
+                                ;--- Improve title ----------------------------------
+                                ImproveIeTitleBarTitle(oWindow)
+                                exit sub                            ;;All done...
+                            end if
+                        next
+                        set oApplication = Nothing
+                    LogDec()
+                    <?NewLine>
+                #endif
+
+                ;--- No existing Window so Work out size/coordinates --------
+                dim Width    : Width    = {$IeWidth=^0^}
+                dim Height   : Height   = {$IeHeight=^0^}
+                dim IeResize : IeResize = false
+                if  Width <> 0 and Height <> 0 then
+                    ;--- We do wish to resize, so get screen details --------
+                    IeResize = true
+                    dim ScreenWidth, ScreenHeight   ;;Screen details
+                    dim x, y                        ;;Move window to here
+                    with MkObject("htmlfile").ParentWindow.Screen
+                         #if ['<$SHORTCUTURL_IE_RESIZING_CRITICAL $$UPPER>' <> 'Y']
+                             '--- Resizing not critical... ---
+                             on error resume next
+                         #endif
+                         ScreenWidth  = .AvailWidth
+                         ScreenHeight = .AvailHeight
+                         #if ['<$SHORTCUTURL_IE_RESIZING_CRITICAL $$UPPER>' <> 'Y']
+                             if err.number <> 0 then
+                                 '--- Failed getting screen size (so we won't resize after all) ---
+                                 IeResize = false
+                             end if
+                             on error goto 0
+                         #endif
+                    end With
+
+                    ;--- Determine position of window (center screen if possible) ---
+                    if  IeResize then
+                        ;--- We got the screen width & height so continue ---
+                        x = (ScreenWidth  - Width)  \ 2 : if x < 0 then x = 0
+                        y = (ScreenHeight - Height) \ 2 : if y < 0 then y = 0
+                    end if
+                end if
+
+                ;--- Start NEW session --------------------------------------
+                set oIE = MkObject("InternetExplorer.Application")
+
+                ;--- SET IE6+ options ---------------------------------------
+                oIE.menubar     = {$IeMenuBar=^true^}
+                oIE.toolbar     = {$IeToolBar=^true^}
+                oIE.statusbar   = {$IeStatusBar=^true^}
+                oIE.fullscreen  = {$IeFullScreen=^false^}
+                oIE.resizable   = {$IeResizable=^true^}
+                if  IeResize then
+                    ;--- Want to size the browser ---------------------------
+                    #if ['<$SHORTCUTURL_IE_RESIZING_CRITICAL $$UPPER>' <> 'Y']
+                        '--- Resizing not critical... ---
+                        on error resume next
+                    #endif
+                    oIE.width  = Width
+                    oIE.height = Height
+                    oIE.left   = x
+                    oIE.top    = y
+                    #if ['<$SHORTCUTURL_IE_RESIZING_CRITICAL $$UPPER>' <> 'Y']
+                        '--- Don't care if failed or not... ---
+                        on error goto 0
+                    #endif
+                end if
+
+                ;--- Set IE8+ options ---------------------------------------
+                on error resume next                          ;;Don't die if attributes don't exist (IE6, IE7)
+                    oIE.AddressBar = {$IeAddressBar=^true^}   ;;This option in particular needs to be set after (I think) ".resizable"
+                on error goto 0
+
+                ;--- Make visible etc ---------------------------------------
+                oIE.visible    = true
+                oIE.StatusText = "{$IeStatusText=^^}"
+                LogInc()
+                    LogLine "### HOOK 'SHORTCUTURL_IE_HOOK_OBJECT_UPDATE' Starting."
+                    LogInc()
+                            <$SHORTCUTURL_IE_HOOK_OBJECT_UPDATE>
+                    LogDec()
+                    LogLine "### HOOK 'SHORTCUTURL_IE_HOOK_OBJECT_UPDATE' Finished."
+                LogDec()
+                LogInc()
+                    LogLine "### HOOK 'SHORTCUTURL_IE_HOOK_UPDATE_URL_JUST_BEFORE_LAUNCH_NEW_IE_SESSION' Starting."
+                    LogInc()
+                        <$SHORTCUTURL_IE_HOOK_UPDATE_URL_JUST_BEFORE_LAUNCH_NEW_IE_SESSION>
+                    LogDec()
+                    LogLine "### HOOK 'SHORTCUTURL_IE_HOOK_UPDATE_URL_JUST_BEFORE_LAUNCH_NEW_IE_SESSION' Finished, will now oIE.navigate(): " & Url
+                LogDec()
+                oIE.navigate URL
+
+                ;--- Adjust its title ---------------------------------------
+                if  WantedTitle <> "" then
+                    ;--- Not a critical process -----------------------------
+                    dim Seconds : Seconds = 0
+                    on error resume next
+                    do  while Seconds < 10
+                        ;--- Got to love using MS APIs... -------------------
+                        err.clear()
+                        dim IsBusy    : IsBusy    = True : IsBusy = oIE.busy
+                        dim ErrNumber : ErrNumber = err.number
+                        if  ErrNumber <> 0 then
+                            ;--- We failed to get the busy state ------------
+                            LogLine "Getting the Windows busy state failed, reason: 0x" & hex(ErrNumber) & " - " & err.description
+                            FixMicrosoftsIeIntegrityIssueIfRequired ErrNumber, oWindow
+                        else
+                            ;--- We have the "busy" state -------------------
+                            if  not IsBusy then
+                                ;--- Page loading completed ---------------------
+                                exit do
+                            end if
+                        end if
+
+                        ;--- Wait a bit and retry until wait limit ----------
+                        wscript.Sleep 1 * 1000
+                        Seconds = Seconds + 1
+                    loop
+                    ImproveIeTitleBarTitle(oIE)
+                end if
+
+                ;--- Finished -----------------------------------------------
+                set oIE = Nothing
+            end sub
+
+            ;--- If we reuse windows where possible then we need to generate the supporting code ---
+            #if ['<$SHORTCUTURL_IE_REUSE_EXISTING_WINDOW_IF_POSSIBLE $$UPPER>' <> 'N']
+                <?NewLine>
+                <?NewLine>
+                '============================================================================
+                function AlreadyStarted(ByRef oWindow, ByVal LaunchUrl)     'Used to match a window we are interested in (by title, url etc)
+                '============================================================================
+                    ;--- Play it safe -------------------------------------------
+                    on error resume next
+                    AlreadyStarted = false
+
+                    ;--- User can override this code ----------------------------
+                    <?NewLine>
+                    '*********************************************************************************
+                    '*** DEFINED CODE FOLLOWS: DEFAULT_SHORTCUTURL_IECOMPARE ***
+                    '*********************************************************************************
+                    <?NewLine>
+                    LogInc()
+                        LogLine "### AlreadyStarted() Starting, Windows URL: " & oWindow.LocationURL
+                        LogInc()
+                            <$DEFAULT_SHORTCUTURL_IECOMPARE>
+                        LogDec()
+                        LogLine "### AlreadyStarted()' Finished, AlreadyStarted=" & AlreadyStarted
+                    LogDec()
+                end function
+
+                <?NewLine>
+                <?NewLine>
+                '============================================================================
+                sub BringExistingSessionIntoUsersFocus(ByRef oWindow)
+                '============================================================================
+                    on error resume next
+                    LogLine ""
+                    LogLine "BringExistingSessionIntoUsersFocus()"
+                    LogInc()
+                        dim Worked : Worked = false
+                        Worked = oShell.AppActivate(oWindow.Document.Title)
+                        if  err.number <> 0 or not worked then
+                            ;--- Didn't work? ---------------------------------------
+                            dim Text : Text = "{$Title} is already running!" & vbCRLF & vbCRLF & "We tried to bring it into focus but this failed!"
+                            LogLine "MSGBOX - SHORTCUTURL_IE_VBSCRIPT_DIE_DISPLAY_MESSAGE"
+                            LogLine "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                            LogLine Text
+                            MsgBox  Text, vbInformation, "ALREADY STARTED"
+                        else
+                            LogLine "Existing session should now be in focus..."
+                        end if
+                        'oShell.Run("%WinDir%\explorer.exe """ & URL & """")
+                    LogDec()
+                end sub
+            #endif
+
+            <?NewLine>
+            <?NewLine>
+            '============================================================================
+            sub ImproveIeTitleBarTitle(ByRef oWindow)
+            '============================================================================
+                ;--- Well if it fails its not critical ----------------------
+                on error resume next
+
+                ;--- Want to do this? ---------------------------------------
+                if  WantedTitle <> "" then
+                    ;--- Get Existing title and tweek -----------------------
+                    <$SHORTCUTURL_IE_UPDATE_TITLE_VB_STATEMENTS>
+                end if
+            end sub
+
+
+            <?NewLine>
+            <?NewLine>
+            '============================================================================
+            function MkObject(ByVal AutomationClass)
+            '============================================================================
+                on error resume next
+                set MkObject = wscript.CreateObject(AutomationClass)
+                if  err.number <> 0 then
+                    Die "Failed loading the automation class """ & AutomationClass & """"
+                end if
+            end function
+
+
+            <?NewLine>
+            <?NewLine>
+            '============================================================================
+            function GetEnv(EnvName)
+            '============================================================================
+               dim Try
+               Try    = "%" & EnvName & "%"
+               GetEnv = oShell.ExpandEnvironmentStrings(Try)
+               if  GetEnv = Try then
+                   GetEnv = ""
+               end if
+            end function
+
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            sub Die(ByVal Text)
+            '============================================================================
+                ;--- Display error message ----------------------------------
+                on error resume next
+                LogLine ""
+                LogLine "FATAL ERROR"
+                LogLine "~~~~~~~~~~~"
+                LogLine Text
+                <$SHORTCUTURL_IE_VBSCRIPT_DIE_DISPLAY_MESSAGE>
+
+                ;--- Exit program -------------------------------------------
+                QUIT()
+            end sub
+            '============================================================================
+            sub QUIT()
+            '============================================================================
+                ;--- If we opened a new window then close it ----------------
+                if  not oIE is Nothing then
+                     oIE.quit()
+                     set oIE = Nothing
+                end if
+
+                ;--- Terminate launcher script ------------------------------
+                wscript.quit 999
+            end sub
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            function CreateDirectoryTree(ByRef oFS, byVal UserDirName)  'Version 14.152a
+            '
+            ' Overcomes the FSO restriction (it can not create a whole tree)
+            '
+            ' Also note the FSO does not handle UNC names very well...
+            ' I will probably improve code to work around the "features".
+            '=====================================================================
+               '--- Make sure we don't have problems ------------------------------------
+               CreateDirectoryTree = false
+               if  UserDirName = "" then exit function
+               on error resume next
+
+               '--- Make sure the parent exists -----------------------------------------
+               dim ParentDir : ParentDir = oFS.GetParentFolderName(UserDirName)
+               if  not oFS.FolderExists(ParentDir) then
+                   CreateDirectoryTree oFS,  ParentDir
+               end if
+
+               '--- Now create this directory -------------------------------------------
+               if  oFS.FolderExists(UserDirName) then
+                   CreateDirectoryTree = true
+               else
+                   '--- Create directory ------------------------------------------------
+                   err.clear()
+                   oFS.CreateFolder UserDirName
+                   if err.number = 0 then
+                      CreateDirectoryTree = true
+                   end if
+               end if
+            end function
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            function GetEnvDieOpt(EnvName, DieOnError)
+            '============================================================================
+                dim Try
+                GetEnvDieOpt = ""
+                on error resume next
+                Try    = "%" & ucase(EnvName) & "%"
+                GetEnvDieOpt = oShell.ExpandEnvironmentStrings(Try)   ;;Better mechanisms can require higher user privledges...
+                if  GetEnvDieOpt = Try then
+                    if   DieOnError then
+                         LogIndent = 0
+                         Die("The environment variable """ & EnvName & """ doesn't exist.")
+                   else
+                         GetEnvDieOpt = ""
+                   end if
+                end if
+            end function
+
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            sub LogInc()
+            '============================================================================
+                LogIndent = LogIndent + 1
+            end sub
+
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            sub LogDec()
+            '============================================================================
+                LogIndent = LogIndent - 1
+                if  LogIndent < 0 then LogIndent = 0
+            end sub
+
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            sub LogLine(ByVal TheLine)
+            '============================================================================
+                ;--- Any initialization required and what mode will file be opened in? ---
+                on error resume next
+                dim How : How = LogAppend
+                '---[ START: SHORTCUTURL_LOGLINE_INITIALIZATION ]---
+                <$SHORTCUTURL_LOGLINE_INITIALIZATION>   ;;How = LogAppend or LogCreate and set up "ScLogFile" to name the log file in an existing directory
+                '---[ END: SHORTCUTURL_LOGLINE_INITIALIZATION ]---
+                <?NewLine><?NewLine>
+
+                ;--- Work out the start of the line ---------------------------
+                dim StartLine1 : StartLine1 = ""
+                dim StartLines : StartLines = ""
+                if  TheLine <> "" then
+                    '--- Not a blank line so add time+indent -------------------
+                    StartLine1 = string(LogIndent*4, " ") & mid("*-+>#", (LogIndent Mod 5)+1, 1) & " " & time() & ": "
+                    StartLines = string(len(StartLine1), " ")
+                end if
+
+                '--- Output the line -------------------------------------------
+                <?NewLine><?NewLine>
+                dim Stream
+                set Stream = oMyFS.OpenTextFile(ScLogFile, How, True)
+                    Stream.WriteLine StartLine1 & replace(TheLine, vbCRLF, vbCRLF & StartLines)
+                Stream.close
+                set Stream = Nothing
+            end sub
+
+
+            <?NewLine><?NewLine><?NewLine><?NewLine>
+            '###################################################################
+            '#### User Supplied Code (if any) follows ##########################
+            '###################################################################
+            <?NewLine><?NewLine>
+            <$SHORTCUTURL_IE_VBSCRIPT_SUPPORTING_FUNCTIONS_AND_SUBROUTINES>
+        #)
+    <$/FileMake>
+
+    ;--- Start Component, Advertised shortcut? ------------------------------
+    #define+ VbsKey    <$@@UniqueKey>.vbs
+    #define+ @@FEATURE {$Feature='<$DEFAULT_SHORTCUTURL_IE_FEATURE>'}
+    #if ['<$@@FEATURE>' = '']
+        ;--- NON-ADVERTISED , so specifi target! ----------------------------
+        ;#define+ @@TARGET   [#<$VbsKey>]                       ;;ICE69        WARNING   Mismatched component reference.
+        #define+ @@TARGET   [<??@@FileDirKey>]<$VbsKey>
+
+        ;--- Create file component ------------------------------------------
+        <$Component "<$VbsKey>" Create="Y" Directory_="<??@@FileDirKey>">
+            <$File RowKey="<$VbsKey>" DESTINATION="<$VbsKey>" SOURCE="<$MAKEMSI_NONCA_SCRIPT_DIR>\<$LAUNCH.VBS>" KeyPath="Y" DOCO="<$DEFAULT_ADD_GENERATED_RESOURCES_TO_DOCO>">
+        <$/Component>
+
+        ;--- Component for the shortcut -------------------------------------
+        ;<$MsiValFilter "Component <$VbsKey> has non-advertised shortcuts. It's KeyPath registry key should fall under HKCU.">
+        ;<$MsiValFilter "Component '<$VbsKey>' has both per-user and per-machine data with a per-machine KeyPath.">
+        #DefineRexx ''
+            @@C = '<' || '$Component "<$VbsKey>_SC" Create="Y" Directory_="<??@@FileDirKey>"';
+            @@C = @@C || ' ' || ReplaceMacros(MacroGet("SHORTCUTURL_IE_KEYPATH_TYPE_FOR_COMPONENTS")) || '>' || '0A'x;
+        #DefineRexx
+        <??@@C>
+    #elseif
+        ;--- ADVERTISED, So no TARGET ---------------------------------------
+        #define+ @@TARGET
+
+        ;--- ADVERTISED, start component ------------------------------------
+        <$Component "<$@@UniqueKey>_SC" Create="Y" Directory_="<??@@FileDirKey>">
+
+        ;--- Add the VBS ----------------------------------------------------
+        <$File RowKey="<$VbsKey>" SOURCE="<$MAKEMSI_NONCA_SCRIPT_DIR>\<$LAUNCH.VBS>" KeyPath="Y" DOCO="<$DEFAULT_ADD_GENERATED_RESOURCES_TO_DOCO>">
+    #endif
+
+    ;--- Create the shortcut ---------------------------------------------
+    #(
+       <$Shortcut
+                   Dir="<??RxScDirKey>"
+               FEATURE="<$@@FEATURE>"
+               Target="<$@@TARGET>"
+             Arguments=^"{$Url}"^              ;;2008-10-14 - Now pass on command line to support property substitution
+                 Title="{$Title}"
+           Description="{$Description=^{$Url}^}"
+               WorkDir="<??@@FileDirKey>"
+                   Icon="@{$IconFile}"
+              IconIndex={$IconIndex=^0^}
+                Hotkey="{$HotKey=^^}"
+               ShowCmd="SHOWMINNOACTIVE"       ;;Less flicker but IE still starts OK
+                RowKey="<$@@UniqueKey>"
+       >
+    #)
+
+    ;--- End the shortcuts component ----------------------------------------
+    <$/Component>
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- END --------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId UNLOCK "ShortcutUrl.MMH"

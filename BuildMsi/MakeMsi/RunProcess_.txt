@@ -1,0 +1,373 @@
+Copyright (C)2002, Frank P. Westlake.
+
+LICENSE:
+RunProcess.exe is FREEWARE. It is freely redistributable and there are no user 
+limits, time limits, or restrictions on the number of copies that may be used 
+or retained; however, the author retains the copyright.
+
+DESCRIPTION:
+Runs a process and waits for it to complete or optionally launches the process 
+and exits. A report may be printed with the process times and other 
+information. The process may be given a delayed start, a number of repetitions 
+to recur, and a time limit. The process may be safely killed if it runs beyond 
+a specified duration. A console process may be given its own window and the 
+window parameters may be specified. The process' base priority may be 
+specified. The process can be logged on to a specified user account. An 
+extended length command line may be handed to the process and the standard 
+streams may be redirected internally. There are more options, see below.
+
+ERRORLEVEL:
+If the process is successfully started the exit code will be that of the client 
+process. If the process fails to start the exit code will be a Windows system 
+exit code that identifies the problem.
+
+USAGE:
+
+RunProcess [options] ProgramName [ProgramName's parameters]
+
+If the file name extension is not specified a search will be conducted using 
+the PATHEXT environment variable. The extension is then located in the 
+registry under HKEY_CLASSES_ROOT and the associated program is run.
+
+RunProcess will pass piped or redirected input to the client program, for
+example:
+
+	DIR | RunProcess %ComSpec% /CMORE
+	RunProcess %ComSpec% /CMORE <file
+
+OPTIONS (':' is optional):
+
+ /a:file
+ /-a:file
+		The contents of this file will be appended to the command 
+		line, following a space with /a, or without the space with 
+		/-a, and line endings will be converted to spaces. The 
+		length of the resulting command line is limited by the 
+		system to 32kb. The purpose of the space is to separate 
+		the last parameter on the RunProcess command line from the 
+		first parameter in the file. If the two must be 
+		concatenated without an intervening space, use the switch 
+		/-a. For example:
+
+		Echo Three blind mice.>commandline.txt
+		Echo See how they run.>>commandline.txt
+		RunProcess /-a:commandline.txt %ComSpec% /cECHO/
+
+		In the above example the command line will become:
+
+		%ComSpec% /cECHO/Three blind mice. See how they run.
+
+		Without the hyphen in the switch the command line would be:
+
+		%ComSpec% /cECHO/ Three blind mice. See how they run.
+
+		NOTE: CMD.EXE will not accept extended command line lengths 
+		but most other programs will.
+
+ /c:flag
+		Set the process priority class. Realtime priority may 
+		interfere with system processes and should be avoided. 
+		A low priority process may fail on a busy system. 'flag' 
+		may be one of the following:
+
+		L or l	LOW (or IDLE) priority.
+		N or n	NORMAL priority.
+		H or h	HIGH priority.
+		R or r	REALTIME priority.
+		-		Disable priority boosting. Use alone or with one of the 
+				above.
+
+		Example:
+		RunProcess /c:L BackupFiles.cmd
+
+ /desktop:[[Window station name\]desktop name]
+
+		The Desktop, or window station and desktop, for the process's 
+		window. The default, if "/desktop" alone is specified, is 
+		"WinSta0\Default". There will rarely ever be a need to use
+		a window station and desktop other than the default. The logon
+		desktop is "WinSta0\Winlogon" and using it requires the 
+		appropriate privilidges (SYSTEM user has them). Services 
+		generally use a noninteractive window station.
+
+		Examples:
+		RunProcess /desktop:WinSta0\WinLogon /fC %SystemRoot%\ALERT.EXE
+		RunProcess /desktop:WinSta0\Default %ComSpec%
+		RunProcess /desktop %ComSpec%
+
+
+ /d:DirName
+		The working directory for the process. Note that if the 
+		directory to be assigned as the working directory is named 
+		"esktop", the colon must be included (/d:esktop) or the switch 
+		will be interpreted as "/desktop".
+
+ /f:flags
+		Process flags. 'flags' may be one or more of the following, 
+		except where noted, in either upper or lower case:
+
+		C	Create a new console window. Cannot be used with 'D'.
+		D	Create a detached process. Cannot be used with 'C'.
+		G	Create a new process group.
+		P	Create the 16-bit application in a private VDM.
+		S	Create the 16-bit application in the shared VDM.
+		U	Create a Unicode environment.
+		W	Create process in a suspended state. If the process is 
+			created with its own process group (/fG) CTRL-C will 
+			decrement the suspend count until it reaches 0 and the 
+			process resumes. Once the process has resumed CTRL-C will 
+			behave normally. CTRL-BREAK will cancel a suspended process. 
+			Other programs, such as psSuspend.exe, can also be used to 
+			resume the process.
+
+		Only one of the following (default is B [Batch]):
+
+		B	If logon as user (/u, below), perform a batch logon.
+		I	If logon as user (/u, below), perform an interactive 
+			logon.
+		N	If logon as user (/u, below), perform a network logon.
+		V	If logon as user (/u, below), perform a service logon.
+
+		Example:
+		RunProcess /f:CIG /u:fwestlak /p:secret BackupFiles.cmd
+
+ /e:o|n
+		Send the process's STDERR to STDOUT (/e:o) or to NULL (/e:n).
+		Ignored if /F specifies either flag C or flag D.
+
+ /o:e|n
+		Send the process's STDOUT to STDERR (/o:e) or to NULL (/o:n).
+		Ignored if /F specifies either flag C or flag D.
+
+ /i
+		Ignore CTRL_LOGOFF_EVENT. This permits RUNPROCESS to be used 
+		with SRVANY.EXE as a service that will remain after logoff.
+
+ /k:time
+		Kill the process if it does not finish in the specified time. 
+		If the process is being repeated (see /t) the kill timer will 
+		be applied to each repetition. If the client process generates 
+		processes of its own (i.e. CMD.EXE) those processes will not 
+		be killed unless the switch /F:G is also specified. If not 
+		specified otherwise, the time will be read as milliseconds. 
+		To indicate hours, minutes, or seconds, immediately follow the 
+		time with one of the modifiers: h, m, or s. For Example, the 
+		following are equivalent periods of time:
+
+		RunProcess /k:7200000ms BackupFiles.cmd
+		RunProcess /k:7200000   BackupFiles.cmd
+		RunProcess /k:7200s     BackupFiles.cmd
+		RunProcess /k:120m      BackupFiles.cmd
+		RunProcess /k:2h        BackupFiles.cmd
+
+ /m:BitMask
+		Set the process affinity mask. On a multiprocessor system this sets 
+		the processors that the process can use. 'BitMask' is a right-
+		justified binary pattern that identifies the processors to be used. 
+		Some examples:
+
+		/m:1		Processor 1 only.
+		/m:10		Processor 2 only.
+		/m:11		Processors 1 or 2.
+		/m:100	Processor 3 only.
+
+ /r[:o|e|c|n|filename]
+		Print a process report to STDOUT (o), STDERR (e), directly to the 
+		console window (c), or to a named file. The default is STDERR. To 
+		disable all RunProcess output, including PID and wait information 
+		but not including errors, use /r:n. The report will be printed 
+		after the process has completed, unless the switch /x is included, 
+		and will appear similar to the following:
+
+		------ RunProcess: Process Information ------
+		ProcessID:        232
+		Program:          C:\WINNT\System32\cmd.EXE
+		CommandLine:      C:\WINNT\System32\cmd.EXE /cC:\temp\ttt.cmd
+		Repetition:       1 of 1
+		MinimumOSVer:     4.0
+		PriorityClass:    NORMAL
+		CreationTime:     2002-09-17 13:22:37.971
+		ExitTime:         2002-09-17 13:22:38.091
+		ElapsedTime:      120.1728 ms
+		KernelTime:       20.0288 ms
+		UserTime:         20.0288 ms
+		ExitCode:         0
+		ErrorMessage:     The operation completed successfully.
+		------ RunProcess: End Process Information---
+
+		The "ErrorMessage" item is a translation of the exit code to a 
+		Windows system message. The process may or may not be using 
+		Windows system exit codes so this information may or may not 
+		be correct.
+
+ /u:username
+		If specified, the process will be logged on with the indicated 
+		username. The username may be preceded with the domain name. 
+		The current user must have the applicable batch, interactive, 
+		service, or network priveledge. If none of the flags B, I, N, 
+		or S are specified in /f above, B is assumed.
+
+		Examples:
+		RunProcess /u:fwestlake        /p BackupFiles.cmd
+		RunProcess /u:.\fwestlake      /p BackupFiles.cmd
+		RunProcess /u:domain\fwestlake /p BackupFiles.cmd
+
+		To be able to use this "logon as" feature the user must have 
+		the following privileges:
+
+		Minimum:    	"Act as part of the Operating System"
+			      	"Logon locally"
+		Batch logon:	"Log on as a batch job"
+		Service logon:	"Log on as a batch service"
+		Network logon:	"Access this computer from network"
+
+		These privileges can be set with the User Manager (menu item 
+		Policies|User Rights). Normally only the SYSTEM user has these 
+		privileges.
+
+ /p[password]
+		A plain text password that is necessary for the username. If 
+		this switch is absent, no password is used. If the switch is 
+		used alone (/p), the password is read from STDIN with echo 
+		disabled. STDIN may be a pipe or redirected input.
+
+		Examples:
+		RunProcess /u:fwestlake /p:%PASSWORD% BackupFiles.cmd
+		RunProcess /u:"NT Authority\system" BackupFiles.cmd
+		ECHO/%PASSWORD% | RunProcess /u:fwestlake /p BackupFiles.cmd
+		RunProcess /u:fwestlake /p BackupFiles.cmd < password.txt
+
+ /t:time
+		A time, date-time, period, or date-time interval in accordance 
+		with ISO8601:2000. First the examples, then the explanation:
+
+		Wait until 12:00 before starting the process:
+		/t:T12
+
+		Wait until 12:34:56.789 before starting the process:
+		/t:T12:34:56.789
+
+		Wait until 2005-12-25 08:00:01UTC before starting the process:
+		/t:20021225T080001Z
+		or:
+		/t:2002-12-25T08:00:01+00:00
+
+		Run twice starting at time 12:34:56.789. If one of the two 
+		processes is still running at 13:00, kill it and exit:
+		/t:R2/T12:34:56.789/T13:00
+		or:
+		/t:R2/T12:34:56.789/T13
+
+		Run for 12 minutes. If the process is still running at the end 
+		of the 12 minute period, kill it and exit:
+		/t:PT12M
+
+		The general formats are:
+
+		[R[n]/]START[/END or PERIOD]
+		[R[n]/]START or PERIOD[/END]
+
+		R[n]	The process will be repeated n times, or indefinately if 
+		n is absent. If this element is used it must be followed by a 
+		slant '/'.
+
+		START, END, and PERIOD
+		START and END are a date, time or date and time with the 
+		following general format:
+
+		dateTtime
+
+		The general format of the element 'date' is:
+
+		CCYYMMDD   or CCYYWWD   or CCYYDDD or
+		CCYY-MM-DD or CCYY-WW-D or CCYY-DDD
+
+		All basic, extended, and truncated ISO8601:2000 formats are 
+		accepted with the exception of these five ambiguous truncated 
+		formats:
+
+		-YY
+		-MM
+		-DD
+		-YY-MM
+		-MM-DD
+
+		The 'time' element must be preceded by 'T'. The general format 
+		of the element 'time' is:
+
+		HH[MM[SS[.sss]]]   or HH[MM[.mmm]]  or HH[.hhh] or
+		HH[:MM[:SS[.sss]]] or HH[:MM[.mmm]] or HH[.hhh]
+
+		The general formats for a PERIOD is:
+
+		PxYxMxDTxHxMxS  or  PxW
+
+		A PERIOD begins with the letter 'P. The time portion of the 
+		PERIOD, if included, must begin with 'T'. All elements are 
+		optional except that at least one of them must be present (or 
+		it wouldn't be a PERIOD). Each element is a number followed by 
+		a letter indicating the type of calendar/clock element.
+
+		xY	x years.
+		xM	x months.
+		xD	x days.
+		xH	x hours.
+		xM	x minutes. This is the same as for months but the 'T' 
+			separating the calendar elements from the time 
+			elements clarifies.
+		xS	x seconds.
+		xW	x weeks.
+
+		If a duration or ending time is specified and the client 
+		process generates processes of its own (i.e. CMD.EXE) those 
+		processes will not be killed unless the switch /F:G is also 
+		specified. 
+
+ /title:text
+		A console window title. Use only if flag /f:c is specified.
+
+ /v:file
+		An environment block for the process. Normally a new process 
+		is given a copy of its parents environment block. The file 
+		'file' should be formatted with one line per variable and the 
+		lines must be sorted. Leading spaces will not be removed, they 
+		will be read as part of the variable name.
+
+		Example:
+
+		ECHO/=C:=C:\WINNT>Vars.txt
+		ECHO/ComSpec=%SystemRoot%\System32.CMD.EXE>>Vars.txt
+		ECHO/Path=C:\WINNT;C:\WINNT\System32>>Vars.txt
+		ECHO/PATHEXT=.COM;.EXE;.CMD>>Vars.txt
+		ECHO/PROMPT=%ComSpec%$G>>Vars.txt
+		ECHO/SystemDrive=C:>>Vars.txt
+		ECHO/SystemRoot=C:\WINNT>>Vars.txt
+		ECHO/TEMP=C:\TEMP>>Vars.txt
+		ECHO/TMP=C:\TMP>>Vars.txt
+		ECHO/windir=C:\WINNT>>Vars.txt
+
+		RunProcess /v:Vars.txt BackupFiles.cmd
+
+ /w:flags
+		Sets window options. 'flags' may be one or more of the 
+		following, upper or lower case, followed by a value and 
+		optionally separated by commas:
+
+		X	Window position, pixels from left of screen.
+		Y	Window position, pixels from top of screen.
+		C	Window size, pixels from left to right.
+		R	Window size, pixels from top to bottom.
+		L	Consoles only, buffer size in lines from top to bottom.
+		W	Consoles only, buffer size in characters from left to 
+			right.
+		B	Consoles only, background color.
+		F	Consoles only, foreground color.
+		S	Window state (0=hidden, 1=normal, 2=min, 3=max)
+
+		Examples:
+		RunProcess /w:R80L25,S2 BackupFiles.cmd
+		RunProcess /w:R80,L25,B1,F11 BackupFiles.cmd
+
+ /x
+		Do not wait for the process to complete before repeating or 
+		exiting.

@@ -1,0 +1,215 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ACCESS.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.7  $
+;          $Date:   01 May 2008 18:41:28  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Access.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "ACCESS.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoAccessOptions]---
+#define? DEFAULT_ACCESS_USERS
+#define? DEFAULT_ACCESS_ACCESS                            GENERIC_ALL
+#define? ACCESS_ROW_INSERTIONS_LockPermissions_@VALIDATE  NEW -MISSINGDATA      ;;Some msis don't have "_Validation" data
+;---[4DocoAccessOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- The ACCESS macro (stores user access info under alias) -----------------
+;----------------------------------------------------------------------------
+#(
+  #define Access
+
+  ;--- Store the information away under the alias provided ------------------
+  #evaluate ^^ ^<$@@Rexx4Access {$?}>^
+#)
+#RexxVar @@A_FILE_READ_DATA             =  1
+#RexxVar @@A_FILE_WRITE_DATA            =  2
+#RexxVar @@A_FILE_APPEND_DATA           =  4
+#RexxVar @@A_FILE_READ_EA               =  8
+#RexxVar @@A_FILE_WRITE_EA              =  16
+#RexxVar @@A_FILE_EXECUTE               =  32
+#RexxVar @@A_FILE_DELETE_CHILD          =  64
+#RexxVar @@A_FILE_READ_ATTRIBUTES       =  128
+#RexxVar @@A_FILE_WRITE_ATTRIBUTES      =  256
+#RexxVar @@A_DELETE                     =  65536
+#RexxVar @@A_READ_CONTROL               =  131072
+#RexxVar @@A_WRITE_DAC                  =  262144
+#RexxVar @@A_WRITE_OWNER                =  524288
+#RexxVar @@A_SYNCHRONIZE                =  1048576
+#RexxVar @@A_ACCESS_SACL                =  8388608
+#RexxVar @@A_ACCESS_SYSTEM_SECURITY     =  16777216
+#RexxVar @@A_MAXIMUM_ALLOWED            =  33554432
+#RexxVar @@A_GENERIC_ALL                =  268435456
+#RexxVar @@A_GENERIC_EXECUTE            =  536870912
+#RexxVar @@A_GENERIC_WRITE              =  1073741824
+#RexxVar @@A_GENERIC_READ               =  2147483648
+#define  @@WI_&H_NULL                        80000000        ;;Windows Installer uses this to represent null!
+#define  @@WI_&H_GENERIC_READ+FILE_READ_DATA 80000001        ;;Should be OK...
+#DefineRexx ^@@Rexx4Access^
+    ;--- Parameter validation -----------------------------------------------
+    {$!KEYWORDS}                        ;;Don't Expect any keywords!
+    {$!:#1,ACCESS,USERS}                ;;List all valid parameters
+
+    ;--- What is the alias? -------------------------------------------------
+    @@Alias = '{$#1}';
+
+    ;--- What permission do we want these to have? --------------------------
+    @@BitsBefore = '{$Access=^<$DEFAULT_ACCESS_ACCESS>^}'
+    @@Bits       = @@BitsBefore;
+    @@BitsTotal  = '00000000'x
+    do  while @@Bits <> ''
+        ;--- Get next bit ---------------------------------------------------
+        parse var @@Bits @@Bit @@Bits
+
+        ;--- Get the value as an integer ------------------------------------
+        if  datatype(@@Bit, 'W') = 1 then
+            @@BitsInteger = @@Bit;      ;;User simply provided an integer
+        else
+        do
+            ;--- User supplied value by name (normal situation) -------------
+            @@Key = '@@A_' || @@Bit
+            if  symbol(@@Key) <> 'VAR' then
+                error('The bit "' || @@Bit || '" is not a valid permission.');
+            @@BitsInteger = value(@@Key)
+        end;
+
+        ;--- Or Bit(s) ------------------------------------------------------
+        @@TheseBitPacked = x2c( right(d2x(@@BitsInteger), 8, '0'))
+        @@BitsTotal      = BitOr(@@BitsTotal, @@TheseBitPacked)
+    end;
+    @@Access = c2d(@@BitsTotal, 8)
+    @@Access = '&H' || d2x(@@Access, 8);
+
+    ;--- If the value is exactly "GENERIC_READ" then we need to change it (it represents "null") ---
+    if  @@Access = "&H<$@@WI_&H_NULL>" then
+        @@Access = "&H<$@@WI_&H_GENERIC_READ+FILE_READ_DATA>";
+
+    ;--- Get user info ------------------------------------------------------
+    {$Users=^<$DEFAULT_ACCESS_USERS>^ $$RxVar:@@Users}
+    ;@@Users  = translate(@@Users,, <$SUNDRY_STANDARD_DELIMITERS_REXXEXP> || ',;', ' ');
+    <$Rexx2ConvertDelimitersToSpaces RxVar="@@Users">
+    if  @@Users = '' then
+        error('Set permissions for which users? No users supplied!');
+
+    ;--- Save the Info away -------------------------------------------------
+    @@KeyPrefix = '@@ACCESS_' || c2x(translate(@@Alias)) || '_';
+    call value @@KeyPrefix || 'ACCESS', @@Access;
+    call value @@KeyPrefix || 'USERS',  @@Users;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Reusable macro (used by File(s), Directory commands and Registry) ------
+;----------------------------------------------------------------------------
+#DefineRexx ^RexxToSetAccess^
+    ;--- Parameter validation -----------------------------------------------
+    {$!:AliasVar,TableVar,KeyVar,ResultVar}
+
+    ;--- Get passed parameters ----------------------------------------------
+    @@AliasList = {$AliasVar};
+    @@Key       = {$KeyVar};
+    @@Table     = {$TableVar};
+
+    ;--- Init returned "code" -----------------------------------------------
+    @@C = '';
+
+    ;--- Loop through all Accesss aliases user supplied ---------------------
+    <$Rexx2ConvertDelimitersToSpaces RxVar="@@AliasList">
+    do while @@AliasList <> ''
+       ;--- Get next alias --------------------------------------------------
+       parse var @@AliasList @@Alias @@AliasList;
+
+       ;--- Work out the alias related info ---------------------------------
+       @@KeyPrefix = '@@ACCESS_' || c2x(translate(@@Alias)) || '_';
+       if  symbol(@@KeyPrefix || 'ACCESS') <> 'VAR' then
+            error('The access alias of "' || @@Alias || '" is unknown!');
+       @@Access = value(@@KeyPrefix || 'ACCESS');
+       @@Users  = value(@@KeyPrefix || 'USERS');
+
+       ;--- Build required commands -----------------------------------------
+       @@UserCnt = 0
+       do  while @@Users <> ''
+            ;--- Get next user ----------------------------------------------
+            @@User = GetQuotedText(@@Users, "@@Users", "", "parsing list of users from an earlier ACCESS command");
+
+            ;--- Split domain and user info ---------------------------------
+            @@Pos = pos('\', @@User)
+            if  @@Pos = 0 then
+                @@Domain = '';
+            else
+            do
+                @@Domain = left(@@User, @@Pos-1);
+                @@User   = substr(@@User, @@Pos+1);
+            end;
+
+            ;--- Save info --------------------------------------------------
+            @@C = @@C || '<' || '$Row'
+            @@C = @@C || ' LockObject="' || @@Key     || '"'
+            @@C = @@C || ' Table="'      || @@Table   || '"'
+            @@C = @@C || ' Domain="'     || @@Domain  || '"'
+            @@C = @@C || ' User="'       || @@User    || '"'
+            @@C = @@C || ' Permission="' || @@Access  || '"'
+            @@C = @@C || ' @Validate=^<$ACCESS_ROW_INSERTIONS_LockPermissions_@VALIDATE>^'
+            @@C = @@C || '>'
+       end;
+    end;
+
+    ;--- Return full code ---------------------------------------------------
+    {$ResultVar} = '<' || '$Table "LockPermissions">' || @@C || '<' || '$/Table>';
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- The ACCESSAPPLY macro --------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar '@@Type2Table_FILE'      = 'File'
+#RexxVar '@@Type2Table_REGISTRY'  = 'Registry'
+#RexxVar '@@Type2Table_DIRECTORY' = 'CreateFolder'
+#RexxVar '@@Type2Table_FOLDER'    = 'CreateFolder'
+#(
+    #define AccessApply
+    <$UpdateMmLocation>
+    {$!KEYWORDS}                        ;;Don't Expect any keywords!
+    {$!:ACCESS,TYPE,ROWKEY}
+
+    #evaluate ^^ ^<$@@Rexx4AccessApply {$?}>^
+    <??@@ApplyCde>
+#)
+#DefineRexx '@@Rexx4AccessApply'
+    ;--- Init and get parameters --------------------------------------------
+    @@ApplyCde = d2c(10)
+    @@Access   = '{$Access}';
+    @@Type     = '{$Type}';
+    @@RowKey   = '{$RowKey}';
+
+    ;--- Validate "TYPE" and work out table name ----------------------------
+    @@RxVar = '@@Type2Table_' || @@Type
+    if  symbol(@@RxVar) <> 'VAR' then
+        error('Can''t apply the access as the TYPE of "' || @@Type || '" is invalid!');
+    @@Table = value(@@RxVar)
+
+    ;--- Work out the code --------------------------------------------------
+    <$RexxToSetAccess AliasVar="@@Access" TableVar="@@Table" KeyVar="@@RowKey" ResultVar="@@ApplyCde">
+    @@ApplyCde = @@ApplyCde || d2c(10)
+#DefineRexx
+
+
+#NextId UNLOCK "ACCESS.MMH"
+
+

@@ -1,0 +1,1034 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MERGEMOD.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.30  $
+;          $Date:   24 Mar 2015 18:35:10  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MergeMod.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "MERGEMOD.MMH"
+
+;----------------------------------------------------------------------------
+;--- Some Options -----------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainMergeModuleRelatedOptions]---
+#define? DEFAULT_MERGEMOD_LANGUAGE                 0              ;;A reasonable default that frequently works
+#(
+    #define? MERGEMOD_IGNORE_ERRORS_ALWAYS                        ;;Not overridden by the "IgnoreErrors" parameter
+    _Validation                                                      ;;Don't care about any errors involving the "_Validation" table
+    Directory:TARGETDIR                                              ;;Windows Installer feature means that it tells you there is an issue on this entry (only "system" folder which can be duplicated)
+#)
+#define? DEFAULT_MERGEMOD_IGNORE_ERRORS                           ;;Overridden by "IgnoreErrors" parameter
+#define? MERGEMOD_COMPONENT_TARGETDIR_ERRORS_FATAL N              ;;N=Warning in HTML report, otherwise Fail
+#define? MERGEMOD_DLL_ACCEPTABLE_VERSIONS          "2.1;2"        ;;VB literal, Semicolon delimitered list of versions of "Msm.Merge?"
+#define? MERGEMOD_MEDIA_DISK_NUMBER_DESC_TEMPLATE  <$COMPILE_MEDIA_DISK_NUMBER_DESC_TEMPLATE>
+#define? MERGEMOD_MEDIA_VolumeLabel_TEMPLATE       <$COMPILE_MEDIA_VolumeLabel_TEMPLATE>
+#define? MERGEMOD_LOG_DIR                          <$MAKEMSI_OUT_LOG_DIR>MergeModule
+#define? MERGEMOD_HTMLRPT_HR                       <$SUNDRY_HTMLRPT_HR>
+;---[4DocoMainMergeModuleRelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- VBS constants and variables --------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+    #define msmError
+    oMmErrorType.add "{$#1}", "{$Constant}"
+    #if ["{$Help=""}" <> ""]
+        oMmErrorHelp.add "{$#1}", "{$Help}"
+    #endif
+#)
+#( '<?NewLine>'
+   #define MergemodVbsVariables
+
+   ;--- Merge Module Variables ----------------------------------------------
+   dim MergeModuleFullName
+   dim MergeModuleLog
+   dim MergeObjectName, oMerge
+   dim oMergeProperty, MergePropertyCnt
+   dim oDepend, oError, Item, TypeString, HelpString
+   dim MergeErrors, MergeErrorsFatal, MergeErrorsIgnoreParm, MergeErrorsTables, MergeDependErrors, DepKey, ErrCmt
+   dim @@ErrKey
+   dim MmIgnore, MmCnt, MmKey
+   dim MmDbKey,  MmDbTable                 ;;In database
+   dim MmModKey, MmModTable                ;;In Merge Module
+   dim MmErrKey, MmErrTable, MmErrIn       ;;In either
+   dim MergedFileKey
+   dim MmModuleTableText
+   dim MmConfigurableItems
+   dim MmDiskPrompt, MmVolumeLabel         ;;Used to build up DiskPrompt/VolumeLabel in "Media" table.
+
+   ;--- Only try to merge once ----------------------------------------------
+   dim @@AlreadyMerged : @@AlreadyMerged = false
+
+   ;--- Used for error logging ----------------------------------------------
+   dim oMmErrorType : set oMmErrorType = MkObject("Scripting.Dictionary")
+   dim oMmErrorHelp : set oMmErrorHelp = MkObject("Scripting.Dictionary")
+   <$msmError "1"  Constant="msmErrorLanguageUnsupported">
+   <$msmError "2"  Constant="msmErrorLanguageFailed">
+   <$msmError "3"  Constant="msmErrorExclusion">
+   <$msmError "4"  Constant="msmErrorTableMerge">
+   <$msmError "5"  Constant="msmErrorResequenceMerge"         Help="Bug in merge module - invalid 'BaseAction'">
+   <$msmError "6"  Constant="msmErrorFileCreate">
+   <$msmError "7"  Constant="msmErrorDirCreate">
+   <$msmError "8"  Constant="msmErrorFeatureRequired">
+   <$msmError "9"  Constant="msmErrorBadNullSubstitution">
+   <$msmError "10" Constant="msmErrorBadSubstitutionType">
+   <$msmError "11" Constant="msmErrorMissingConfigItem">
+   <$msmError "12" Constant="msmErrorBadNullResponse">
+   <$msmError "13" Constant="msmErrorDataRequestFailed">
+   <$msmError "14" Constant="msmErrorPlatformMismatch">
+
+   ;--- Used to indicate which tables we wish to ignore errors on -----------
+   dim oMmIgnoreTheseErrors : set oMmIgnoreTheseErrors = MkObject("Scripting.Dictionary")
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- VBS functions called by mainline ---------------------------------------
+;----------------------------------------------------------------------------
+#define  @@DISK1 1            ;;Hard code disk 1, if user does't like need to override template!
+#( '<?NewLine>'
+   #define MergeModVbsFunctions
+
+
+   <?NewLine>
+   '=========================================================================
+   function LoadMergeModuleObject()   ;;Create object, die on error
+   '=========================================================================
+       on error resume next
+       dim Acceptable : Acceptable = split(<$MERGEMOD_DLL_ACCEPTABLE_VERSIONS>, ";")
+       dim v
+       for v = 0 to ubound(Acceptable)
+           MergeObjectName = "Msm.Merge" & Acceptable(v)
+           set LoadMergeModuleObject = CreateObject(MergeObjectName)
+           if err.number = 0 then
+              ;--- Successfully created it ----------------------------------
+              exit function
+          end if
+      next
+
+      ;--- Didn't create any acceptable version -----------------------------
+      dim Msg : Msg = "We could not load ""MergeMod.dll"" (we tried versions """ & <$MERGEMOD_DLL_ACCEPTABLE_VERSIONS> & """)" & vbCRLF & vbCRLF
+      MergeObjectName = "Msm.Merge"
+      err.clear()
+      set LoadMergeModuleObject = CreateObject(MergeObjectName)
+      if err.number = 0 then
+         Msg = Msg & "We could load the older """ & LoadThis & """ automation object!" & vbCRLF & "There is probably an older ""MERGEMOD.DLL"" installed!" & vbCRLF & "Installing the latest version of ORCA may resolve this."
+      else
+         Msg = Msg & "Please install ""MERGEMOD.DLL"" (installing ORCA is easiest way)"  & vbCRLF & vbCRLF & "Reason 0x" & hex(err.number) & " - " & err.description
+      end if
+      error Msg
+   end function
+
+
+   <?NewLine>
+   '============================================================================
+   sub SetUpMergeModuleIgnores(ByVal IgnoreList)
+   '============================================================================
+       ;--- Treat "," and ";" as space --------------------------------------
+       IgnoreList = replace(IgnoreList,  ";",  " ")
+       IgnoreList = replace(IgnoreList,  ",",  " ")
+
+       ;--- Clear and existing keys -----------------------------------------
+       oMmIgnoreTheseErrors.RemoveAll()
+
+       ;--- Split list by " " -----------------------------------------------
+       dim lIgnoreList : lIgnoreList = split(IgnoreList, " ")
+
+       ;--- Add information -------------------------------------------------
+       oMerge.Log ""
+       oMerge.Log "Configured to Ignore these Merge Errors"
+       oMerge.Log "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+       dim @@MmCnt, @@MmTbl
+       for @@MmCnt = lbound(lIgnoreList) to ubound(lIgnoreList)
+           @@MmTbl = trim(lIgnoreList(@@MmCnt))
+           if   @@MmTbl <> "" then
+                oMmIgnoreTheseErrors.add @@MmTbl, "0"
+                oMerge.Log @@MmTbl
+           end if
+       next
+   end sub
+
+
+   ;--- Include the code that used to be inline in the mainline... ----------
+   <?NewLine><?NewLine>
+   '================================================================
+   sub MergeModMergeModulesNow(MergingEarly, LastFileSequenceNumber)
+   '================================================================
+       ;--- Only try merging once! ------------------------------------------
+       if   @@AlreadyMerged then
+            exit sub
+       end if
+       @@AlreadyMerged = true
+
+       ;--- Have at least one merge module? ---------------------------------
+       <$LocationSrcLineOverride LINE="Processing Merge Modules">
+       <$UpdateMmLocation>
+       say ""
+       #if @@HtmlItem.0 = 0
+           Say "No merge modules to be merged"
+       #elseif
+           ;--- Output message ----------------------------------------------
+           dim WhenText
+           if   MergingEarly then
+                WhenText = "Early"
+           else
+                WhenText = "Late"
+           end if
+           MmLT = WhenText & " merge of <??@@HtmlItem.0> merge modules (merge step 1 of 2)..."
+           Say ""
+           Say MmLT
+
+           ;--- Merge can be called during MSI updating or after MSI closed! ---
+           dim @@OpenedFileName : @@OpenedFileName = MsiGetOpenedFileName()
+
+           ;--- Close the database (if its open!) ---------------------------
+           if   @@OpenedFileName <> "" then
+                ;--- Now close the database ---------------------------------
+                Say "Need to close existing database (Windows Installer restriction)"
+                MsiClose(false)
+           end if
+
+           ;--- Create Merge object -----------------------------------------
+           set oMerge    = LoadMergeModuleObject()
+           dim dMergeDep : set dMergeDep = MkObject("Scripting.Dictionary")
+           dim MmTargetDirCnt, MmTargetDirMsg
+
+           ;--- Create a "clean" log directory ------------------------------
+           #ifndef  MERGEMOD_DONT_CLEAN_LOG_DIR
+               DeleteDir "<$MERGEMOD_LOG_DIR>"
+           #endif
+           CreateDir "<$MERGEMOD_LOG_DIR>"
+
+           ;--- Open the database -------------------------------------------
+           <$UpdateMmLocation>
+           on error resume next
+           oMerge.OpenDataBase "<$MSI_MSINAME>"
+           VbsCheck("Opening the database ""<$MSI_MSINAME>""")
+           on error goto 0
+
+           ;--- Now process each requested Merge Module (in order supplied) ---
+           #{  FOR @@x = 1 to @@HtmlItem.0
+               ;--- Split off the information -------------------------------
+               #(
+                   #DefineRexx ''
+                       parse var @@HtmlItem.@@x . '00'x @@MmFile '00'x @@Feature '00'x @@ExtraFeatures '00'x @@IgnoreErrors '00'x @@RedirectKey '00'x @@Language '00'x @@MmId '00'x .;
+                       @@Short = FilePart('n', @@MmFile);
+                       call ArraySplit "@@Extras", @@ExtraFeatures;
+                       @@Vbs = "";
+                       do  @@df = 1 to @@Extras.0;
+                           @@Vbs = @@VBS || 'on error resume next<?NewLine>';
+                           @@Vbs = @@VBS || 'oMerge.Connect "' || @@Extras.@@Df || '"<?NewLine>';
+                           @@Vbs = @@VBS || 'VbsCheck("Connecting to the additional feature ""' || @@Extras.@@Df || '""")<?NewLine>';
+                           @@Vbs = @@VBS || 'on error goto 0<?NewLine>';
+                       end;
+                   #DefineRexx
+               #)
+
+               ;--- Open the log for this merge -----------------------------
+               <$UpdateMmLocation>
+               MergeModuleFullName  = "<??@@MmFile>"
+               say "Merging: " & MergeModuleFullName & " (using " & MergeObjectName & ")"
+               MergeModuleLog = "<$MERGEMOD_LOG_DIR>\MERGE - <??@@Short>.LOG"
+               DeleteFile(MergeModuleLog)
+               on error resume next
+               oMerge.OpenLog MergeModuleLog
+               VbsCheck("OpenLog """ & MergeModuleLog & """")
+               on error goto 0
+               oMerge.Log "STARTED MERGE #<??@@x>/<??@@HtmlItem.0> at " & now() & " (language <??@@Language>)"
+               oMerge.Log ""
+
+               ;--- Attach to Merge Module ----------------------------------
+               <$UpdateMmLocation>
+               on error resume next
+                   oMerge.OpenModule MergeModuleFullName, <??@@Language>
+                   VbsCheck("Open Merge Module """ & MergeModuleFullName & """")
+               on error goto 0
+
+               ;--- Look for Configurable Items -----------------------------
+               <$UpdateMmLocation>
+               on error resume next
+                   oMerge.Log ""
+                   oMerge.Log "Looking for Configurable Items..."
+                   MergePropertyCnt = 0
+                   set MmConfigurableItems = oMerge.ConfigurableItems       ;;Only available in v2.0+
+                   if   err.number <> 0 then
+                        error "We require at least version 2 of ""MergeMod.dll""..."
+                   else
+                       ;--- Looks like module configuration supported -------
+                       for each oMergeProperty in MmConfigurableItems
+                           MergePropertyCnt = MergePropertyCnt + 1
+                           oMerge.Log "   * We have a property (log has more details)"   'Can't currently determine details - Windows Installer dies...
+                           'dim SomeText : SomeText = oMergeProperty.Name
+                           'oMerge.Log "  * " & oMergeProperty.DisplayName & " (" & oMergeProperty.Name & ") with default value: " & oMergeProperty.DefaultValue
+                       next
+                       wscript.echo "This merge module has " & MergePropertyCnt & " configurable properties..."
+                   end if
+                   oMerge.Log ""
+               on error goto 0
+
+               ;--- Merge ---------------------------------------------------
+               <$UpdateMmLocation>
+               on error resume next
+               oMerge.Merge "<??@@Feature>", "<??@@RedirectKey>"
+               VbsCheck("Merging """ & MergeModuleFullName & """")
+               on error goto 0
+
+               ;--- Now add any additional features requested ---------------
+               <$UpdateMmLocation>
+               <??@@VBS>
+
+               ;--- Finished Merge Module Processing ------------------------
+               <$UpdateMmLocation>
+               oMerge.Log ""
+               oMerge.Log "FINISHED MERGE at " & now()
+               oMerge.Log ""
+               oMerge.Log ""
+               oMerge.Log ""
+
+               ;--- We up dictionary which describes errors to be ignored ---
+               SetUpMergeModuleIgnores("<??@@IgnoreErrors>")
+
+               ;--- Dump any errors -----------------------------------------
+               <$UpdateMmLocation>
+               oMerge.Log ""
+               oMerge.Log ""
+               oMerge.Log "Merge Errors - Use the ""IgnoreErrors"" parameter to ignore any"
+               oMerge.Log "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+               MergeErrors           = 0
+               MergeErrorsFatal      = 0
+               MergeErrorsIgnoreParm = ""
+               for each oError in oMerge.Errors
+                   ;--- Display Type of Error, preferably as TEXT -----------
+                   MergeErrors = MergeErrors + 1
+                   HelpString = ""
+                   if  not oMmErrorType.exists(cstr(oError.Type)) then
+                       TypeString = "#" & oError.Type
+                   else
+                       TypeString = oMmErrorType(cstr(oError.Type))
+                       if  oMmErrorHelp.exists(cstr(oError.Type)) then
+                           HelpString = oMmErrorHelp(cstr(oError.Type))
+                       end if
+                   end if
+                   if   HelpString = "" then
+                        oMerge.Log "Type         : " & TypeString
+                   else
+                        oMerge.Log "Type         : " & TypeString & " <- " & HelpString
+                   end if
+
+                   ;--- Display some general values which may exist ---------
+                   if  oError.Path <> "" then
+                       oMerge.Log "Path         : " & oError.Path
+                   end if
+                   if  oError.Language <> -1 then
+                       oMerge.Log "Language     : " & oError.Language
+                   end if
+
+                   ;--- Get any Table/Key information -----------------------
+                   MmModuleTableText = ""
+                   MmDbKey   = ""
+                   MmDbTable = ""
+                   MmDbTable = oError.DataBaseTable
+                   for each Item in oError.DataBaseKeys
+                       if  MmDbKey <> "" then MmDbKey = MmDbKey & ","
+                       MmDbKey = MmDbKey & Item
+                   next
+                   MmModKey   = ""
+                   MmModTable = ""
+                   MmModTable = oError.ModuleTable
+                   for each Item in oError.ModuleKeys
+                       if  MmModKey <> "" then MmModKey = MmModKey & ","
+                       MmModKey = MmModKey & Item
+                   next
+                   if   MmDbTable = "" then
+                        ;--- Well must be in the merge module ---------------
+                        MmErrTable = MmModTable
+                        MmErrKey   = MmModKey
+                        MmErrIn    = "MergeMod"
+                   else
+                        ;--- Have database table/key info -------------------
+                        MmErrTable = MmDbTable
+                        MmErrKey   = MmDbKey
+                        MmErrIn    = "DataBase"
+
+                        ;--- If we have both then dump module info here... ---
+                        if  MmModTable <> "" then
+                            if  MmDbTable <> MmModTable then MmModuleTableText = MmModuleTableText & vbCRLF & "Module Table : " & MmModTable
+                            if  MmDbKey   <> MmModKey   then MmModuleTableText = MmModuleTableText & vbCRLF & "Module Keys  : " & MmModKey
+                        end if
+                   end if
+
+                   ;--- Configured to ignore? -------------------------------
+                   MmKey  = MmErrIn & ":" & MmErrTable  & ":" & MmErrKey
+                   if  oMmIgnoreTheseErrors.exists(MmKey) then
+                       ;--- Specific database/table/row ---------------------
+                       MmIgnore = true
+                   else
+                       MmKey  = MmErrTable  & ":" & MmErrKey
+                       if   oMmIgnoreTheseErrors.exists(MmKey) then
+                            ;--- Table/row in either database or merge module ---
+                            MmIgnore = true
+                       else
+                            MmKey  = MmErrIn & ":" & MmErrTable
+                            if  oMmIgnoreTheseErrors.exists(MmKey) then
+                                ;--- Specific database/table ----------------
+                                MmIgnore = true
+                            else
+                                MmKey  = MmErrTable
+                                if   oMmIgnoreTheseErrors.exists(MmKey) then
+                                    ;--- Table/row in either database or merge module ---
+                                    MmIgnore = true
+                                else
+                                    MmKey = TypeString
+                                    if  oMmIgnoreTheseErrors.exists(MmKey) then
+                                        ;--- Specific type of problem -------
+                                        MmIgnore = true
+                                    else
+                                       MmKey = "*"
+                                       if  oMmIgnoreTheseErrors.exists(MmKey) then
+                                           ;--- Ignore all errors ---------------
+                                           MmIgnore = true
+                                       else
+                                           ;--- We won't ignore (build will fail) ---
+                                           MmIgnore = false
+                                       end if
+                                    end if
+                                end if
+                            end if
+                       end if
+                   end if
+
+                   ;--- Did we decide to ignore this problem? ---------------
+                   if  not MmIgnore then
+                       ;--- We don't wish to ignore this table --------------
+                       ErrCmt = "NO"
+                       MergeErrorsFatal = MergeErrorsFatal + 1
+                       if MergeErrorsFatal = 1 then
+                          say ""
+                          say ""
+                          say ""
+                          say "FATAL MERGE ERRORS (see the ""IgnoreErrors"" parameter to ignore these)"
+                          say "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                       else
+                          ;--- values are space separated -------------------
+                          MergeErrorsIgnoreParm = MergeErrorsIgnoreParm & " "
+                       end if
+                       say "      #" & MergeErrorsFatal & ". "       & MmErrTable & ":" & MmErrKey
+                       MergeErrorsIgnoreParm = MergeErrorsIgnoreParm & MmErrTable & ":" & MmErrKey
+                   else
+                       ;--- Keep count of what we ignored -------------------
+                       ErrCmt = "YES - Rule: " & MmKey
+                       MmCnt = oMmIgnoreTheseErrors(MmKey) + 1
+                       oMmIgnoreTheseErrors.remove(MmKey)
+                       oMmIgnoreTheseErrors.add MmKey, MmCnt
+                   end if
+                   oMerge.Log "Ignore It?   : " & ErrCmt
+
+                   ;--- Error caused by Database Table ------------------
+                   oMerge.Log MmErrIn & "Table: " & MmErrTable
+                   oMerge.Log MmErrIn & " Keys: " & MmErrKey & MmModuleTableText
+                   oMerge.Log ""
+                   oMerge.Log ""
+               next
+               if MergeErrors = 0 then oMerge.Log "None"
+               err.clear()
+
+               ;--- Count the number of file keys (need to update media table) ---
+               <$UpdateMmLocation>
+               oMerge.Log ""
+               oMerge.Log "Counting File Keys..."
+               on error resume next
+               dim MergedFileCnt_<??@@MmId> : MergedFileCnt_<??@@MmId> = 0
+               for each MergedFileKey in oMerge.ModuleFiles
+                   oMerge.Log "  * FileKey = " & MergedFileKey
+                   MergedFileCnt_<??@@MmId> = MergedFileCnt_<??@@MmId> + 1
+               next
+               oMerge.Log "Found " & MergedFileCnt_<??@@MmId> & " File Keys"
+               VbsCheck("Counting merge module file keys in """ & MergeModuleFullName & """")
+               on error goto 0
+
+               ;--- Extract the cab file ------------------------------------
+               <$UpdateMmLocation>
+               oMerge.Log ""
+               if   MergedFileCnt_<??@@MmId> = 0 then
+                    oMerge.Log "No files in the ""<??@@Short>"" merge module (so not extracting cab file)..."
+               else
+                   CurrentFile = "<$MERGEMOD_LOG_DIR>\<??@@Short>.CAB"
+                   oMerge.Log "Extracting the Merge module's CAB to """ & CurrentFile & """"
+                   on error resume next
+                   oMerge.ExtractCab(CurrentFile)
+                   VbsCheck("Extracting the CAB from the merge module """ & MergeModuleFullName & """")
+                   on error goto 0
+               end if
+
+               ;--- List any NEW Dependencies -------------------------------
+               <$UpdateMmLocation>
+               oMerge.Log ""
+               oMerge.Log ""
+               oMerge.Log "Merging this Module, added these new Dependencies"
+               oMerge.Log "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+               MergeDependErrors = 0
+               for each oDepend in oMerge.Dependencies
+                    ;--- We have a dependancy (from previous module?) -------
+                    DepKey = oDepend.Module & chr(0) & oDepend.Version & chr(0) & oDepend.Language
+                    if  not dMergeDep.exists(DepKey) then
+                        ;--- A new dependancy (must be from this merge) -----
+                        MergeDependErrors = MergeDependErrors + 1
+                        oMerge.Log "Module  : " & oDepend.Module
+                        oMerge.Log "Version : " & oDepend.Version
+                        oMerge.Log "Language: " & oDepend.Language
+                        oMerge.Log ""
+                        dMergeDep.add DepKey, ""   ;;Already displayed!
+                    end if
+               next
+               if   MergeDependErrors = 0 then
+                    oMerge.Log "Dependencies have not increased because of this merge..."
+               end if
+               if  MergeErrorsFatal <> 0 then
+                   oMerge.Log ""
+                   oMerge.Log ""
+                   oMerge.Log "IgnoreErrors"
+                   oMerge.Log "~~~~~~~~~~~~"
+                   oMerge.Log "There are " & MergeErrorsFatal & " merge errors which we haven't been told to ignore..."
+                   oMerge.Log "You could add: "
+                   oMerge.Log ""
+                   oMerge.Log "   IgnoreErrors=^" & MergeErrorsIgnoreParm & "^"
+               end if
+
+               ;--- Thats for this merge module! ----------------------------
+               <$UpdateMmLocation>
+               on error resume next
+               oMerge.CloseLog
+               VbsCheck("CloseLog")
+               on error goto 0
+
+               ;--- Finished with this module -------------------------------
+               <$UpdateMmLocation>
+               on error resume next
+               oMerge.CloseModule
+               VbsCheck("Close Merge Module(""<??@@Short>""")
+               on error goto 0
+
+               ;--- Were any of the above problems fatal? -------------------
+               <$UpdateMmLocation>
+               if  MergeErrorsFatal <> 0 then
+                   ViewFile MergeModuleLog
+                   Error("Merge failed with " & MergeErrorsFatal & " errors. For more details see above as well as:" & vbCRLF & "  """ & MergeModuleLog & """" & vbCRLF & vbCRLF & "One possible value of ""IgnoreErrors"" to ignore these errors is:" & vbCRLF & vbCRLF & "   IgnoreErrors=^" & MergeErrorsIgnoreParm & "^")
+               end if
+
+               ;--- If this is the last Merge module there should be no dependencies left! ---
+               #if @@x = @@HtmlItem.0
+                   ;--- Dump any dependancies that are unsatisfied ----------
+                   <$UpdateMmLocation>
+                   MergeDependErrors = 0
+                   dim MergeDependErrorsIgnored : MergeDependErrorsIgnored = 0
+                   for each oDepend in oMerge.Dependencies
+                       MergeDependErrors = MergeDependErrors + 1
+                       if  MergeDependErrors = 1 then
+                           say ""
+                           say ""
+                           say ""
+                           say "Unsatisfied Dependencies (other merge modules required)"
+                           say "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                       end if
+                       say "Module  : " & oDepend.Module
+                       say "Version : " & oDepend.Version
+                       say "Language: " & oDepend.Language
+
+                       ;--- Were we told to ignore it? ----------------------
+                       MmIgnore = false
+                       ErrCmt   = "NO"
+                       MmKey    = "UNSATISFIED=" & oDepend.Module
+                       if  oMmIgnoreTheseErrors.exists(MmKey) then
+                           ;--- Specific database/table/row -----------------
+                           MmIgnore = true
+                       else
+                           MmKey  = MmKey & ":" & oDepend.Version  & ":" & oDepend.Language
+                           if  oMmIgnoreTheseErrors.exists(MmKey) then
+                               ;--- Specific database/table/row -------------
+                               MmIgnore = true
+                           end if
+                       end if
+                       if  MmIgnore then
+                           ;--- Keep count of what we ignored --------------
+                           ErrCmt = "YES - Rule: " & MmKey
+                           MmCnt = oMmIgnoreTheseErrors(MmKey) + 1
+                           oMmIgnoreTheseErrors.remove(MmKey)
+                           oMmIgnoreTheseErrors.add MmKey, MmCnt
+                           MergeDependErrorsIgnored = MergeDependErrorsIgnored + 1
+                       end if
+                       say "Ignore? : " & ErrCmt
+                       say ""
+                   next
+                   if  MergeDependErrors <> 0 then
+                       if MergeDependErrors = MergeDependErrorsIgnored then
+                          say "All missing dependancies ignored..."
+                       else
+                          ;--- Didn't ignore them all -----------------------
+                          Error("All <??@@HtmlItem.0> merges successfully performed but still have dependencies!" & vbCRLF & "For more details see above." & vbCRLF & "Note that merge logs will indicate which modules required these.")
+                       end if
+                   end if
+               #endif
+
+               ;--- Generate list of tables with problems (for HTML report) ---
+               <$UpdateMmLocation>
+               MergeErrorsTables = ""
+               for each @@ErrKey in oMmIgnoreTheseErrors.keys()
+                   MmCnt = oMmIgnoreTheseErrors(@@ErrKey)
+                   if   MmCnt <> 0 then
+                       if  MergeErrorsTables <> "" then
+                           MergeErrorsTables = MergeErrorsTables & ", "
+                       end if
+                       MergeErrorsTables = MergeErrorsTables & @@ErrKey & "(" & MmCnt & ")"
+                   end if
+               next
+
+               ;--- Store some information for the HTML report --------------
+               <$UpdateMmLocation>
+               VbsReturnMacro "MergeModule.<??@@MmId>.MD5",             PrettyHash( FileHash(MergeModuleFullName) )
+               if   MergedFileCnt_<??@@MmId> <> 0 then
+                    ;--- No files in merge module (no cab) ------------------
+                    VbsReturnMacro "MergeModule.<??@@MmId>.CABMD5",     PrettyHash( FileHash(CurrentFile) )
+                    VbsReturnMacro "MergeModule.<??@@MmId>.CABSIZE",    oInstaller.FileSize(CurrentFile)
+               else
+                    VbsReturnMacro "MergeModule.<??@@MmId>.CABMD5",     ""
+                    VbsReturnMacro "MergeModule.<??@@MmId>.CABSIZE",    ""
+               end if
+               VbsReturnMacro "MergeModule.<??@@MmId>.IGNORED_ERRORS",  MergeErrorsTables
+               VbsReturnMacro "MergeModule.<??@@MmId>.FILECNT",         MergedFileCnt_<??@@MmId>
+               MsiOpen MergeModuleFullName, msiOpenDatabaseModeReadOnly, true ;;Need to fix this (consistant with pass 1 options for parm 2+3)
+               SummaryOpen()
+               VbsReturnMacro "MergeModule.<??@@MmId>.PID_AUTHOR",      oSummary.Property(PID_AUTHOR)
+               VbsReturnMacro "MergeModule.<??@@MmId>.PID_SUBJECT",     oSummary.Property(PID_SUBJECT)
+               VbsReturnMacro "MergeModule.<??@@MmId>.PID_COMMENTS",    oSummary.Property(PID_COMMENTS)
+               VbsReturnMacro "MergeModule.<??@@MmId>.PID_PACKAGECODE", oSummary.Property(PID_PACKAGECODE)
+               <$UpdateMmLocation>
+               ;SummaryClose()             ;;Nothing to write!
+               <$Table "ModuleSignature">
+                    ;--- Look at the signature row (there is only one row) ---
+                    <$Row @Where=^^ @Code="Y" @Validate="">
+                        VbsReturnMacro "MergeModule.<??@@MmId>.Version",  <$COLSTR.ModuleSignature.Version>
+                    <$/Row>
+               <$/Table>
+               MmTargetDirCnt = 0
+               <$Table "Component">
+                    <$Row @Where=^`Directory_` = 'TARGETDIR'^ @Code=Y @Validate="">
+                        ;--- Incorrectly authored Merge Module --------------
+                        MmTargetDirCnt = MmTargetDirCnt + 1        ;;Incorrectly authored Merge Module component
+                    <$/Row>
+                    if  MmTargetDirCnt <> 0 then
+                        MmTargetDirMsg = MmTargetDirCnt & " component(s) incorrectly use ""TARGETDIR"" (files can't be retargetted with the ""DIR"" parameter and probably end up in a root directory)!"
+                        #if ['<$MERGEMOD_COMPONENT_TARGETDIR_ERRORS_FATAL>' <> 'N']
+                            error(MmTargetDirMsg & vbCRLF & vbCRLF & "The merge module """ & MergeModuleFullName & """ was incorrectly authored (buggy)!")
+                        #elseif
+                            say "WARNING: Buggy Merge Module (TARGETDIR Bug on " & MmTargetDirCnt & " components)...."
+                            VbsReturnMacro "MergeModule.<??@@MmId>.TARGETDIR_DIRECTORY_BUG", MmTargetDirMsg
+                        #endif
+                    end if
+               <$/Table>
+               MsiClose(false)
+           #}
+
+           ;--- Close the main database -------------------------------------
+           on error resume next
+           oMerge.CloseDataBase(true)
+           VbsCheck("CloseDataBase")
+           on error goto 0
+
+           ;--- Now Open the MSI again to Add CABS etc ----------------------
+           MmLT = "Merge step 2 of 2 - Updating Windows Installer Database"
+           say MmLT
+           MsiOpen "<$MSI_MSINAME>", msiOpenDatabaseModeDirect, true ;;Need to fix this (consistant with pass 1 options for parm 2+3)
+
+           ;--- Set up Media Number information -----------------------------
+           dim MergeMediaDiskId : MergeMediaDiskId = GetNextDiskId()
+
+           ;--- For each merge module ---------------------------------------
+           #{  FOR @@x = 1 to @@HtmlItem.0
+               ;--- Split off the information -------------------------------
+               #(
+                   #DefineRexx ''
+                       parse var @@HtmlItem.@@x . '00'x @@MmFile '00'x @@Feature '00'x @@ExtraFeatures '00'x @@IgnoreErrors '00'x @@RedirectKey '00'x @@Language '00'x @@MmId '00'x .;
+                       @@Short = FilePart('n', @@MmFile);
+
+               ;--- Use the short file name as the basis for the CAB ID ---
+               @@CabId = @@Short || '.cab';
+               <$Rexx2FixMsiId IDVAR="@@CabId">
+                   #DefineRexx
+               #)
+
+               ;--- Not all MSIs have files! --------------------------------
+               if   MergedFileCnt_<??@@MmId> = 0 then
+                    say "No files in the ""<??@@Short>"" merge module..."
+               else
+                   ;--- Add the CAB to the database -------------------------
+                   say "Adding: ""<$MERGEMOD_LOG_DIR>\<??@@Short>.CAB"""
+                   oMerge.Log "Adding CAB to MSI"
+                   <$Table "<$MAKEMSI_TABLENAME_CABS>">
+                       <$CFW_DefineValidationEntries4MAKEMSI_TABLENAME_CABS>
+                       <$Row Name="<??@@CabId>" *Data='"<$MERGEMOD_LOG_DIR>\<??@@Short>.CAB"'>
+                   <$/Table>
+
+                   ;--- Work out the Disk prompt ----------------------------
+                   MmDiskPrompt = "<$MERGEMOD_MEDIA_DISK_NUMBER_DESC_TEMPLATE>"
+                   MmDiskPrompt = replace(MmDiskPrompt, "{#}", "<$@@DISK1>")
+                   if   len(MmDiskPrompt) > <$TABLES_LNG_MEDIA_DISKPROMPT> then
+                        error "We generated a disk prompt of """ & MmDiskPrompt & """ which is too long, the longest valid prompt is <$TABLES_LNG_MEDIA_DISKPROMPT> characters!{NL}Update the ""MERGEMOD_MEDIA_DISK_NUMBER_DESC_TEMPLATE"" macro!"
+                   end if
+
+                   ;--- Work out the Volume Label ---------------------------
+                   MmVolumeLabel = "<$MERGEMOD_MEDIA_VolumeLabel_TEMPLATE>"
+                   MmVolumeLabel = replace(MmVolumeLabel, "{#}", "<$@@DISK1>")
+                   if   len(MmVolumeLabel) > <$TABLES_LNG_MEDIA_VolumeLabel> then
+                        error "We generated a volume label of """ & MmVolumeLabel & """ which is too long, the longest valid label is <$TABLES_LNG_MEDIA_VolumeLabel> characters!{NL}Update the ""MERGEMOD_MEDIA_VolumeLabel_TEMPLATE"" macro!"
+                   end if
+
+                   ;--- Add to the "Media" table ----------------------------
+                   oMerge.Log "Adding CAB to Media table"
+                   LastFileSequenceNumber = LastFileSequenceNumber + MergedFileCnt_<??@@MmId>
+                   <$Table "Media">
+                   #(
+                       <$Row
+                                 *DiskId="MergeMediaDiskId"
+                          ;*LastSequence="FileSeqNumb(MergedFileCnt_<??@@MmId>)"
+                           *LastSequence="LastFileSequenceNumber"
+                             *DiskPrompt="MmDiskPrompt"
+                            *VolumeLabel="MmVolumeLabel"
+                                 Cabinet="#<$MAKEMSI_TABLENAME_CABS>.<??@@CabId>"
+                       >
+                   #)
+                   <$/Table>
+                   MergeMediaDiskId = MergeMediaDiskId + 1
+               end if
+           #}
+
+           ;--- Close the database (unless it was ORIGINALLY open!) ---------
+           if   @@OpenedFileName <> "" then
+                Say "Database left open for more updates"
+           else
+                ;--- Wasn't originally open ---------------------------------
+                MsiClose(false)
+           end if
+       #endif
+       say ""
+       <$LocationSrcLineOverride LINE="">
+   end sub
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Macro to setup Merge Module --------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define MergeModule
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Do some basic processing (checks that file exists) ------------------
+   #evaluate ^^ ^<$Rexx4MergeModule {$?}>^
+   <??DTVBS><?RestartLine>
+
+   ;--- Unless user says merge is required "early" we do it at end of pass 1 ---
+   #if  [@@NeedEarly = 'Y']
+        ;--- All merges occur at once, may already have done them... --------
+        #ifndef @@EarlyMergeAlreadySetup
+            ;--- Only do this once ------------------------------------------
+            #define @@EarlyMergeAlreadySetup
+
+            ;--- Compile to clean up file sequence numbers, "Media" table etc ---
+            <$Compile 'Compiling to prepare for early merge module merge' CACHE=^<$COMPILE_CACHE_VALUE_FOR_COMPILE_TO_PREPARE_FOR_MM_MERGE>^>
+
+            ;--- Now Merge --------------------------------------------------
+            MergeModMergeModulesNow true, GetNextFileSequence() - 1<?NewLine>
+       #endif
+   #endif
+#)
+#RexxVar @@HtmlItemCnt = 0                   ;;#items for the HTML report
+#RexxVar @@HtmlItem.0  = 0
+#DefineRexx 'Rexx4MergeModule'
+   ;--- Make sure the merge module exists -----------------------------------
+   @@File      = '{$#1}';
+   @@NeedEarly =  translate('{$NeedEarly=^N^}');
+   @@MmFile = FindFile(@@File);
+   if  @@MmFile = '' then
+       error('The merge module "' || @@File || '" could not be found!');
+   call AddInputFileToDependancyList @@File;
+
+   ;--- Add to which feature ------------------------------------------------
+   if  '{$Feature=^^ $$IsPassed}' = 'N' then
+       @@Feature = RxCurrentFeature.RxFeatureNestingLevel
+   else
+   do
+       {$Feature $$RxVar:@@Feature};
+        <$Rexx2ResolveFeatureName FeatVar="@@Feature">
+   end;
+   if  @@Feature = '' then
+       error('Add the merge module to which feature?')
+
+   ;--- Which Language? -----------------------------------------------------
+   @@Language = {$Language=^<$DEFAULT_MERGEMOD_LANGUAGE>^}
+
+   ;--- Which Directory (make it if required) -------------------------------
+   if  '{$DIR=^^ $$IsPassed}' = 'N' then
+   do
+       ;--- Not redirecting -------------------------------------------------
+       DTVBS         = ''
+       @@RedirectKey = ''
+   end;
+   else
+   do
+       ;--- We are redirecting the files ------------------------------------
+       <$Rexx4MakeDirectoryTree DIR=^{$DIR=^^}^>
+       @@RedirectKey = DT_KEYNAME;
+   end;
+
+   ;--- Any Comment? --------------------------------------------------------
+   {$Comment='' $$RxVar:@@Comment}
+
+   ;--- Any Additional Features? --------------------------------------------
+   {$ExtraFeatures='' $$RxVar:@@ExtraFeatures}
+
+   ;--- Ignore what methe errors? -------------------------------------------
+   {$IgnoreErrors='<$DEFAULT_MERGEMOD_IGNORE_ERRORS>' $$RxVar:@@IgnoreErrors}
+   @@IgnoreErrors = '<$MERGEMOD_IGNORE_ERRORS_ALWAYS> ' || @@IgnoreErrors;
+
+   ;--- Remember details (for later use and HTML report) --------------------
+   @@Short   = FilePart('name', @@MmFile);
+   @@MmId    = @@HtmlItemCnt                   ;;Must be unique (value does not matter)
+   @@SortKey = @@Feature || 'FF'x || @@RedirectKey || 'FF'x || @@Short;
+   @@SortKey = translate(@@SortKey);
+   @@All     = @@SortKey || '00'x || @@MmFile || '00'x || @@Feature || '00'x || @@ExtraFeatures || '00'x || @@IgnoreErrors || '00'x || @@RedirectKey || '00'x || @@Language || '00'x || @@MmId || '00'x || @@Comment || '00'x || RxMmLocation;
+   @@HtmlItemCnt            = @@HtmlItemCnt + 1;
+   @@HtmlItem.@@HtmlItemCnt = @@All;
+   @@HtmlItem.0             = @@HtmlItemCnt;
+
+   ;--- Check parameter usage -----------------------------------------------
+   {$!}
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? MERGEMOD_BEFORE_BUTTON
+#define? MERGEMOD_AFTER_BUTTON
+#(
+   #define? MERGEMOD_BUTTON
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$MERGEMOD_BEFORE_BUTTON>
+   <$BUTTON2 "MERGE_MODULES" Text="Merge Modules" CNT="@@HtmlItemCnt">
+   <$MERGEMOD_AFTER_BUTTON>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? MERGEMOD_BEFORE_REPORT
+#define? MERGEMOD_AFTER_REPORT
+#( ''
+   #define? MERGEMOD_REPORT
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$MERGEMOD_BEFORE_REPORT>
+
+   ;--- Generate Environment report -----------------------------------------
+   <A NAME="MERGE_MODULES"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$MERGEMOD_HTML_NO_ENTRIES>
+   #elseif
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="MERGE MODULES">
+      <$MERGEMOD_HTML_REPORT_START>
+
+      ;--- Sort merge module entries ----------------------------------------
+      #evaluate ^^ ^call SortArray '@@HtmlItem'^
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Index = 1 to @@HtmlItemCnt
+          #evaluate ^^ ^<$@@Rexx2PrepareInformation>^
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$MERGEMOD_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$MERGEMOD_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$MERGEMOD_AFTER_REPORT>
+#)
+#DefineRexx '@@Rexx2PrepareInformation'
+   ;--- Split off components ------------------------------------------------
+   parse var @@HtmlItem.@@Index . '00'x @@MmFile '00'x @@Feature '00'x @@ExtraFeatures '00'x @@IgnoreErrors '00'x @@RedirectKey '00'x @@Language '00'x @@MmId '00'x @@Comment '00'x @@MmLocation;
+   @@ShortName = FilePart('n', @@MmFile);
+   @@SourceDir = FilePart('l', @@MmFile);
+   if  @@SourceDir = '' then
+       @@SourceDir = '&nbsp;';
+   if  @@RedirectKey = '' then
+       @@RedirectKey = '&nbsp;';
+
+   ;--- Get date/time info --------------------------------------------------
+   @@FileSize  = AddCommasToDecimalNumber(FileQuerySize(@@MmFile));
+   @@FileTime  = FileQueryDateTime(@@MmFile, '<$HTMLRPT_DATETIME_FORMAT>');
+
+   ;--- Get saved details ---------------------------------------------------
+   @@SummAuthorErrors = ""
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.TARGETDIR_DIRECTORY_BUG'
+   if  Defined(@@Key) = 'N' then
+       @@SummAuthorErrors = ""
+   else
+       @@SummAuthorErrors = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.VERSION'
+   if  Defined(@@Key) = 'N' then
+       @@SummVersion = "?"
+   else
+       @@SummVersion = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.PID_AUTHOR'
+   if  Defined(@@Key) = 'N' then
+       @@SummAuthor = "?"
+   else
+       @@SummAuthor = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.PID_SUBJECT'
+   if  Defined(@@Key) = 'N' then
+       @@SummSubject = "?"
+   else
+       @@SummSubject = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.PID_COMMENTS'
+   if  Defined(@@Key) = 'N' then
+       @@SummComments = "?"
+   else
+       @@SummComments = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.PID_PACKAGECODE'
+   if  Defined(@@Key) = 'N' then
+       @@SummPackCode = "?"
+   else
+       @@SummPackCode = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.MD5'
+   if  Defined(@@Key) = 'N' then
+       @@Hash = "?"
+   else
+       @@Hash = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.CABMD5'
+   if  Defined(@@Key) = 'N' then
+       @@CabHash = "?"
+   else
+       @@CabHash = MacroGet(@@Key);
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.CABSIZE'
+   if  Defined(@@Key) = 'N' then
+       @@CabSize = "?"
+   else
+       @@CabSize = AddCommasToDecimalNumber(MacroGet(@@Key));
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.FILECNT'
+   if  Defined(@@Key) = 'N' then
+       @@FileCnt = "?"
+   else
+       @@FileCnt = AddCommasToDecimalNumber(MacroGet(@@Key));
+   @@Key = 'VBSRET.MergeModule.' || @@MmId || '.IGNORED_ERRORS'
+   if  Defined(@@Key) = 'N' then
+       @@MergeProblems = "?"
+   else
+   do
+       @@MergeProblems = MacroGet(@@Key);
+       if  @@MergeProblems = '' then
+           @@MergeProblems = 'none';
+   end;
+
+   ;--- Allow user to combine some of the details for the report
+   <$MERGEMOD_COMBINE_SOME_DETAILS>;
+#DefineRexx
+#ifndef    MERGEMOD_COMBINE_SOME_DETAILS
+   #DefineRexx 'MERGEMOD_COMBINE_SOME_DETAILS'
+       ;--- COMMENTS --------------------------------------------------------
+       @@Plus = '<div class="MmCmtPlus">'
+       if  @@Comment <> "" then
+           @@Plus = @@Plus || '<$MERGEMOD_HTMLRPT_HR>'
+       if  @@SummAuthor <> "" then
+           @@Plus = @@Plus || ' <span class="MmCmtName">By</span> <span class="MmCmtValue">' || @@SummAuthor || '</span>';
+       if  @@SummSubject <> "" then
+           @@Plus = @@Plus || ' <span class="MmCmtName">Subject</span> <span class="MmCmtValue">' || @@SummSubject || '</span>';
+       @@Plus = @@Plus || ' <span class="MmCmtName">Version</span> <span class="MmCmtValue">' || @@SummVersion || '</span>';
+       if  @@SummComments <> "" then
+           @@Plus = @@Plus || ' <span class="MmCmtName">Comment</span> <span class="MmCmtValue">' || @@SummComments || '</span>';
+       @@Plus = @@Plus || ' <span class="MmCmtName">MD5</span> <span class="MmCmtValue">' || @@Hash || '</span>';
+       @@Plus = @@Plus || ' <span class="MmCmtName">Module''s code</span> <span class="MmCmtValue">' || @@SummPackCode || '</span>';
+       @@Plus = @@Plus || ' <span class="MmCmtName">File Count</span> <span class="MmCmtValue">'   || @@FileCnt || '</span>';
+       if   @@CabSize <> "" then
+            @@Plus = @@Plus || ' <span class="MmCmtName">CAB size</span> <span class="MmCmtValue">' || @@CabSize || '</span>';
+       if   @@CabHash <> "" then
+            @@Plus = @@Plus || ' <span class="MmCmtName">CAB MD5</span> <span class="MmCmtValue">'   || @@CabHash || '</span>';
+       @@Plus = @@Plus || ' <span class="MmCmtName">Ignored Merge Problems</span> <span class="MmCmtValue">' || @@MergeProblems || '</span>';
+       if  @@SummAuthorErrors <> '' then
+           @@Plus = @@Plus || ' <span class="MmCmtName">Merge Module Bugs</span> <span class="MmCmtValueError">' || @@SummAuthorErrors || '</span>';
+       @@Plus = @@Plus || '</div>';
+       @@CommentPlus = @@Comment || @@Plus;
+
+       ;--- FEATURES --------------------------------------------------------
+       @@AllFeatures = ReplaceString(strip(@@Feature || ' ' || @@ExtraFeatures), ' ', '<br>');
+   #DefineRexx
+#endif
+
+
+#( '<?NewLine>'
+   #define? MERGEMOD_HTML_NO_ENTRIES
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="MERGE MODULES">
+       <P><B>
+       <CENTER>There are no merge modules.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? MERGEMOD_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="4" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>Name</TH>
+       <TH>Source<br>Directory</TH>
+       <TH title="Files time" SortType="Date">Time</TH>
+       <TH title="Files size" SortType="NumberComma">Size</TH>
+       <TH>Feature</TH>
+       <TH>Redirect<br>Directory</TH>
+       <TH>Comment</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? MERGEMOD_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+       <TD><??@@ShortName></TD>
+       <TD><??@@SourceDir></TD>
+       <TD><??@@FileTime></TD>
+       <TD><??@@FileSize></TD>
+       <TD><??@@AllFeatures></TD>
+       <TD><??@@RedirectKey></TD>
+       <TD><??@@CommentPlus></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? MERGEMOD_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> merge modules.
+   </CENTER>
+#)
+
+
+#NextId UNLOCK "MERGEMOD.MMH"
+
+

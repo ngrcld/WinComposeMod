@@ -1,0 +1,443 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   TABLEDEF.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.10  $
+;          $Date:   05 Apr 2008 10:56:00  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/TableDef.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+
+#NextId LOCK "TableDef.MMH"
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_TABLEDEF_IGNORE_DUPLICATE  Y
+#define? TABLEDEF_MUST_DEFINE_KEY           Y
+
+
+
+;----------------------------------------------------------------------------
+;--- TableDefinition --------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@CurrentTableDefinition     = ''  ;;"" means not in TABLE block
+#RexxVar @@TableDefinitionStartedAt   = ''  ;;Where the table was started
+#RexxVar @@LastTableDefnColumnNumb    = 0   ;;Used by "Column" macro (counts use of "column" macro)
+#( ''
+   #define TableDefinition
+
+   ;--- Make sure not already in a table ------------------------------------
+   #if  @@CurrentTableDefinition <> ''
+       #error ^Already in table definition "<??@@CurrentTableDefinition>" started at "<??@@TableDefinitionStartedAt>"^
+   #endif
+   #push   "TABLE Definition Nesting"
+
+   ;--- Flag start table / remember details ---------------------------------
+   #RexxVar @@CurrentTableDefinition   = '{$#1}'
+   #RexxVar @@TableDefinitionStartedAt = '<?=GetInputFileNameAndLine()>'
+   #RexxVar @@LastTableDefnColumnNumb  = 0
+
+   ;--- We ignore all but first definition of a table -----------------------
+   #if  defined('@@TableAlreadyDefined.{$#1}') = 'N'
+        ;--- First time (good) ----------------------------------------------
+        #RexxVar @@IgnoreTableDefinition = 'N'
+        #DefineRexx ''
+            call MacroSet '@@TableAlreadyDefined.{$#1}', @@TableDefinitionStartedAt;
+        #DefineRexx
+   #elseif
+        ;--- Already defined, ignore it? ------------------------------------
+        #if ['<$DEFAULT_TABLEDEF_IGNORE_DUPLICATE $$upper>' = 'Y']
+            ;--- Yes, Ignore ------------------------------------------------
+            #RexxVar @@IgnoreTableDefinition = 'Y'
+        #elseif
+            ;--- Don't ignore, report error ---------------------------------
+            #DefineRexx ''
+                call error 'Table definition for "{$#1}" duplicated.',, 'First defined at ' || MacroGet('@@TableAlreadyDefined.{$#1}');
+            #DefineRexx
+        #endif
+   #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- /TableDefinition -------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define /TableDefinition
+   <$MustBeWithinTableDefinitionMacro>
+   #pop    "TABLE Definition Nesting"
+
+   ;--- Ignoring? -----------------------------------------------------------
+   #if [@@IgnoreTableDefinition = 'N']
+       ;--- Build Table creation SQL etc ------------------------------------
+       #evaluate ^^ ^<$Rexx4/TableDefinition>^
+   #endif
+
+   ;--- Flag end of table nesting -------------------------------------------
+   #RexxVar @@CurrentTableDefinition     = ''
+   #RexxVar @@TableDefinitionStartedAt   = ''
+   #RexxVar @@LastTableDefnColumnNumb    = 0
+#)
+#( ''
+   #define MustBeWithinTableDefinitionMacro
+   ;--- Make sure we are between "table" and "/table" -----------------------
+   #if ['<??@@CurrentTableDefinition>' = '']
+       #error ^You must be in a table to use this macro!^
+   #endif
+#)
+#RexxVar   Rxtable.0          = 0
+#RexxVar   RxTableCreateSQL.0 = 0
+#RexxVar   RxTableSqlFields.0 = 0
+#DefineRexx 'Rexx4/TableDefinition'
+   ;--- Start of SQL --------------------------------------------------------
+   @@CSQL = "CREATE TABLE `" || @@CurrentTableDefinition || "` ("
+   @@Flds = ''
+   @@K = ''
+   @@ListofKeyColumnNumbers = ''
+
+   ;--- Now now add each fields information ---------------------------------
+   @@TblPrefix = "TABLEDEF_" || c2x(@@CurrentTableDefinition) || '.!'
+   @@ColNames  = value(@@TblPrefix || "ColumnNames")
+   do  @@c = 1 to words(@@ColNames)
+       ;--- Name of this column? --------------------------------------------
+       @@ColName = word(@@ColNames, @@c)
+
+       ;--- Update SQL ------------------------------------------------------
+       @@FldPrefix = @@TblPrefix || c2x(@@ColName) || '.!'
+       if  @@c <> 1 then
+           @@CSQL = @@CSQL || ","                         ;;Separate from previous field
+       @@CSQL = @@CSQL || "`" || @@ColName || "` "        ;;Add Field name
+       @@CSQL = @@CSQL || value(@@FldPrefix || 'SqlType') ;;Add Field definition
+
+       ;--- Update list of field names --------------------------------------
+       if  @@Flds = '' then
+           @@Flds = @@ColName;
+       else
+           @@Flds = @@Flds || ',' || @@ColName;
+
+       ;--- Remember PRIMARY KEYS -------------------------------------------
+       if  value(@@FldPrefix || 'IsKey') = 'Y' then
+       do
+           ;--- Found one ---------------------------------------------------
+           if  @@K <> '' then
+               @@K = @@K || ',';
+           @@K = @@K || "`" || @@ColName || "`";
+
+           ;--- Add to list of numbers --------------------------------------
+           if   @@ListofKeyColumnNumbers = '' then
+                @@ListofKeyColumnNumbers = @@c
+           else
+                @@ListofKeyColumnNumbers = @@ListofKeyColumnNumbers || ',' || @@c;
+       end;
+   end;
+
+   ;--- Add PRIMARY KEY information -----------------------------------------
+   if  @@K <> ''  then
+       @@CSQL = @@CSQL || ' PRIMARY KEY ' || @@K;
+   else
+   do
+       ;--- No primary key information --------------------------------------
+       #if  ['<$TABLEDEF_MUST_DEFINE_KEY $$Upper>' <> 'N']
+            #(
+                error('No primary keys specified for the "' || @@CurrentTableDefinition || '" table!',
+                      '',
+                      'All Windows Installer tables have primary keys and so at least one "COLUMN"',
+                      'command must specify "KEY=Y".'
+                      );
+            #)
+       #endif
+   end;
+
+   ;--- End "CREATE TABLE" statement ----------------------------------------
+   @@CSQL = @@CSQL || ')';
+
+   ;--- Store Key Column numbers --------------------------------------------
+   call value @@TblPrefix || "KeyColumnNumbers", @@ListofKeyColumnNumbers
+
+   ;--- Save info away ------------------------------------------------------
+   @@Cnt = RxTableCreateSQL.0 + 1;
+   Rxtable.@@Cnt           = @@CurrentTableDefinition;
+   RxTableSqlFields.@@Cnt  = @@Flds;
+   RxTableCreateSQL.@@Cnt  = @@CSQL;
+   Rxtable.0               = @@Cnt
+   RxTableSqlFields.0      = @@Cnt;
+   RxTableCreateSQL.0      = @@Cnt;
+
+   ;--- Make accessible to "user" -------------------------------------------
+   call MacroSet 'TABLECOLNAMES.'  || @@CurrentTableDefinition, @@Flds;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Define a Table COLUMN --------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Column
+   #RexxVar @@LastTableDefnColumnNumb + 1
+   <$MustBeWithinTableDefinitionMacro>
+
+
+   ;--- Ignoring? -----------------------------------------------------------
+   #if  [@@IgnoreTableDefinition = 'N']
+        #evaluate ^^ ^<$Rexx4Column {$?ResetUsed}{$?}>^
+   #endif
+#)
+#define MAKEMSI_COLUPDATE_METHOD_STRING   STRING
+#define MAKEMSI_COLUPDATE_METHOD_BINARY   BINARY
+#define MAKEMSI_COLUPDATE_METHOD_INTEGER  INTEGER
+#DefineRexx 'Rexx4Column'
+   ;--- Get parameters ------------------------------------------------------
+   @@ColName = '{$#1}'                  ;;Name of field
+   @@ColType = '{$Type}'                ;;See MSI doco "s72" etc
+   @@IsKey   = translate('{$Key=^N^}')  ;;Y|N
+
+   ;--- Update list of table names ------------------------------------------
+   @@TblPrefix = "TABLEDEF_" || c2x(@@CurrentTableDefinition) || '.!'
+   @@Key       = @@TblPrefix || "ColumnNames"
+   if  @@LastTableDefnColumnNumb = 1 then
+       @@List = @@ColName;
+   else
+       @@List = value(@@Key) || ' ' || @@ColName;
+   call value @@Key, @@List;
+
+   ;--- Work out how this column is updated ---------------------------------
+   @@ColTypeU    = translate(@@ColType);
+   @@ColTypeU1   = left(@@ColTypeU, 1)
+   @@LOCALIZABLE = '';             ;;Must come after any "NOT NULL"
+   select
+       /**************************************************/
+       when @@ColTypeU1 = "S" | @@ColTypeU1 = "L" then
+       /**************************************************/
+       do
+           ;--- How should the ROW macro update this column? ----------------
+           @@UpdateMethod = '<$MAKEMSI_COLUPDATE_METHOD_STRING>';
+
+           ;--- How is field described in SQL? ------------------------------
+           select
+               /*+++++++++++++++++++++++++++*/
+               when @@ColTypeU = "S0" then
+               /*+++++++++++++++++++++++++++*/
+                   @@SqlType = 'LONGCHAR'
+               /*+++++++++++++++++++++++++++*/
+               when @@ColTypeU = "L0" then
+               /*+++++++++++++++++++++++++++*/
+                   @@SqlType = 'LONGCHAR'
+               /*+++++++++++++++++++++++++++*/
+               otherwise                           ;;Not "s0" or "l0"
+               /*+++++++++++++++++++++++++++*/
+                   @@SqlType = 'CHARACTER(' || substr(@@ColType, 2) || ')';
+           end
+
+           ;--- Is it localisable? ------------------------------------------
+           if   @@ColTypeU1 = "L" then
+           do
+                ;--- Yes it is! ---------------------------------------------
+                @@LOCALIZABLE = ' LOCALIZABLE';
+           end;
+       end;
+       /**************************************************/
+       when @@ColTypeU1 = "V" then
+       /**************************************************/
+       do
+           ;--- How should the ROW macro update this column? ----------------
+           @@UpdateMethod = '<$MAKEMSI_COLUPDATE_METHOD_BINARY>';
+
+           ;--- How is field described in SQL? ------------------------------
+           @@SqlType = 'OBJECT'
+       end;
+       /**************************************************/
+       otherwise
+       /**************************************************/
+       do
+           ;--- How should the ROW macro update this column? ----------------
+           @@UpdateMethod = '<$MAKEMSI_COLUPDATE_METHOD_INTEGER>';
+
+           ;--- How is field described in SQL? ------------------------------
+           select
+               /*+++++++++++++++++++++++++++*/
+               when @@ColTypeU = "I2" then
+               /*+++++++++++++++++++++++++++*/
+                   @@SqlType = 'INTEGER';
+               /*+++++++++++++++++++++++++++*/
+               when @@ColTypeU = "I4" then
+               /*+++++++++++++++++++++++++++*/
+                   @@SqlType = 'LONG';
+               /*+++++++++++++++++++++++++++*/
+               otherwise                           ;;Not "s0" or "l0"
+               /*+++++++++++++++++++++++++++*/
+                   error('Unknown table column type of "' || @@ColType || '" used');
+           end
+       end;
+   end
+   if  @@ColType <> @@ColTypeU then
+       @@SqlType = @@SqlType || ' NOT NULL';
+   @@SqlType = @@SqlType || @@LOCALIZABLE;
+
+   ;--- Update the field information (not intended for "users") -------------
+   @@FldPrefix = @@TblPrefix || c2x(@@ColName) || '.!'
+   call value @@FldPrefix || "Number",         @@LastTableDefnColumnNumb;
+   call value @@FldPrefix || "Type",           @@ColType;
+   call value @@FldPrefix || "UpdateMethod",   @@UpdateMethod;
+   call value @@FldPrefix || "IsKey",          @@IsKey;
+   call value @@FldPrefix || "SqlType",        @@SqlType;
+
+
+   ;--- Set up macro "C#.tablename.columnname" = Column Number etc ----------
+   @@MacSuffix = @@CurrentTableDefinition ||  '.' || @@ColName
+   call MacroSet 'COL#.'    || @@MacSuffix, @@LastTableDefnColumnNumb;
+   call MacroSet 'COLSTR.'  || @@MacSuffix, '{' || '$#1=^oRec^}.StringData('  || @@LastTableDefnColumnNumb || ')';
+   call MacroSet 'COLINT.'  || @@MacSuffix, '{' || '$#1=^oRec^}.IntegerData(' || @@LastTableDefnColumnNumb || ')';
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Allow creation of table definitions from ".IDT" files! -----------------
+;----------------------------------------------------------------------------
+#( ''
+   #define TableDefinitionIDT
+
+   ;--- Read in first 3 lines of each ".IDT" and generate definitions -------
+   #evaluate ^^ ^<$Rexx4TableDefinitionIDT {$?ResetUsed}{$?}>^
+
+   ;--- Output definitions --------------------------------------------------
+   #{  FOR @@I = 1 to @@IdtDefn.0
+       <??@@IdtDefn.@@I><?RestartLine>
+   #}
+#)
+#define? DEFAULT_TABLEDEF_ShowReading    Y   ;;Show "Reading:" messages for IDT files?
+#DefineRexx  'Rexx4TableDefinitionIDT'
+   ;--- Get list of all IDT files matching the mask -------------------------
+   @@IdtMask = '{$#1}';
+   call Files4Mask @@IdtMask, "@@IdtFile"
+   if  @@IdtFile.0 = 0 then
+       error('Could not find any .IDT files matching "' || @@IdtMask || '"');
+
+   ;--- How do we wish to generate the output -------------------------------
+   if  '{$ApplyDefinitions="Y"}' <> 'N' then
+   do
+       ;--- Macros will be substituted (normal) -----------------------------
+       @@MR = '<' || '$';
+       @@NL = '';
+   end;
+   else
+   do
+       ;--- Generate macro references in output (unusual) -------------------
+       @@MR = '<?x3C>' || '$';
+       @@NL = '<?NewLine>';
+   end;
+
+   ;--- Process each file ---------------------------------------------------
+   do  @@i = 1 to @@IdtFile.0
+       ;--- Read the first 3 lines ------------------------------------------
+       @@File = @@IdtFile.@@i;
+       if '{$ShowReading=^<$DEFAULT_TABLEDEF_ShowReading>^}' <> 'N' then
+           call Reading @@File;
+       call AddInputFileToDependancyList @@File;
+       @@1 = linein(@@File);
+       @@2 = linein(@@File);
+       @@3 = linein(@@File);
+       call FileClose(@@File);
+
+       ;--- Simple validation (must be at least 2 fields!) ------------------
+       @@Pos3 = pos(d2c(9), @@3);
+       if  @@Pos3 = 0 then
+           error('Tabs missing in first 3 lines of "' || @@File || '"');
+
+       ;--- Get Field Information -------------------------------------------
+       call ArraySplit "@@Names", @@1, d2c(9);
+       call ArraySplit "@@Types", @@2, d2c(9);
+       call ArraySplit "@@3F",    @@3, d2c(9);
+       @@TableName = @@3F.1;
+       if  datatype(@@TableName, 'W') = 0 then
+           @@KeySStart = 2;
+       else
+       do
+           ;--- Ignore any leading code page --------------------------------
+           @@TableName = @@3F.2;
+           @@KeySStart = 3;
+       end;
+       @@Keys = '/'
+       do @@J = @@KeySStart to @@3F.0
+           @@Keys = @@Keys || @@3F.@@J || '/';
+       end;
+       @@NameWidth = 0
+       @@TypeWidth = 0
+       do  @@J = 1 to @@Names.0
+           if  length(@@Names.@@J) > @@NameWidth then
+               @@NameWidth = length(@@Names.@@J);
+           if  length(@@Types.@@J) > @@TypeWidth then
+               @@TypeWidth = length(@@Types.@@J);
+       end
+       @@NameWidth = @@NameWidth + 1;      ;;Allow for ending double quote!
+       @@TypeWidth = @@TypeWidth + 1;
+
+       ;--- Create the definition for this IDT ------------------------------
+       @@Ind = '   ';
+       @@D   = ''
+       @@D = @@D || @@MR || 'TableDefinition "' || @@TableName || '">' || @@NL;
+       do  @@J = 1 to @@Names.0
+           @@D = @@D || @@Ind || @@MR || 'Column "' || left(@@Names.@@J || '"', @@NameWidth) || '  TYPE="' || left(@@Types.@@J || '"', @@TypeWidth)
+           if  pos('/' || @@Names.@@J || '/', @@keys) <> 0 then
+               @@D = @@D || '  KEY="Y"'
+           else
+               @@D = strip(@@D);
+           @@D = @@D || '>' || @@NL;
+       end
+       @@D = @@D || @@MR || '/TableDefinition>' || @@NL || @@NL;
+       @@IdtDefn.@@I = @@D
+   end;
+   @@IdtDefn.0 = @@IdtFile.0
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- VBS constants and variables --------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define TabledefVbsVariables
+
+   ;--- Set up table definition information ---------------------------------
+   public oTableFlds      : set oTableFlds      = MkObject("Scripting.Dictionary")
+   public oTableCreateSql : set oTableCreateSql = MkObject("Scripting.Dictionary")
+   InitTableInfo()
+#)
+
+
+;----------------------------------------------------------------------------
+;--- VBS functions ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define TableDefVbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   sub InitTableInfo()
+   '=========================================================================
+       #{  for @@I = 1 to Rxtable.0
+           TI "<??Rxtable.@@I>", "<??RxTableSqlFields.@@I>", "<??RxTableCreateSQL.@@I>"
+       #}
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   sub TI(ByVal TableName, ByVal TblFlds, ByVal CreateSQL)
+   '=========================================================================
+       on error resume next
+       oTableFlds.add      TableName, "`" & replace(TblFlds, ",", "`,`") & "`"
+       oTableCreateSql.add TableName, CreateSQL
+       VbsCheck("The table """ & TableName & """ was probably defined twice!")
+   end sub
+
+#)
+
+#NextId UNLOCK "TableDef.MMH"
+

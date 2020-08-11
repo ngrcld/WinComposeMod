@@ -1,0 +1,151 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   CommonFrameWork.mmh
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.10  $
+;          $Date:   13 Aug 2017 14:37:46  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/CommonFrameWork.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;  This header is intended to be used by any framework (such as the
+;  "company.mmh" MSI framework) and will hold code that is not
+;  specific to one type of framework.
+;----------------------------------------------------------------------------
+
+
+;----------------------------------------------------------------------------
+;--- Options: ZIP Source Code -----------------------------------------------
+;----------------------------------------------------------------------------
+;---[$DocoZipSourceOptions]---
+#define? COMMONFRAMEWORK_ZIP_SOURCE_FOR_BACKUP             Y                     ;;Y/N  (if "Y" then use info-zip (izip.exe) to zip source code)
+#define? COMMONFRAMEWORK_ZIPPED_SOURCE_KEY                 SourceCodeBackup.zip  ;;Name of extracted ZIP (as well as "Binary" resource)
+#define? COMMONFRAMEWORK_ZIP_SOURCE_BACKUP_PASSWORD                              ;;Empty if no password wanted or specify desired password (NOTE make sure the info zip version you are using supports encryption before setting a password!)
+#define? COMMONFRAMEWORK_ZIP_SOURCE_BACKUP_ZIP_OPTIONS     -9 -j -o              ;;Max compression, no path
+#define? COMMONFRAMEWORK_ZIPPED_SOURCE_TABLE               Binary                ;;Put into what table ("_Streams" would "hide" it)?
+#define? COMMONFRAMEWORK_ZIPPED_SOURCE_INCLUDES_FILELIST   Y                     ;;Want the list of files added? (contains full source path information which may be useful)
+#define? COMMONFRAMEWORK_ZIPSRC_OUTPUT_COLOR               {CYAN}                ;;Output of the zipping process..
+#define? COMMONFRAMEWORK_INFO_MSG_ZIPPING                  Zipping source - {$Count} file(s)...                   ;;Empty = no message
+#define? COMMONFRAMEWORK_INFO_MSG_ZIPPED                   Adding ZIP ({$Size} bytes) to the "{$Table}" table...  ;;Empty = no message
+;---[$DocoZipSourceOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Create our own namespace -----------------------------------------------
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "CommonFrameWork.mmh"
+
+
+;----------------------------------------------------------------------------
+;--- Code: ZIP Source Code --------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@UserSrcCnt = 0
+#(
+    ;--- User can specify other files to be added ---------------------------
+    #define CommonFramework-ZipThisSource
+
+    ;--- Add File -----------------------------------------------------------
+    #RexxVar @@UserSrcCnt + 1
+    #RexxVar @@UserSrc.@@UserSrcCnt = ^{$#1}^
+#)
+#(
+    #define CommonFramework-ZipSourceCode
+
+    #if ['<$COMMONFRAMEWORK_ZIP_SOURCE_FOR_BACKUP $$upper>' = 'N']
+        #info ^MAKEMSI told not to backup source code.^
+    #elseif
+            ;--- Get list of files (do now so count available) ------------------
+        #DefineRexx ''
+            ;--- Get list of sample files -----------------------------------
+            <$RxGetListOfSourceFiles ResultArray="@@SrcCode">;
+
+            ;--- Add any user specified ones --------------------------------
+            do  @@i = 1 to @@UserSrcCnt;
+                @@SrcCnt           = @@SrcCode.0 + 1;
+                @@SrcCode.0        = @@SrcCnt;           ;;Update count
+                @@SrcCode.@@SrcCnt = @@UserSrc.@@i;      ;;Add user file
+            end;
+        #DefineRexx
+
+        ;--- User want to see a message? ----------------------------------------
+        #if ['<$COMMONFRAMEWORK_INFO_MSG_ZIPPING Count="<??@@SrcCode.0>">' <> '']
+            #info `<$COMMONFRAMEWORK_INFO_MSG_ZIPPING Count="<??@@SrcCode.0>">`
+        #endif
+
+        ;--- Init ---------------------------------------------------------------
+        #RexxVar @@ZipUpSrcOptions4Zip = ^<$COMMONFRAMEWORK_ZIP_SOURCE_BACKUP_ZIP_OPTIONS>^
+        #if ['<$COMMONFRAMEWORK_ZIP_SOURCE_BACKUP_PASSWORD>' <> '']
+            #RexxVar @@ZipUpSrcOptions4Zip || " -P <$COMMONFRAMEWORK_ZIP_SOURCE_BACKUP_PASSWORD> -e"
+        #endif
+        #evaluate ^^ ^<$@@ZipUpSourceCode-Init>^
+
+        ;--- Add to the Binary Table --------------------------------------------
+        <$Binary "<??@@TmpZipFile>" Key="<$COMMONFRAMEWORK_ZIPPED_SOURCE_KEY>" Table="<$COMMONFRAMEWORK_ZIPPED_SOURCE_TABLE>" Doco="N">
+
+        ;--- User want to see a message? ------------------------------------
+        #if ['<$COMMONFRAMEWORK_INFO_MSG_ZIPPED Count="<??@@SrcCode.0>" Table="<$COMMONFRAMEWORK_ZIPPED_SOURCE_TABLE>" Size=^<??@@TmpZipFileSize>^>' <> '']
+            #info `<$COMMONFRAMEWORK_INFO_MSG_ZIPPED Count="<??@@SrcCode.0>" Table="<$COMMONFRAMEWORK_ZIPPED_SOURCE_TABLE>" Size=^<??@@TmpZipFileSize>^>`
+        #endif
+
+        ;--- Cleanup ------------------------------------------------------------
+        #evaluate ^^ ^<$@@ZipUpSourceCode-Term>^
+    #endif
+#)
+#DefineRexx '@@ZipUpSourceCode-Init'
+    ;--- Get name of the zip file and create it -----------------------------
+    @@TmpZipFile = FileGetTmpName("SourceCode-????.ZIP")
+    <$RexxZipUpFiles List="@@SrcCode" ZipFileExp=^@@TmpZipFile^ IncludeList="<$COMMONFRAMEWORK_ZIPPED_SOURCE_INCLUDES_FILELIST $$UPPER>" InfoMsgExp=^''^ ZipOptions=^<??@@ZipUpSrcOptions4Zip>^>
+    @@TmpZipFileSize = AddCommasToDecimalNumber( FileQuerySize(@@TmpZipFile) );
+#DefineRexx
+#DefineRexx '@@ZipUpSourceCode-Term'
+    ;--- Cleanup ------------------------------------------------------------
+    call FileDelete  @@TmpZipFile, 'Q';     ;;Delete on exit (not in MSI yet!)
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- MAKEMSI_TABLENAME_CABS -------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+    #define CFW_DefineValidationEntries4MAKEMSI_TABLENAME_CABS
+
+    <$Table "_Validation">
+    #(
+       <$Row
+                Table="<$MAKEMSI_TABLENAME_CABS>"
+               Column="Name"
+             Nullable="N"
+             Category="Identifier"
+          Description='Referred to by Media Table (column "Cabinet").'
+       >
+    #)
+    #(
+       <$Row
+                Table="<$MAKEMSI_TABLENAME_CABS>"
+               Column="Data"
+             Nullable="N"
+             Category="Binary"
+          Description="Hold the CAB file."
+       >
+    #)
+    <$/Table>
+#)
+
+
+
+
+
+#NextId UNLOCK "CommonFrameWork.mmh"
+
+
+
+
+
+
+
+
+
+

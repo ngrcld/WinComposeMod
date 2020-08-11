@@ -1,0 +1,519 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   VER.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.19  $
+;          $Date:   24 Oct 2008 09:54:40  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Ver.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+; FILE FORMAT
+; ~~~~~~~~~~~
+; The ".VER" file has two distinct sections a product information section
+; followed by release (version) information. The latter section is read
+; using PPWIZARD's multi-line #import.
+;
+; The product information is "hidden" at the start of the file within
+; comments! The format is very simalar to the version information
+; for example:
+;
+;     ;+++++++++
+;     ; ProductName = A product name
+;     ; DESCRIPTION = This product is used
+;     ;             = to do x, y and z, this description
+;     ;             = was too long to fit on one line.
+;     ; INSTALLED   = TEST
+;     ;+++++++++
+;
+; You can add your own keywords if you wish the following code will
+; create a rexx variable for each of the items for example in the
+; above 3 PPWIZARD macros will be created, the 1st being
+; "PRODINFO.ProductName".
+; It is up to you to validate contents/existance.
+;
+; Some of the product information is predefined and required so if you
+; choose not to use a VER file then you will need to supply the correct
+; values yourself!
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "VER.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- PRODUCT INFO OPTIONS ---------------------------------------------------
+;----------------------------------------------------------------------------
+;-----[4Doco-Options-Product]-----
+#define?   VER_FILENAME.VER                             ;;If not empty overrides "VER_REXXEXP_SETS_VER_FILENAME" process
+#define?   VER_FILE_EXTN                            ver ;;The extension for the "VER" file
+#define?   VER_REXXEXP_SETS_VER_FILENAME \              ;;Generate absolute or relative filename
+           {$FileVar} = FilePart('withoutextn', '<?InputFile>') || '.<$VER_FILE_EXTN>'
+#define?   VER_MAX_ITEMS_IN_HISTORY                 100 ;;set to "0" so as to not limit number of entries in the HTML report
+#define?   VER_FILE_TAB_STOP                        8   ;;0 = abort if tabs exist
+#define?   VER_PI_REPLACE_MACROS                    Y   ;;Product Keyword values can refer to macros (like other Keyword values)
+#define?   VER_PI_MAKEWEBLINKS                      N   ;;Look for http:// etc to make links?
+#define?   VER_VI_REPLACE_MACROS                    Y   ;;History values can refer to macros
+#define?   VER_PI_EQUAL_CHARS                       =   ;;How keywords are separated from values
+#define?   VER_PRODINFO_VALID_KEYWORD_LIST_EXTRA        ;;Allows simple addition of new keywords (value must start with ",")
+#define?   VER_DISPLAY_DEFAULT_PRODINFO_USE \           ;;Used when no keyword, so default used
+           call Info 'KEYWORD "' || @@Keyword || '" is defaulting...'
+#define?   VER_DISPLAY_DEFAULT_PRODINFO_USE_NO_VALUE  \ ;;Used when no keyword, but no default either
+           call Info 'KEYWORD "' || @@Keyword || '" was not supplied...'
+#ifndef VER_PI_JOIN_CHARS
+   ;--- Characters used to "join" prodinfo lines ----------------------------
+   #evaluate ^VER_PI_JOIN_CHARS^   ^' '^       ;;A single space
+#endif
+#( ","
+   ;--- Complete list of supported PRODUCT keywords -------------------------
+   #define? VER_PRODINFO_VALID_KEYWORD_LIST
+            ProductName   ;;The name of the product
+            Description   ;;A description of the product (NON-HTML)
+            Installed     ;;Where do we support the installation of this product?
+            Note          ;;Extra details for the HTML summary
+            <$VER_PRODINFO_VALID_KEYWORD_LIST_EXTRA>   ;;Allow easy addition
+#)
+
+;--- Set up default values --------------------------------------------------
+#ifndef VER_DONT_SET_UP_PRODINFO_DEFAULTS
+   ;--- Used if keyword is not supplied -------------------------------------
+   #define? ProdInfo.Default.Note
+
+   ;--- Call PPWIZARD's MakeWebLinks()? -------------------------------------
+   #define? ProdInfo.MakeWebLinks.Note        Y
+   #define? ProdInfo.MakeWebLinks.Description Y
+#endif
+;-----[4Doco-Options-Product]-----
+
+
+;----------------------------------------------------------------------------
+;--- Some items not expected to be altered ----------------------------------
+;----------------------------------------------------------------------------
+;!!!!!! [AlsoUsedByDoco] !!!!!!!!
+#define  VER_PRODINFO_PREFIX         ProdInfo.
+#define  VER_GUID_PREFIX             GUID.
+#define  VER_PRODINFO_GUID_PREFIX    <$VER_PRODINFO_PREFIX><$VER_GUID_PREFIX>
+;!!!!!! [AlsoUsedByDoco] !!!!!!!!
+#define  VER_PRODINFO_PREFIX_DEFAULT        <$VER_PRODINFO_PREFIX>Default.        ;;Used to supply default values
+#define  VER_PRODINFO_PREFIX_MAKEWEBLINKS   <$VER_PRODINFO_PREFIX>MakeWebLinks.   ;;Y/N: look for http:// etc and make links?
+#define  VER_PRODINFO_PREFIX_REPLACE_MACROS <$VER_PRODINFO_PREFIX>ReplaceMacros.  ;;Y/N: Option, can be used to override "VER_PI_REPLACE_MACROS"
+#define  VER_DONT_DEFINE                    !%DontDefineThisProdInfoVariable!     ;;Can use for the default value for a keyword as so not to create a value
+
+
+;----------------------------------------------------------------------------
+;--- CHANGE HISTORY OPTIONS -------------------------------------------------
+;----------------------------------------------------------------------------
+;-----[4Doco-Options-Version]-----
+#define? VER_CH_EQUAL_CHARS                :
+#define? VER_HISTORY_FIELD_VERSION         "{*,Version,REQUIRED,NONBLANK}?"
+#define? VER_HISTORY_FIELD_CHANGES         "{*,Changes,REQUIRED,NONBLANK}?"
+#define? VER_HISTORY_FIELD_DATE            "{*,Date,REQUIRED,NONBLANK}?"
+#define? VER_HISTORY_FIELDNUM_VERSION      1
+#define? VER_HISTORY_FIELDNUM_CHANGES      2
+#define? VER_HISTORY_FIELDNUM_DATE         3
+#define? VER_HISTORY_FIELDNUM_FIRST_EXTRA  4        ;;Standard only has 3 fields
+#define? VER_THIS_RELEASE_VERSION          <?Data:@@ChangeHistory.1.RxVER_HISTORY_FIELDNUM_VERSION>  ;;First item is "current" release
+#define? VER_THIS_RELEASE_CHANGE           <?Data:@@ChangeHistory.1.RxVER_HISTORY_FIELDNUM_CHANGES>  ;;First item is "current" release
+#define? VER_CH_IMPORT_FIELDS_EXTRAS
+#(
+   #define? VER_CH_IMPORT_FIELDS
+
+   ;--- See #import (ML) command for details about how to describe fields ---
+   <$VER_HISTORY_FIELD_VERSION>            ;;Field #1
+   <$VER_HISTORY_FIELD_CHANGES>            ;;Field #2
+   <$VER_HISTORY_FIELD_DATE>               ;;Field #3
+   <$VER_CH_IMPORT_FIELDS_EXTRAS $$SpcPlus> ;;Possible user defined extras
+#)
+;-----[4Doco-Options-Version]-----
+
+;--- Define Rexx variables for the field numbers ----------------------------
+#RexxVar RxVER_HISTORY_FIELDNUM_VERSION  = <$VER_HISTORY_FIELDNUM_VERSION>
+#RexxVar RxVER_HISTORY_FIELDNUM_CHANGES  = <$VER_HISTORY_FIELDNUM_CHANGES>
+#RexxVar RxVER_HISTORY_FIELDNUM_DATE     = <$VER_HISTORY_FIELDNUM_DATE>
+
+
+;----------------------------------------------------------------------------
+;--- The default is a ".VER" file MUST exist --------------------------------
+;----------------------------------------------------------------------------
+#ifdef VER_FILE_DONT_USE_IT
+   ;--- Makes sense for user to replace these macros to "return" info -------
+   #define? VerFileGetProductInfo
+   #define? VerFileGetChangeHistory
+#elseif
+   ;-------------------------------------------------------------------------
+   ;--- Read Product information --------------------------------------------
+   ;-------------------------------------------------------------------------
+   #define? VerFileGetProductInfo \
+           #evaluate ^^ ^<$Rexx4VerFileGetProductInfo {$?}>^
+   #DefineRexx 'Rexx2SetVerFile'
+       if   defined('VER_USER_VERSION_FILE') = 'Y' then
+            @@VerFile = MacroGet('VER_USER_VERSION_FILE');
+       else
+       do
+           ;--- Determine the name of the VER file, does it exist? ----------
+           @@VerFileS = '<$VER_FILENAME.VER>';
+           if @@VerFileS = '' then
+           do
+              ;--- User did not supply a literal value ----------------------
+              <$VER_REXXEXP_SETS_VER_FILENAME FileVar=^@@VerFileS^>
+           end;
+           @@VerFile = FileQueryExists(@@VerFileS);
+           if   @@VerFile = '' then
+                error('Could not find the version file "' || @@VerFileS || '"');
+            else
+                call MacroSet 'VER_USER_VERSION_FILE', @@VerFile;
+       end;
+   #DefineRexx
+   #DefineRexx 'Rexx4VerFileGetProductInfo'
+       ;--- List all valid keywords (if user wants to validate) -------------
+       @@ValidKeywords = '<$VER_PRODINFO_VALID_KEYWORD_LIST>'
+       if  @@ValidKeywords <> '' then
+           @@ValidKeywords = ',' || translate(@@ValidKeywords) || ','
+
+       ;--- Determine the name of the VER file, does it exist? --------------
+       <$Rexx2SetVerFile>
+
+       ;--- Read the leading "comment" lines (look for keywords) ------------
+       call Info "Reading Product information from the VER file...";
+       call AddInputFileToDependancyList @@VerFile;
+       @@LastKw = '';
+       @@Eq     = '<$VER_PI_EQUAL_CHARS>'
+       @@Ilc    = ';' || ';';;              ;;Marks an inline comment
+       call FileClose @@VerFile;
+       @@TabStop = <$VER_FILE_TAB_STOP>;
+       if   @@TabStop = '' then
+            @@TabStop = 0;
+       @@UsedKeywords = ''
+       @@LineCnt      = 0;
+       do  while lines(@@VerFile) <> 0
+           ;--- Read the next line ------------------------------------------
+           @@Line    = strip(linein(@@VerFile));
+           @@LineCnt = @@LineCnt + 1;
+           if   pos('00'x, @@Line) <> 0 then
+                error('The version file appears to contain unicode, this is not supported', 'Please save as ANSI!');
+
+           ;--- Handle tabs -------------------------------------------------
+           if   pos('09'x, @@Line) <> 0 then
+           do
+                ;--- There are tabs in this line ----------------------------
+                if   @@TabStop = 0 then
+                    call error 'There are tabs on line ' || @@LineCnt || ' of the version file!';
+                else
+                    @@Line = Tabs2Spaces(@@Line, @@TabStop);
+           end;
+
+           ;--- Are we at the end of the "PRODUCT" section ------------------
+           if  @@Line <> '' & left(@@Line, 1) <> ';' then
+               leave;
+           else
+               @@Line = strip(substr(@@Line, 2));
+
+           ;--- If the line still starts with ";" then a comment to be ignored ---
+           if  left(@@Line, 1) = ';' then
+               iterate;
+
+           ;--- Ignore lines not in expected format (PVCS comments etc) -----
+           if  pos(@@Eq, @@Line) = 0 then
+               iterate;
+
+           ;--- This line has the equal sign --------------------------------
+           do
+               ;--- Look for an inline comment ------------------------------
+               @@CmtPos = lastpos(@@Ilc, @@Line);
+               if   @@CmtPos <> 0 then
+                    @@Line = strip(left(@@Line, @@CmtPos-1));  ;;Remove trailing comment
+
+               ;--- Split it up (ignore all leading/trailing whitespace) ----
+               #option push AllowPack=^OFF^
+                   parse var @@Line @@KeyWord (@@Eq) @@Value;
+               #option pop
+               @@KeyWord = translate(strip(@@KeyWord));
+               @@Value   = strip(@@Value);
+
+               ;--- Is this a continued line? -------------------------------
+               if  @@KeyWord = '' then
+               do
+                   ;--- Have a continued line (append @@Values) -------------
+                   @@KeyWord   = @@LastKw;      ;;Use last seen variable name
+                   @@RxTmpName = '@@Tmp' || c2x(translate(@@KeyWord));
+                   @@Value     = value(@@RxTmpName) || '<$VER_PI_JOIN_CHARS>' || @@Value;
+               end;
+               else
+               do
+                   ;--- First (or only) line, Check if a valid keyword? -----
+                   if  1 = 1 then
+                   do
+                       ;--- Don't check GUIDS -------------------------------
+                       @@Gp = translate('<$VER_GUID_PREFIX>')
+                       if  @@Gp <> translate(left(@@KeyWord, length(@@Gp))) then
+                       do
+                           ;--- User supplied a validation list -----------------
+                           if  pos(',' || @@KeyWord || ',', @@ValidKeyWords) = 0 then
+                               error('The VER file keyword "' || @@KeyWord || '" is unsupported!');
+                       end;
+                   end;
+
+                   ;--- Remember the keyword (supports continuation) --------
+                   @@LastKw = @@KeyWord;
+
+                   ;--- Remember its NAME -----------------------------------
+                   @@UsedKeywords = @@UsedKeywords || ',' || @@KeyWord;
+
+                   ;--- Make sure we have not seen this before --------------
+                   @@RxTmpName = '@@Tmp' || c2x(translate(@@KeyWord));
+                   if  symbol(@@RxTmpName) = 'VAR' then
+                       error('All product information keywords should only be used once!',, 'The second occurance of "' || @@KeyWord || '" is at line ' || @@LineCnt || ' of the version file.');
+               end;
+
+               ;--- Save value (all or partial) -----------------------------
+               @@RxTmpName = '@@Tmp' || c2x(translate(@@KeyWord));
+               call value @@RxTmpName, @@Value;     ;;If a keywords value span 10 lines, then its saved here 10 times!
+           end;
+       end;
+       call FileClose @@VerFile;
+
+       ;--- Now create macros for each keyword found in the ver file --------
+       call ArraySplit '@@KeyWord', @@UsedKeywords, ",";
+       do  @@i = 1 to @@KeyWord.0
+           ;--- Get name of this keyword ------------------------------------
+           @@Keyword = strip(@@Keyword.@@i);
+
+           ;--- Get "tmp" value ---------------------------------------------
+           @@RxTmpName = '@@Tmp' || c2x(translate(@@KeyWord));
+           @@Value     =  value(@@RxTmpName);
+
+           ;--- Save value in macro -----------------------------------------
+           @@MacName = '<$VER_PRODINFO_PREFIX>' || @@KeyWord;
+           <$SaveProdInfo>
+       end;
+
+       ;--- Look through valid keyword list for values needing a default ----
+       call ArraySplit '@@KeyWord', '<$VER_PRODINFO_VALID_KEYWORD_LIST>', ",";
+       do  @@i = 1 to @@KeyWord.0
+           ;--- Was a value supplied for this keyword? ----------------------
+           @@Keyword = strip(@@Keyword.@@i)
+           @@MacName = '<$VER_PRODINFO_PREFIX>' || @@KeyWord;
+           if  defined(@@MacName) = 'N' then
+           do
+               ;--- Get the default value -----------------------------------
+               @@MacNameDef = '<$VER_PRODINFO_PREFIX_DEFAULT>' || @@KeyWord;
+               if  defined(@@MacNameDef) = 'N' then
+                   error('No value was supplied for the VER keyword "' || @@KeyWord || '"', 'No configured default value exists (in "' || @@MacNameDef || '")!')
+               @@Value = MacroGet(@@MacNameDef);
+
+               ;--- The user may not wish ANY value recorded ("" may be valid) ---
+               if  @@Value = '<$VER_DONT_DEFINE>' then
+               do
+                   ;--- No value supplied (#ifdef/#ifndef will be used) -----
+                   <$VER_DISPLAY_DEFAULT_PRODINFO_USE_NO_VALUE>
+               end;
+               else
+               do
+                   ;--- There is a default value so use this ----------------
+                   <$VER_DISPLAY_DEFAULT_PRODINFO_USE>
+                   <$SaveProdInfo>
+               end;
+           end;
+       end;
+   #DefineRexx
+   #DefineRexx 'SaveProdInfo'
+       ;--- Replace Macros? -------------------------------------------------
+       @@MacNameRepMac = '<$VER_PRODINFO_PREFIX_REPLACE_MACROS>' || @@KeyWord;
+       if  defined(@@MacNameRepMac) = 'N' then
+           @@Replace = '<$VER_PI_REPLACE_MACROS>';  ;;Default fallback
+       else
+           @@Replace = MacroGet(@@MacNameRepMac);   ;;User supplied value for this specific keyword!
+       if  translate(@@Replace) <> 'N' then
+           @@Value = ReplaceMacros(@@Value);
+
+       ;--- Make Web Links? -------------------------------------------------
+       @@MacNameMwl = '<$VER_PRODINFO_PREFIX_MAKEWEBLINKS>' || @@KeyWord;
+       if   defined(@@MacNameMwl) = 'N' then
+           @@MakeWebLinks = '<$VER_PI_MAKEWEBLINKS>';    ;;Default fallback
+       else
+           @@MakeWebLinks = MacroGet(@@MacNameMwl);      ;;User supplied value for this specific keyword!
+       if  translate(@@MakeWebLinks) <> 'N' then
+           @@Value = MakeWebLinks(@@Value);
+
+       ;--- Save the info away ----------------------------------------------
+       call MacroSet @@MacName, @@Value;
+   #DefineRexx
+
+
+   ;-------------------------------------------------------------------------
+   ;--- Read Change History (version) information ---------------------------
+   ;-------------------------------------------------------------------------
+   #define? VER_HOOK_AFTER_CHANGE_HISTORY_IMPORTED
+   #(
+       #define? VerFileGetChangeHistory
+
+       ;--- Determine the name of the VER file, does it exist? --------------
+       #evaluate ^^ ^<$Rexx2SetVerFile>^
+
+       ;--- Perform the import of the change history ------------------------
+       #if ['<?Data:@@ChangeHistory>' = '']    ;;User can prefill
+           ;--- Code to fill #data structure with change history ------------
+           <$VER_IMPORT_CHANGE_HISTORY #DATA=^@@ChangeHistory^>
+       #endif
+
+       ;--- If we want to replace macros in history items then do so ----
+       #if  ['<$VER_VI_REPLACE_MACROS>' = 'Y']
+            #evaluate ^^ ^<$@@Rexx2ReplaceMacrosInVersionHistoryItems>^
+       #endif
+
+       ;--- Must have at least one record! ----------------------------------
+       #if ['<?Data:@@ChangeHistory.?>' = 0]
+           #error ^There were no change history (version) details in the VER file!^
+       #endif
+
+       ;--- HOOK To do some processing --------------------------------------
+       <$VER_HOOK_AFTER_CHANGE_HISTORY_IMPORTED #DATA=^@@ChangeHistory^>
+
+       ;--- Get the version info for this release (first record) ------------
+       #define ProductVersion  <$VER_THIS_RELEASE_VERSION>
+       #define ProductChange   <$VER_THIS_RELEASE_CHANGE>
+
+       ;--- How many items to display in the HTML report? -------------------
+       #RexxVar @@HistoryItems    = <?Data:@@ChangeHistory.?>
+       #RexxVar @@MaxHistoryItems = <??@@HistoryItems>
+       #define  @@REPORT_SUMMARY    <$VER_HTML_REPORT_END>
+       #if '<$VER_MAX_ITEMS_IN_HISTORY>' <> 0
+           ;--- There is a limit, will we exceed it? ------------------------
+           #if @@HistoryItems > <$VER_MAX_ITEMS_IN_HISTORY>
+               ;--- We have more than what we wish to displayed! ------------
+               #define+ @@REPORT_SUMMARY    <$VER_HTML_REPORT_END_NOT_ALL_DISPLAYED>
+               #RexxVar @@MaxHistoryItems = <$VER_MAX_ITEMS_IN_HISTORY>
+           #endif
+       #endif
+
+       ;--- This used by "HTMLSUMM.MMH" -------------------------------------
+       #define VER_NumberOfChangeDetails <??@@MaxHistoryItems>
+   #)
+   #(
+       ;--- User can replace to change where history data comes from --------
+       #define? VER_IMPORT_CHANGE_HISTORY
+
+       #option push DefineMacroReplace=ON
+       #define  MLCH_DELIMITER            <$VER_CH_EQUAL_CHARS>
+       #option pop
+       #evaluate MLCH_TAB_CHAR  ^' '^        ;;Space
+       #define  MLCH_PROTECT_START
+       #define  MLCH_PROTECT_END
+       #define  MLCH_#DATA                {$#DATA}       ;;Import to memory
+       #import  "<??@@VerFile>" ML "MLCH" <$VER_CH_IMPORT_FIELDS>
+    #)
+   #DefineRexx '@@Rexx2ReplaceMacrosInVersionHistoryItems'
+       ;--- Work though all rows --------------------------------------------
+       do   @@Row = 1 to DataInfo('@@ChangeHistory.?')
+            do  @@Col = 1 to DataInfo('@@ChangeHistory..?')
+                @@ChangeHistory.@@Row.@@Col = ReplaceMacros(@@ChangeHistory.@@Row.@@Col)
+            end;
+       end;
+   #DefineRexx
+#endif              ;;Moved from below, SEE: (September 26, 2005 5:27:28 PM EST, Dennis)
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? VER_BEFORE_BUTTON_FOR_CHANGE_HISTORY
+#define? VER_AFTER_BUTTON_FOR_CHANGE_HISTORY
+#(
+   #define? VER_BUTTON_FOR_CHANGE_HISTORY
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$VER_BEFORE_BUTTON_FOR_CHANGE_HISTORY>
+   #ifndef VER_FILE_DONT_READ_PRODUCT_INFO
+           <$BUTTON2 "CHANGE_HISTORY" Text="Change History" CNT="-1" TT=^Details of the different version of this product.^>
+   #endif
+   <$VER_AFTER_BUTTON_FOR_CHANGE_HISTORY>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? VER_BEFORE_REPORT_FOR_CHANGE_HISTORY
+#define? VER_AFTER_REPORT_FOR_CHANGE_HISTORY
+#( ''
+   #define VER_REPORT_FOR_CHANGE_HISTORY
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$VER_BEFORE_REPORT_FOR_CHANGE_HISTORY>
+
+   ;--- Generate change history if possible ---------------------------------
+   #ifndef VER_FILE_DONT_READ_PRODUCT_INFO
+       ;--- Button links to here --------------------------------------------
+       <A NAME="CHANGE_HISTORY"></A>
+
+       ;--- Start the HTML table --------------------------------------------
+       <$HTMLRPT_HEADING TEXT="CHANGE HISTORY">
+       <$VER_HTML_REPORT_START>
+
+       ;--- Generate guts of report -----------------------------------------
+       #{  FOR @@I = 1 to <??@@MaxHistoryItems>
+           <$VER_HTML_REPORT_ROW>
+       #}
+
+       ;--- End the HTML table ----------------------------------------------
+       <$@@REPORT_SUMMARY>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$VER_AFTER_REPORT_FOR_CHANGE_HISTORY>
+#)
+#( '<?NewLine>'
+   #define? VER_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="3" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH align='left' title="Release's version">Version</TH>
+       <TH align='left' title="Release's date" SortType="Date">Date</TH>
+       <TH align='left' title="Change details">Changes Made</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? VER_HTML_REPORT_ROW
+   <?NewLine>
+   <TR>
+       <TD><?Data:@@ChangeHistory.@@i.RxVER_HISTORY_FIELDNUM_VERSION><$VER_HTML_REPORT_ROW_AFTER_VERSION I=^@@i^></TD>
+       <TD><?Data:@@ChangeHistory.@@i.RxVER_HISTORY_FIELDNUM_DATE></TD>
+       <TD><?Data:@@ChangeHistory.@@i.RxVER_HISTORY_FIELDNUM_CHANGES></TD>
+   </TR>
+#)
+#define? VER_HTML_REPORT_ROW_AFTER_VERSION
+#( '<?NewLine>'
+   #define? VER_HTML_REPORT_END
+
+   ;--- Used when all history items are being displayed ---------------------
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HistoryItems> changes.
+   </CENTER>
+#)
+#( '<?NewLine>'
+   #define? VER_HTML_REPORT_END_NOT_ALL_DISPLAYED
+
+   ;--- Used when some history items were not displayed ---------------------
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P>Displayed the last <??@@MaxHistoryItems> of <??@@HistoryItems> changes.
+   </CENTER>
+#)
+
+
+
+;**    [CommentBlockStart     (September 26, 2005 5:27:28 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|#endif
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (September 26, 2005 5:27:28 PM EST, Dennis)
+
+
+#NextId UNLOCK "VER.MMH"

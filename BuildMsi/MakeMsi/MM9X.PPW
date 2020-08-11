@@ -1,0 +1,19 @@
+;---------------------------------------------------------------------------
+;     MODULE NAME:   MM9X.TXT
+;
+;         $Author:   USER "Dennis"  $
+;       $Revision:   1.0  $
+;           $Date:   14 Apr 2004 11:58:44  $
+;        $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MM9X.PPW.pvcs  $
+;
+;     DESCRIPTION:   Used by MM9X.BAT (MM.BAT) and contains PPWIZARD
+;                    command line switches to avoid the DOS command line
+;                    length limitation.
+;---------------------------------------------------------------------------
+
+/ErrorFile:
+/DeleteOnError:N
+/option:Tabs='4'
+/syntax:~/VBS/~
+/OTHER
+/Output:out\*.*\IgnoreMe.txt

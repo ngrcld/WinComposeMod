@@ -1,0 +1,314 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ProductValidation.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.7  $
+;          $Date:   17 Jul 2008 10:09:52  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ProductValidation.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "ProductValidation.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainProductValidationOptions]---
+#define? PRODUCTVAL_PRODUCT_ENUM_USERSID              WI_SID_EVERYONE ;;See 2nd parm of oInstaller.ProductsEx
+#define? PRODUCTVAL_PRODUCT_ENUM_CONTEXTS             WI_ALL_CONTEXTS ;;See 3nd parm of oInstaller.ProductsEx
+#define? PRODUCTVAL_CA_DESCRIPTION                    Looking for install problematic products.                 ;;Don't make too long
+#define? PRODUCTVAL_CONSTANTS                                         ;;Any constants or global variables you'd like to define
+#define? PRODUCTVAL_SUBROUTINES                                       ;;Any functions etc your code needs, perhaps replacement for ProductsMatchCaseInsensitive()
+#define? PRODUCTVAL_PROBLEMATIC_PRODUCTLIST_DELIMITER       ;         ;;Delimiter used in "other products list"
+#define? PRODUCTVAL_PROBLEMATIC_PRODUCTLIST_TRIM_WHITESPACE Y         ;;Remove leading and trailing whitespace (almost always doesn't matter and may become common error)
+#define? PRODUCTVAL_PROBLEMATIC_PRODUCTLIST_COMPARE()       ProductsMatchCaseInsensitive(Look4, ProductName, ProductVersion)
+#(  ';'
+    #define? PRODUCTVAL_PROBLEMATIC_PRODUCTLIST
+
+    ;--- List of products (By default just the product we are installing) ---
+    <$ProdInfo.ProductName>
+#)
+#( '<?NewLine>'
+    ;--- Becomes part of Allowed() ------------------------------------------
+    #define? PRODUCTVAL_VALIDATION_CODE_FUNCTION_Allowed_StandardValidation
+
+    <?NewLine><?NewLine>
+    dim ProductList : ProductList = "<$PRODUCTVAL_PROBLEMATIC_PRODUCTLIST>"
+    if  ProductList <> "" then
+        ;--- We have a list so break it up ----------------------------------
+        dim Delimiter, Products, i
+        Delimiter = "<$PRODUCTVAL_PROBLEMATIC_PRODUCTLIST_DELIMITER>"
+        Products  = split(ProductList, Delimiter)
+        for i = 0 to ubound(Products)
+            ;--- Get this product name --------------------------------------
+            #if ['<$PRODUCTVAL_PROBLEMATIC_PRODUCTLIST_TRIM_WHITESPACE $$UPPER>' = 'N']
+                dim Look4 : Look4 = Products(i)
+            #elseif
+                dim Look4 : Look4 = trim( Products(i) )
+            #endif
+
+            ;--- Double delimiter is likely to be a common mistake, ignore ---
+            if  trim(Look4) <> "" then
+                ;--- Use defined compare function (allows easy user override) ---
+                if  <$PRODUCTVAL_PROBLEMATIC_PRODUCTLIST_COMPARE()> then
+                    Allowed = False
+                    exit function
+                end if
+            end if
+        next
+    end if
+#)
+#define? PRODUCTVAL_SCHEDULE_LOCATION      RemoveExistingProducts-    ;;We will let "RemoveExistingProducts" (its scheduled before installation) do what it can first..
+#define? PRODUCTVAL_SCHEDULE_TABLES        InstallExecuteSequence
+#define? PRODUCTVAL_SCHEDULE_CONDITION     <$CONDITION_INSTALL_ONLY> and <$@@ProductValidationNotDisabled>
+#define? PRODUCTVAL_SCHEDULE_TYPE          immediate                       ;;Not deferred
+#define? PRODUCTVAL_DEBUG                  N                               ;;Y = Always fail (test multiple times)
+#define? @@ProductValidationNotDisabled    (%MsiProductValidation = "" or %MsiProductValidation ~= "Y")  ;;Allow disabling of CA by env var
+#(
+    #define? PRODUCTVAL_VBSCA_BINARY_COMMENT
+    This custom action is used to search for products which should be uninstalled
+    before the install continues.
+    If such products are found then the install aborts.
+#)
+;---[4DocoMainProductValidationOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Define the macro itself ------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+    #define ProductValidation
+
+    ;--- Validate usage -----------------------------------------------------
+    <$UpdateMmLocation>
+    {$!KEYWORDS}           ;;Don't Expect any keywords!
+    {$!:MoreValidation,StandardValidation}
+    #ifdef @@Used
+        #error ^You had already used the ProductValidation command (can only be used once).^
+    #endif
+    #define @@Used
+
+    ;--- Define the CA code -------------------------------------------------
+    <$MacroCfg "VBSCA_BINARY_COMMENT" PreExists="Y" Value=^<$PRODUCTVAL_VBSCA_BINARY_COMMENT>^>
+    #( '<?NewLine>'
+        <$VbsCa Binary="ProductValidation.vbs">
+            const WI_SID_EVERYONE = "s-1-1-0"
+            const WI_ALL_CONTEXTS = 7
+            const FailedTxt       = "<<QueryFailed>>"
+            <$PRODUCTVAL_CONSTANTS>
+            dim InstallingProductName    : InstallingProductName    = ""
+            dim InstallingProductVersion : InstallingProductVersion = ""
+            dim ProductsEx
+
+            <$VbsCaEntry "AbortIfProblemProductsAreInstalled">
+                ;--- Get details about product being installed --------------
+                CaDebug 0, "Get details about the product being installed."
+                VbsCaLogInc 1
+                    InstallingProductName    = VbsCaPropertyGet("ProductName",    "TestName",        "")
+                    InstallingProductVersion = VbsCaPropertyGet("ProductVersion", "01.23.4567.8901", "")
+                VbsCaLogInc -1
+
+                ;--- Get details about each product installer (even per-users installs) ---
+                dim ProductCode, ProductName, ProductVersion, ProductSID, PerUser, InstallSource, CachedMsi, InstallDate
+                dim ProductCnt : ProductCnt = 0
+                dim BadCnt     : BadCnt     = 0
+                dim ProductErr : ProductErr = ""
+                CaDebug 0, "Get list of installed products using Windows Installer version: " & Installer.version
+                on error resume next
+                dim oProducts : set oProducts = Installer.ProductsEx("", <$PRODUCTVAL_PRODUCT_ENUM_USERSID>, <$PRODUCTVAL_PRODUCT_ENUM_CONTEXTS>)
+                if err.number = 0 then
+                    ProductsEx = true
+                else
+                    ;--- Fall back to Products() ----------------------------
+                    ProductsEx = false
+                    dim Reason : Reason =  " Reason 0x" & hex(err.number) & " - " & err.description
+                    err.clear()
+                    CaDebug 0, "The ProductEx() method failed, falling back to using Products() method..." & Reason
+                    set oProducts = Installer.Products
+                    if err.number <> 0 then
+                        ;--- What the...  Bail out... -----------------------
+                        Reason =  " Reason 0x" & hex(err.number) & " - " & err.description
+                        CaDebug 0, "The Products() method also failed, can't check products..." & Reason
+                        exit function
+                    end if
+                end if
+
+                ;--- Iterate over all the products --------------------------
+                CaDebug 0, "Processing list of installed products (using ProductsEx() = " & ProductsEx & ")."
+                dim IteratedItem
+                for each IteratedItem in oProducts
+                    ;--- Get details of this product ------------------------
+                    on error resume next
+                    ProductCnt    = ProductCnt + 1
+                    ProductName    = FailedTxt
+                    ProductVersion = FailedTxt
+                    InstallDate    = FailedTxt
+                    InstallSource  = FailedTxt
+                    CachedMsi      = FailedTxt
+                    if  ProductsEx then
+                        ;--- ProductsEx() -----------------------------------
+                        err.clear()
+                        dim oProduct : set oProduct = IteratedItem  ;;Item is a product object
+                        ProductCode = oProduct.ProductCode
+                        ProductSID  = oProduct.UserSid
+                        dim Cmt
+                        if  ProductSID = "" then
+                            PerUser = False
+                            Cmt     = ""
+                        else
+                            PerUser = True
+                            Cmt     = "  (PERUSER SID: " & ProductSID & ")"
+                        end if
+                        ProductName    = oProduct.InstallProperty("InstalledProductName")
+                        ProductVersion = oProduct.InstallProperty("VersionString")
+                        InstallDate    = oProduct.InstallProperty("InstallDate")
+                        InstallSource  = oProduct.InstallProperty("InstallSource")
+                        CachedMsi      = oProduct.InstallProperty("LocalPackage")
+                    else
+                        ;--- Products() -------------------------------------
+                        err.clear()
+                        ProductCode = IteratedItem         ;;Item is the actual ProductCode
+                        ProductSID  = ""                   ;;SID can't be determined
+                        dim AssignmentType : AssignmentType = 1 : AssignmentType = Installer.ProductInfo(ProductCode, "AssignmentType")
+                        if  AssignmentType = 1 then
+                            PerUser = False
+                            Cmt     = ""
+                        else
+                            PerUser = True
+                            Cmt     = "  (PERUSER SID: <<Impossible to determine>>)"
+                        end if
+                        ProductName    = Installer.ProductInfo(ProductCode, "InstalledProductName")
+                        ProductVersion = Installer.ProductInfo(ProductCode, "VersionString")
+                        InstallDate    = Installer.ProductInfo(ProductCode, "InstallDate")
+                        InstallSource  = Installer.ProductInfo(ProductCode, "InstallSource")
+                        CachedMsi      = Installer.ProductInfo(ProductCode, "LocalPackage")
+                    end if
+                    dim QueryRc     : QueryRc     = err.number          'Capture Current err details (queries above may have failed)
+                    dim QueryRcDesc : QueryRcDesc = err.description
+                    on error goto 0
+
+                    ;--- Dump product's details -----------------------------
+                    CaDebug 2, "Looking  at the product: " & ProductName    ;;Show some progress!
+                    VbsCaLogInc 1
+                        ;--- Dump basic products ----------------------------
+                        CaDebug 0, "ProductCode   : " & ProductCode & Cmt
+                        CaDebug 0, "Product Ver   : " & ProductVersion
+                        CaDebug 0, "Install Date  : " & InstallDate
+                        CaDebug 0, "Install Source: " & InstallSource
+                        CaDebug 0, "Cached MSI    : " & CachedMsi
+                        CaDebug 0, ""
+
+                        ;--- Have seen the queries fail on some products ----
+                        if  QueryRc <> 0 then
+                            ;--- Failed getting details ---------------------
+                            CaDebug 0, "Windows Feature, query failed RC: 0x" & hex(QueryRc) & " - " & QueryRcDesc
+                            CaDebug 0, "Ignoring this product..."
+                        else
+                            ;--- Query worked... See if we want this product ---
+                            CaDebug 0, "Product Wanted?"
+                            VbsCaLogInc 1
+                                ;--- Any debug output is indented -----------
+                                dim ProductOk : ProductOk = Allowed(ProductCode, ProductName, ProductVersion, PerUser)
+                            VbsCaLogInc -1
+                            CaDebug 0, "Product OK    : " & ProductOk
+
+                            ;--- Add any disallowed products to the list... ---
+                            if  not ProductOk then
+                                BadCnt     = BadCnt + 1
+                                if  PerUser then
+                                    Cmt = "  (per-user)"
+                                else
+                                    Cmt = ""
+                                end if
+                                ProductErr = ProductErr & vbCRLF & "  * " & ProductName & ", version " & ProductVersion & Cmt
+                            end if
+                        end if
+                        CaDebug 0, ""
+                    VbsCaLogInc -1
+                next
+                set oProducts = Nothing
+                CaDebug 0, ""
+                CaDebug 0, "We checked " & ProductCnt & " products..."
+
+                ;--- Finish up ----------------------------------------------
+                if  ProductErr <> "" then
+                    VbsCaRaiseError "AbortIfProblemProductsAreInstalled()", "We found some " & BadCnt & " out of " & ProductCnt & " products that must be uninstalled before installing this product:" & vbCRLF & ProductErr
+                end if
+
+                ;--- Abort if in debug mode ---------------------------------
+                #if  ['<$PRODUCTVAL_DEBUG $$UPPER>' = 'Y']
+                    VbsCaRaiseError "AbortIfProblemProductsAreInstalled()", "Passed Product validation, aborting install as ""PRODUCTVAL_DEBUG"" is ""<$PRODUCTVAL_DEBUG>"""
+                #endif
+            <$/VbsCaEntry>
+
+
+<?NewLine><?NewLine>
+'============================================================================
+;---[4Doco-Allowed()]---
+function Allowed(ByVal ProductCode, ByVal ProductName, ByVal ProductVersion, ByVal PerUser)
+;---[4Doco-Allowed()]---
+'============================================================================
+                ;--- Not normally overriden ---------------------------------
+                Allowed = true
+                #if ['{$StandardValidation=^Y^ $$Upper}' <> 'N']
+                    <$PRODUCTVAL_VALIDATION_CODE_FUNCTION_Allowed_StandardValidation>
+                #endif
+
+                ;--- Normally "", add validations of your own... ------------
+                #if ['{$MoreValidation=^^ $$IsBlank}' = 'N']
+                    ;--- User supplied the name of a macro ------------------
+                    CaDebug 0, "Starting user code (from macro ""{$MoreValidation}"")..."
+                    VbsCaLogInc 1
+                        <${$MoreValidation}>
+                    VbsCaLogInc -1
+                    CaDebug 0, "Finished user code..."
+                #endif
+            end function
+
+
+            <?NewLine><?NewLine>
+            '============================================================================
+            function ProductsMatchCaseInsensitive(ByVal Look4ProblemProductName, ByVal ProductName, ByVal ProductVersion)
+            '============================================================================
+                ProductsMatchCaseInsensitive = False
+                CaDebug 0, "Check for any version of the product (""" & Look4ProblemProductName & """) in any case..."
+                VbsCaLogInc 1
+                    if  ucase(ProductName) = ucase(Look4ProblemProductName) then    ;;Lets do case sensitive compare...
+                        CaDebug 0, "Version " & ProductVersion & " of this product is already installed!"
+                        ProductsMatchCaseInsensitive = True
+                    end if
+                VbsCaLogInc -1
+            end function
+
+
+
+            ;--- Any user defined functions ---------------------------------
+            <?NewLine><?NewLine>
+            <$PRODUCTVAL_SUBROUTINES>
+        <$/VbsCa>
+    #)
+    <$/MacroCfg>
+
+    ;--- Schedule the validation --------------------------------------------
+    #(
+        <$VbsCaSetup
+                Binary="ProductValidation.vbs"
+                 Entry="AbortIfProblemProductsAreInstalled"
+                   Seq="<$PRODUCTVAL_SCHEDULE_LOCATION>"
+              SeqTable="<$PRODUCTVAL_SCHEDULE_TABLES>"
+             CONDITION="<$PRODUCTVAL_SCHEDULE_CONDITION>"
+                  TYPE="<$PRODUCTVAL_SCHEDULE_TYPE>"
+           Description=^<$PRODUCTVAL_CA_DESCRIPTION>^       ;;2008-04-05: Added as some msi schema's only allow for 64 characters (let user override as an when required)
+        >
+    #)
+#)
+
+
+
+#NextId UNLOCK "ProductValidation.MMH"

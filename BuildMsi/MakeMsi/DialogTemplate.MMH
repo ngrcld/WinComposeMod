@@ -1,0 +1,1352 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DialogTemplate.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.22  $
+;          $Date:   02 May 2011 17:55:30  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DialogTemplate.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;    NOTE THAT I'M ONLY TESTING THIS AT THIS STAGE.
+;----------------------------------------------------------------------------
+#NextId PUSH
+#NextId
+#NextId LOCK "DialogTemplate"
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_DIALOGENTRY_BLANK                N       ;;Blank entry field OK (Y/N)?
+#define? DEFAULT_DIALOGENTRY_TRIM                 Y       ;;Remove leading and trailing whitespace (Y/N)?
+#define? DEFAULT_DIALOGENTRY_CASE                         ;;Force case to be upper or lower (Blank= no change, L=Lower, U=Upper)
+#define? DEFAULT_DIALOGENTRY_PRESORTED            Y       ;;Y/N: Is your supplied list presorted or should Windows Installer sort alphabetically?
+#define? DIALOGTEMPLATE_GAP_BETWEEN_CONTROLS      4       ;;How much space between controls?
+#define? DIALOGTEMPLATE_PROPERTIES_MUST_BE_PUBLIC Y       ;;All upper case required?
+#define? DIALOGTEMPLATE_LOGNAME                           ;;No logging by default but useful for debugging issues!
+#define? DIALOGTEMPLATE_START_Y                   55      ;;How far down is the first field?
+#define? DIALOGTEMPLATE_START_X                   10      ;;Labels starts how far from the left edge?
+#define? DIALOGTEMPLATE_LABEL_ATTRIBUTES          msidbControlAttributesVisible or msidbControlAttributesEnabled or msidbControlAttributesRightAligned
+#define? DIALOGTEMPLATE_LABEL_ONLY_ATTRIBUTES     msidbControlAttributesVisible or msidbControlAttributesEnabled
+#define? DIALOGTEMPLATE_ENTRY_ATTRIBUTES          msidbControlAttributesVisible or msidbControlAttributesEnabled
+#define? DIALOGTEMPLATE_LABEL_COLUMN_WIDTH        90      ;;Width of label (90 allows reasonable amount of text)
+#define? DIALOGTEMPLATE_ENTRY_COLUMN_WIDTH        100     ;;Width of edit field
+#define? DIALOGTEMPLATE_RADIOBUTTON_COLUMN_WIDTH  250     ;;Width of radio button bit
+#define? DIALOGTEMPLATE_LABEL_TO_ENTRY_GAP        5       ;;Gap between label and entry field
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_Edit          3       ;;Move Label to middle
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_Text          3       ;;Move Label to middle
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_RadioButton  -1       ;;Move Label to middle
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_CheckBox      1       ;;Move Label to middle
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_ComboBox      3       ;;Move Label to middle
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_ListBox       3       ;;Move Label to middle
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_ListView      3       ;;Move Label to middle
+#define? DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_MaskedEdit    2       ;;Move label to middle
+#define? DIALOGTEMPLATE_HOOK_VBS_FUNCTIONS                ;;User hook
+#define? DIALOGTEMPLATE_HOOK_VBS_START_VALIDATE           ;;User hook
+#define? DIALOGTEMPLATE_CHECKBOX_DELIMITER        |       ;;Allow you to change it in case of a clash (you may wish your value to include "|")
+#define? DIALOGTEMPLATE_CHECKBOX_DEFAULT_PARMS    0<$DIALOGTEMPLATE_CHECKBOX_DELIMITER>1 ;;Use 0=False, 1=True
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_Edit                     18
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_Text                     18
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_ListBox                  70     ;;How much space required on screen
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_ListView                 70     ;;How much space required on screen
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_ComboBox                 18     ;;How much space required on screen
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_ComboBox_T               100    ;;Size of the pull down box - Actual value does not matter? - EXCEPT that when it was same as control size it didn't work (Windows Installer bug?)
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_MaskedEdit               15
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_CheckBox                 15
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_RadioButton              11     ;;Each radio button item is this high
+#define? DIALOGTEMPLATE_CONTROL_HEIGHT_RadioButton_VERTICAL_GAP 2      ;;If arranged vertically what gap between radio buttons?
+#define? DIALOGTEMPLATE_ORDER_START                             10000  ;;Ordering starting number - leave gap to allow latter dynamic insertions
+#define? DIALOGTEMPLATE_ORDER_INC                               100    ;;Ordering starting number - leave gap to allow latter dynamic insertions
+#define? DIALOGTEMPLATE_DEFAULT_DIALOG_PREFIX                   A.Dlg.
+#define? DIALOGTEMPLATE_LABEL_NAME_PREFIX                       Lbl.    ;;Used if "ControlName" parameter used or not
+#define? DIALOGTEMPLATE_ENTRY_NAME_PREFIX                       Entry.  ;;Used if "ControlName" parameter isn't
+
+
+
+;----------------------------------------------------------------------------
+;--- DIALOG -----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@DialogStarted = ''           ;;Are we in a dialog, if so where did it start?
+#(
+    #define Dialog
+
+    #evaluate ^^ ^<$@@Rexx4Dialog {$?}>^
+    #PUSH "Dialog Command"
+    <$@@DefineDialog>
+#)
+#DefineRexx '@@Rexx4Dialog'
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}  ;;Don't Expect any keywords!
+    {$!:#1,Description,Dialog,Insert}
+
+    ;--- Dialogs can't be nested! ---------------------------------------
+    if  @@DialogStarted = '' then
+        @@DialogStarted = GetInputFileNameAndLine();
+    else
+        error("You can't nest dialogs, you are already within a dialog which starts at " || @@DialogStarted);
+
+    ;--- Information about the dialog being inserted --------------------
+    @@DialogSummary     = '{$#1}';
+    @@DialogDescription = '{$Description=^^}';
+    @@DialogName = '{$Dialog=^^}';
+    if  @@DialogName = '' then
+    do
+        @@DialogName = '<$DIALOGTEMPLATE_DEFAULT_DIALOG_PREFIX>' || @@DialogSummary;
+        <$Rexx2FixMsiIdAndEnsureUnique IdVar="@@DialogName">
+    end;
+    @@DialogValidatedOkProperty = 'VALID.' || translate(@@DialogName);
+
+    ;--- What are the before and after dialogs? -------------------------
+    @@Insert = strip('{$Insert}');
+    if  left(@@Insert, 1) \= '!' then
+        @@WantInsert = 'Y';
+    else
+    do
+        @@WantInsert = 'N';
+        @@Insert     = substr(@@Insert, 2);
+    end
+    parse var @@Insert @@DialogPrev '-' @@DialogNext;
+    if  @@DialogPrev = '' then
+        error('No previous dialog specified by the INSERT parameter!');
+    if  @@DialogNext = '' then
+        @@DialogNext = 'SetupTypeDlg';
+
+    ;--- Reset some info ------------------------------------------------
+    @@CurrentY                = <$DIALOGTEMPLATE_START_Y>;
+    @@EditFieldsCnt           = 0;
+    @@CaLabels                = '';
+    @@PropertyTransformations = '';
+    @@CaValidations           = '';
+    @@NextX                   = 0;
+    @@NextY                   = 0;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- DIALOG? ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define  Dialog?  <??@@DialogName>
+;**    [CommentBlockStart     (February 19, 2005 11:48:11 AM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|#(  ''
+;**|    #define Dialog?
+;**|
+;**|    ;--- Must be used "within" a dialog -------------------------------------
+;**|    #if [@@DialogStarted = '']
+;**|        #error ^You are not currently within a dialog, so I can't tell you its ID!^
+;**|    #endif
+;**|
+;**|    ;--- Return the ID of the dialog ----------------------------------------
+;**|    <??@@DialogName>
+;**|#)
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (February 19, 2005 11:48:11 AM EST, Dennis)
+
+
+;----------------------------------------------------------------------------
+;--- /DIALOG ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+    #define /Dialog
+
+    ;--- Must be within a dialog! -------------------------------------------
+    #if [@@DialogStarted = '']
+        #error ^You are trying to complete a dialog however none is started!^
+    #elseif
+        #RexxVar @@DialogStarted = ''       ;;Clear flag
+    #endif
+    #POP "Dialog Command"
+
+    ;--- Do it ------------------------------------------------------------------
+    <$@@DialogButtonsControlEvents>
+    <$Table "Control">
+       <$@@TopBanner>
+       <$@@DialogDescription>
+       <$@@BottomLine>
+       <$@@DialogButtons>
+    <$/Table>
+
+    ;--- Insert the dialog (if thats what the user wants) -------------------
+    #if [@@WantInsert = 'Y']
+        <$DIALOGTEMPLATE_DialogInsertLogic RxVarPrev='@@DialogPrev' RxVarThis='@@DialogName' RxVarNext='@@DialogNext'>
+    #endif
+
+    ;--- Fix the controls links (BannerBitmap already taken care of) --------
+    <$Table "Control">
+    #{  FOR @@Control = 1 to @@EditFieldsCnt
+        ;--- Work out where this control points -----------------------------
+        #if [@@Control = @@EditFieldsCnt]
+            ;--- Last eontrol points to the push buttons --------------------
+            #RexxVar @@ControlPointsTo = 'Back'
+        #elseif
+            ;--- Point to the first entry field -----------------------------
+            #RexxVar @@ControlNext     =  @@Control
+            #RexxVar @@ControlNext     +  1
+            #RexxVar @@ControlPointsTo =  @@EditFieldName.@@ControlNext
+        #endif
+
+        ;--- Update the control to point to the correct location ------------
+        #(
+            <$Row
+                     @Where="Dialog_ = '<??@@DialogName>' AND Control = '<??@@EditFieldName.@@Control>'"
+                        @OK='=1'
+               Control_Next="<??@@ControlPointsTo>"
+            >
+        #)
+    #}
+    <$/Table>
+
+    ;--- Validation code? ---------------------------------------------------
+    #if  @@PropertyTransformations <> '' | @@CaValidations <> ''
+        <$VbsCa Binary="<??@@DialogName>.vbs" LogFile=^<$DIALOGTEMPLATE_LOGNAME>^>
+        #( '<?NewLine>'
+           ;--- Define label constants ---------------------------------------
+           <?NewLine><?NewLine>
+           <??@@CaLabels>
+           <?NewLine><?NewLine>
+
+           ;--- INSTALL -------------------------------------------------------------
+           dim MsiHiddenProperties : MsiHiddenProperties = ""
+           <$VbsCaEntry "Validate">
+               ;--- Start in a non-validated state --------------------------
+               CaDebug 0, "Setting not validated state"
+               session.property("<??@@DialogValidatedOkProperty>") = "0"
+
+               ;--- Get value of the "MsiHiddenProperties" property ---------
+               MsiHiddenProperties = VbsCaPropertyGet("MsiHiddenProperties", "", "")
+
+               ;--- User Hook Start Validations -----------------------------
+               CaDebug 0, "Started User HOOK: DIALOGTEMPLATE_HOOK_VBS_START_VALIDATE"
+               <$DIALOGTEMPLATE_HOOK_VBS_START_VALIDATE>
+               CaDebug 0, "Finished User HOOK: DIALOGTEMPLATE_HOOK_VBS_START_VALIDATE"
+
+               ;--- Perform data transformations ----------------------------
+               <?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine>
+               '######################################################
+               '############[ WHY VBS WAS CREATED FOLLOWS ]###########
+               '######################################################
+               <?NewLine> 
+               CaDebug 0, "Perform transformations of properties (USER REQUESTED, PERHAPS BY OMMISSION)"
+               <??@@PropertyTransformations>
+
+               ;--- Perform the validations ---------------------------------
+               <?NewLine><?NewLine>
+               CaDebug 0, "Perform validations  (USER REQUESTED, PERHAPS BY OMMISSION)"
+               <??@@CaValidations>
+               <?NewLine>
+               '######################################################
+               '############[ WHY VBS WAS CREATED ABOVE ]#############
+               '######################################################
+               <?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine><?NewLine>
+
+               ;--- Now Validated -------------------------------------------
+               CaDebug 0, "We have completed validations so updating the ""<??@@DialogValidatedOkProperty>"" property."
+               session.property("<??@@DialogValidatedOkProperty>") = "1"
+           <$/VbsCaEntry>
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------------
+           function DisplayPropertyValue(Property, ItsRealValue)
+           ;-----------------------------
+                if instr(";" & MsiHiddenProperties & ";", ";" & Property & ";") = 0 then
+                    DisplayPropertyValue = ItsRealValue
+                else
+                    DisplayPropertyValue = "***Hidden***"
+                end if
+           end function
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           function GetField(Property)
+           ;-----------------------------
+                VbsCaLogInc 1
+                CaDebug 0, "Getting the value for the property """ & Property & """"
+                GetField = session.property(Property)
+                CaDebug 0, "Its value was """ & DisplayPropertyValue(Property, GetField) & """"
+                VbsCaLogInc -1
+           end function
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           sub SetField(Property, NewValue)
+           ;-----------------------------
+               CaDebug 0, "Changing the property """ & Property & """ to """ & NewValue & """"
+               session.property(Property) = NewValue
+           end sub
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           sub MessageBox(Title, Text)
+           ;-----------------------------
+                CaDebug 0, "MessageBox: " & Text
+                MsgBox Text, vbExclamation+vbApplicationModal, Title
+           end sub
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           sub TrimValue(Property)
+           ;-----------------------------
+                CaDebug 0, ""
+                CaDebug 0, "TrimValue() Removes leading & trailing whitespace from the """ & Property & """ property..."
+                VbsCaLogInc 1
+                dim ItsValueB, ItsValueA
+                ItsValueB = GetField(Property)
+                ItsValueA = trim(ItsValueB)
+                if  ItsValueB <> ItsValueA then SetField Property, ItsValueA
+                VbsCaLogInc -1
+           end sub
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           sub WantedCase(Property, How)
+           ;-----------------------------
+                CaDebug 0, ""
+                CaDebug 0, "WantedCase() Changes the case of the """ & Property & """ property to the desired type (""" & How & """)."
+                VbsCaLogInc 1
+                dim ItsValueB, ItsValueA
+                ItsValueB = GetField(Property)
+                ItsValueA = ItsValueB
+                if  How = "L" then
+                    ItsValueA = lcase(ItsValueB)
+                else
+                    ItsValueA = ucase(ItsValueB)
+                end if
+                if  ItsValueB <> ItsValueA then SetField Property, ItsValueA
+                VbsCaLogInc -1
+           end sub
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           sub CheckBox(Property, FalseString, TrueString)
+           ;-----------------------------
+                CaDebug 0, ""
+                CaDebug 0, "CheckBox() Set the """ & Property & """ property based on the checkboxes state."
+                VbsCaLogInc 1
+                dim ItsValueB, ItsValueA
+                ItsValueB = GetField(Property)
+                if  ItsValueB = "" then
+                    ItsValueA = FalseString
+                else
+                    ItsValueA = TrueString
+                end if
+                if  ItsValueB <> ItsValueA then SetField Property, ItsValueA
+                VbsCaLogInc -1
+           end sub
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           function FailsReMatch(Label, Property, Re, IgnoreCase)
+           ; We want contents of the property to match a regular expression!
+           ;-----------------------------
+               ;--- Get fields value ----------------------------------------
+               CaDebug 0, ""
+               CaDebug 0, "FailsReMatch() Validation of the property """ & Property & """ against the regular expression """ & Re & """ starting..."
+               dim ItsValue : ItsValue = GetField(Property)
+
+               ;--- Its OK to be blank, if it wasn't it should have been validated for blank earlier ---
+               if   trim(ItsValue) = "" then
+                    CaDebug 0, "The value is blank so abort regular expression validation..."
+                    FailsReMatch = false
+                    exit function
+               end if
+
+               ;--- Now set up the regular expression -----------------------
+               dim oRE
+               on error resume next
+               set oRE = new RegExp
+               if  err.number <> 0 then
+                   ;--- Windows stuffed? (report once only) -----------------
+                   dim T               : T = "Could not create a regular expression (""new RegExp""), windows clagged? VBSCRIPT.DLL probably needs registering (IE6+upgrade recently?)... Reason: " & err.description
+                   dim AlreadyReported : AlreadyReported = session.property("MM_REGEXP_ISSUE_REPORTED")
+                   CaDebug 0, T
+                   if   AlreadyReported <> "Y" then
+                        MsgBox T, vbCRITICAL, "VBSCRIPT.DLL NEEDS REGISTERING?"
+                        session.property("MM_REGEXP_ISSUE_REPORTED") = "Y"
+                   end if
+                   FailsReMatch = false            ;;Graceful fallback...
+                   exit function
+               end if
+               on error goto 0
+
+               ;--- No problem so test --------------------------------------
+               oRE.Pattern    = Re
+               oRE.IgnoreCase = IgnoreCase
+               FailsReMatch   = not TestRe(oRE, ItsValue)
+               dim Result
+               if   FailsReMatch then
+                    Result = "failed to match"
+                    MessageBox Label, "An invalid value was supplied..."
+               else
+                    Result = "matched"
+               end if
+               CaDebug 0, "The property " & Result & " the regular expression."
+           end function
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           function Blank(Label, Property)
+           ;-----------------------------
+               CaDebug 0, ""
+               CaDebug 0, "Blank() Validation of the property """ & Property & """ starting..."
+               dim ItsValue : ItsValue = GetField(Property)
+               if  ItsValue = "" then
+                   MessageBox Label, "You must enter a value into this field!"
+                   Blank = true
+                   exit function
+               end if
+               CaDebug 0, "Property """ & Property & """ is non-blank!"
+               Blank = false
+           end function
+
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           function NotValidInteger(Label, Property, ByVal Min, ByVal Max)
+           ;-----------------------------
+               ;--- Get its value -------------------------------------------
+               CaDebug 0, ""
+               CaDebug 0, "NotValidInteger() Validation of the property """ & Property & """ starting..."
+               dim ItsValue : ItsValue = GetField(Property)
+
+               ;--- Its OK to be blank, if it wasn't it should have been validated for blank earlier ---
+               if   trim(ItsValue) = "" then
+                    CaDebug 0, "The value is blank so abort integer validation..."
+                    NotValidInteger = false
+                    exit function
+               end if
+
+               ;--- Its not blank so validate for integer and perhaps range ---
+               if  not IsNumeric(ItsValue) then
+                   MessageBox Label, "The value """ & ItsValue & """ is not a valid integer!"
+                   NotValidInteger = true
+                   exit function
+               end if
+               dim InRange : InRange = true
+               if  Min <> "" then if clng(ItsValue) < clng(Min) then InRange = false
+               if  Max <> "" then if clng(ItsValue) > clng(Max) then InRange = false
+               if  not InRange then
+                   if Min = "" then Min = "any"
+                   if Max = "" then Max = "any"
+                   MessageBox Label, "The value """ & ItsValue & """ is not in the valid range for this field (" & Min & "-" & Max & ")!"
+                   NotValidInteger = true
+                   exit function
+               end if
+               CaDebug 0, "Property """ & Property & """ is passed the test!"
+               NotValidInteger = false
+           end function
+
+           <?NewLine><?NewLine>
+           ;-----------------------------
+           function TestRe(ByRef oRE, String2Test)      'Performs safe "oRE.test()"
+           ;-----------------------------
+                on error resume next
+                TestRe = false                          'Not really required unless I stuff up...
+                TestRe = oRE.test(String2Test)          'This can fail (thanks MS, it knew this is "CreateRe"....)
+                if err.number <> 0 then
+                   CaDebug 0, "Could not test the regular expression pattern """ & oRE.pattern & """ (its syntax is probably invalid). Reason: " & err.description
+                end if
+           end function
+
+
+           ;--- User HOOK ---------------------------------------------------
+           <?NewLine><?NewLine><?NewLine>
+           <$DIALOGTEMPLATE_HOOK_VBS_FUNCTIONS>
+        #)
+        <$/VbsCa>
+        <$VbsCaSetup Key="<??@@DialogName>.Validation" Binary="<??@@DialogName>.vbs" Entry="Validate" Deferred="N" SeqTable="" Seq=0000 CONDITION="">  ;;Define but don't sequence the custom action
+    #endif
+#)
+
+
+#(
+    #define DialogEntry
+
+    ;--- Must be within a dialog! -------------------------------------------
+    #if [@@DialogStarted = '']
+        #error ^You are not within a dialog!^
+    #endif
+
+    ;--- Execute rexx code to process parameters ----------------------------
+    #evaluate ^^ ^<$@@Rexx4DialogEntry {$?}>^
+
+    ;--- LABEL TEXT ---------------------------------------------------------
+    <$Table "Control">
+    #if [@@LabelWidth <> 0]
+        ;--- You can use a label width of "0" to prevent creation -----------
+        #(
+           <$Row
+                    Dialog_="<??@@DialogName>"
+                    Control="<??@@LabelName>"
+                       Type="Text"
+                          X="<??@@LabelX>"
+                          Y="<??@@LabelY>"
+                      Width="<??@@LabelWidth>"
+                     Height="15"
+                *Attributes="<??@@LabelAttributes>"
+                       Text="<??@@LabelText>"
+                       Help="<??@@Help>"
+                  @Validate=^NEW^
+           >
+        #)
+    #endif
+
+    ;--- ENTRY FIELD --------------------------------------------------------
+    #if [@@TypeOfEditControl <> '']
+        ;--- Not a text field -----------------------------------------------
+        #(
+           <$Row
+                    Dialog_="<??@@DialogName>"
+                    Control="<??@@EditName>"
+                       Type="<??@@TypeOfEditControl>"
+                          X="<??@@EditX>"
+                          Y="<??@@EditY>"
+                      Width="<??@@EditWidth>"
+                     Height="<??@@ControlHeightT>"
+                *Attributes="<??@@EditAttributes>"
+                   Property="<??@@Property>"
+                       Text="<??@@EditText>"            ;;{10} = max width etc
+                       Help="<??@@Help>"
+                  @Validate=^NEW^
+           >
+        #)
+    #endif
+    <$/Table>
+
+    ;--- Populate any combo box ---------------------------------------------
+    #if [@@ComboBoxSetup <> '']
+        <$Table "ComboBox">
+            <??@@ComboBoxSetup><?RestartLine>
+        <$/Table>
+    #endif
+
+    ;--- Populate any list box ----------------------------------------------
+    #if [@@ListBoxSetup <> '']
+        <$Table "ListBox">
+            <??@@ListBoxSetup><?RestartLine>
+        <$/Table>
+    #endif
+    #if [@@ListViewSetup <> '']
+        <$Table "ListView">
+            <??@@ListViewSetup><?RestartLine>
+        <$/Table>
+    #endif
+
+    ;--- Populate any Radio Button ------------------------------------------
+    #if [@@RadioButtonSetup <> '']
+        <$Table "RadioButton">
+            <??@@RadioButtonSetup><?RestartLine>
+        <$/Table>
+    #endif
+#)
+#DefineRexx '@@Rexx4DialogEntry' NOPACK
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}                    ;;Don't Expect any keywords!
+    {$!:Property,Label,Max,Control,Trim,Case,blank,tooltip,MatchRE,Width,LabelWidth,Integer,SameLine,X,Y,Password,PreSorted,ControlName}
+
+    ;--- Get user parameters ------------------------------------------------
+    @@Property    = '{$Property=''}';
+    @@LabelText   = '{$Label}';
+    @@Max         = '{$Max=^^}';
+    @@ControlType = '{$Control=^EF^}';
+    @@ControlName = '{$ControlName=^^}';           ;;Can name control if we need to refer to it elsewhere...
+    @@Trim        = translate('{$Trim=^<$DEFAULT_DIALOGENTRY_TRIM>^}');
+    @@Case        = translate('{$Case=^<$DEFAULT_DIALOGENTRY_CASE>^}');
+    @@BlankOk     = translate('{$Blank=^<$DEFAULT_DIALOGENTRY_BLANK>^}');
+    {$ToolTip=^^ $$RxVar:@@ToolTip}
+    {$MatchRe=^^ $$RxVar:@@MatchRe}
+    @@EditWidth  = {$Width=^^};
+    if  translate(@@ControlType) <> 'TEXT' & @@Property = '' then
+        error 'You must supply the "PROPERTY" parameter!'
+
+    ;--- Must properties be public? -----------------------------------------
+    if translate('<$DIALOGTEMPLATE_PROPERTIES_MUST_BE_PUBLIC>') <> 'N' then
+    do
+        ;--- Is it all upper case? ------------------------------------------
+        if @@Property <> translate(@@Property) then
+           error('The property "' || @@Property || '" is not a public property (all upper case)!', 'You have indicated that all dialog properties should be public.');
+    end;
+
+    ;--- Define constant ----------------------------------------------------
+    if  @@Property <> '' then       ;;If no property then we won't need a validation either!
+    do
+        ;--- We may be validating the property (need to identify failing entry control) ---
+        @@VbLabel = ReplaceString(@@LabelText, '"', '""')
+        @@VbLabel = ReplaceString(@@VbLabel,   '&', '')
+        @@CaLabels = @@CaLabels || 'const LABEL_' || @@Property || ' = "' || @@VbLabel || '"<?NewLine>';
+    end;
+
+    ;--- What type of control is this (normal entry field?) -----------------
+    LabelYAdjust        = 0;
+    @@ComboBoxSetup     = ''
+    @@ListBoxSetup      = ''
+    @@ListViewSetup     = ''
+    @@RadioButtonSetup  = ''
+    @@TypeOfEditControl = '';
+    @@MaskedEditMask    = '';
+    @@ControlHeightT    = ''
+    @@EditAttributes    = '<$DIALOGTEMPLATE_ENTRY_ATTRIBUTES>';
+    @@PreSorted         = '{$PreSorted=^<$DEFAULT_DIALOGENTRY_PRESORTED>^}';
+    if  @@ControlType = '' then @@ControlType = 'EF'
+    @@ControlTypeU      = translate(@@ControlType);
+    select
+        /*++++++++++++++++++++++++++++++++++++*/
+        when @@ControlTypeU = 'TEXT' then
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- Just want the label ----------------------------------------
+            @@TypeOfEditControl = '';
+            @@ControlHeightD    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_Text>;
+            LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_Text>';
+            @@BlankOk           = 'Y';
+        end;
+        /*++++++++++++++++++++++++++++++++++++*/
+        when @@ControlTypeU = 'EF' then
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- Normal entry field -----------------------------------------
+            @@TypeOfEditControl = 'Edit';
+            @@ControlHeightD    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_Edit>;
+            LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_Edit>';
+        end;
+        /*++++++++++++++++++++++++++++++++++++*/
+        when @@ControlTypeU = 'CB' | @@ControlTypeU = 'CL' then
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- Combo box or Combo list ------------------------------------
+            @@TypeOfEditControl = 'ComboBox'
+            @@ControlHeightD    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_ComboBox>;
+            @@ControlHeightT    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_ComboBox_T>;
+            LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_ComboBox>';
+
+            ;--- Must be exactly 2/3 columns in the #Data -------------------
+            @@HashData = 'ComboBox_' || @@Property;
+            @@ColCnt   = DataInfo(@@HashData || '.*.?');
+            if  @@ColCnt <> 2 & @@ColCnt <> 3 then
+                error('The ComboBox #data structure "' || @@HashData || '" is expected to contain 2 or 3 columns, not ' || @@ColCnt || '.');
+
+            ;--- Set up the "ComboBox" table --------------------------------
+            @@NextOrder = <$DIALOGTEMPLATE_ORDER_START>;
+            do  @@x = 1 to value(@@HashData || '.0')
+                ;--- Order supplied by user? --------------------------------
+                if  @@ColCnt = 2 then
+                    @@ThisOrder = '';
+                else
+                    @@ThisOrder = value(@@HashData || '.' || @@x || '.3');      ;;Allowed to be ''
+                if  @@ThisOrder = '' then
+                    @@ThisOrder = @@NextOrder;
+                @@NextOrder = @@ThisOrder + <$DIALOGTEMPLATE_ORDER_INC>;
+
+                ;--- Create the row in the "ComboBox" table -----------------
+                @@ComboBoxSetup = @@ComboBoxSetup || "<" || "$Row"
+                @@ComboBoxSetup = @@ComboBoxSetup || " Property=^" || @@Property  || '^'
+                @@ComboBoxSetup = @@ComboBoxSetup || " Order='"    || @@ThisOrder || "'"            ;;Must be unique (part of primary key)
+                @@ComboBoxSetup = @@ComboBoxSetup || " Value="     || Quoted(value(@@HashData || '.' || @@x || '.1'))
+                @@ComboBoxSetup = @@ComboBoxSetup || " Text="      || Quoted(value(@@HashData || '.' || @@x || '.2'))
+                @@ComboBoxSetup = @@ComboBoxSetup || ">"
+            end;
+
+            ;--- Is the user allowed to enter their own value? --------------
+            if  @@ControlTypeU = 'CL' then
+            do
+                ;--- User can NOT enter data into a "CL" --------------------
+                @@EditAttributes = @@EditAttributes ' or msidbControlAttributesComboList';
+            end;
+
+            ;--- Did the user supply a sort order? --------------------------
+            if  @@PreSorted = 'Y' then
+            do
+                ;--- Don't sort alphabetically as they are already sorted by us (Order Column)---
+                @@EditAttributes = @@EditAttributes ' or msidbControlAttributesSorted';
+            end;
+        end;
+        /*++++++++++++++++++++++++++++++++++++*/
+        when @@ControlTypeU = 'LB'| @@ControlTypeU = 'LV' then
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- Combo box or Combo list ------------------------------------
+            if  @@ControlTypeU = 'LV' then
+            do
+                ;--- List VIEW (list BOX with graphics) ---------------------
+                @@TypeOfEditControl = 'ListView';
+                @@ControlHeightD    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_ListView>;
+                LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_ListView>';
+                @@MinDataCols       = 3;
+            end;
+            else
+            do
+                ;--- List BOX -----------------------------------------------
+                @@TypeOfEditControl = 'ListBox';
+                @@ControlHeightD    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_ListBox>;
+                LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_ListBox>';
+                @@MinDataCols       = 2;
+            end;
+            @@OrderColNumb = @@MinDataCols + 1
+
+            ;--- Check number of parameters ---------------------------------
+            @@HashData = @@TypeOfEditControl || '_' || @@Property;
+            @@ColCnt   = DataInfo(@@HashData || '.*.?');
+            if  @@ColCnt <> @@MinDataCols & @@ColCnt <> @@OrderColNumb then
+                error('The ' || @@TypeOfEditControl || ' #data structure "' || @@HashData || '" is expected to contain ' || @@MinDataCols || ' or ' || @@OrderColNumb || ' columns, not ' || @@ColCnt || '.');
+
+            ;--- Set up the list control table ------------------------------
+            @@NextOrder = <$DIALOGTEMPLATE_ORDER_START>;
+            do  @@x = 1 to value(@@HashData || '.0')
+                ;--- Order supplied by user? --------------------------------
+                if  @@ColCnt = @@MinDataCols then
+                    @@ThisOrder = '';
+                else
+                    @@ThisOrder = value(@@HashData || '.' || @@x || '.' || @@OrderColNumb);      ;;Allowed to be ''
+                if  @@ThisOrder = '' then
+                    @@ThisOrder = @@NextOrder;
+                @@NextOrder = @@ThisOrder + <$DIALOGTEMPLATE_ORDER_INC>;
+
+                ;--- How handle Graphics if a "ListView" --------------------
+                if  @@ControlTypeU <> 'LV' then
+                    @@Graphic = ''
+                else
+                do
+                    ;--- Handle the graphic parameter -----------------------
+                    @@GraphicVal = value(@@HashData || '.' || @@x || '.3');
+                    @@Graphic = ' Binary_=' || Quoted(@@GraphicVal);
+                end;
+
+                ;--- Create the row in the "List?" table --------------------
+                @@TR =        "<" || "$Row"
+                @@TR = @@TR || " Property=^" || @@Property  || '^'
+                @@TR = @@TR || " Order='"    || @@ThisOrder || "'"            ;;Must be unique (part of primary key)
+                @@TR = @@TR || " Value="     || Quoted(value(@@HashData || '.' || @@x || '.1'))
+                @@TR = @@TR || " Text="      || Quoted(value(@@HashData || '.' || @@x || '.2'))
+                @@TR = @@TR || @@Graphic;
+                @@TR = @@TR || ">"
+                if  @@ControlTypeU = 'LV' then
+                    @@ListViewSetup = @@ListViewSetup || @@TR;
+                else
+                    @@ListBoxSetup  = @@ListBoxSetup  || @@TR;
+            end;
+
+            ;--- Did the user supply a sort order? --------------------------
+            if  @@PreSorted = 'Y' then
+            do
+                ;--- A Windows Installer bug prevents presorting of ListView controls ---
+                if  @@ControlTypeU = 'LB' then
+                do
+                    ;--- Don't sort alphabetically as they are already sorted by us (Order Column)---
+                    @@EditAttributes = @@EditAttributes ' or msidbControlAttributesSorted';
+                end;
+            end;
+        end;
+        /*++++++++++++++++++++++++++++++++++++*/
+        when @@ControlTypeU = 'RB' then
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- Radio Button -----------------------------------------------
+            @@TypeOfEditControl = 'RadioButtonGroup'
+            LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_RadioButton>';
+
+            ;--- Check for invalid parameters -----------------------------------
+            if  @@Max <> '' then
+                error('The "MAX" parameter is not allowed on a "' || @@TypeOfEditControl || '" control!');
+
+            ;--- Must be Exactly 2 columns in the #Data ---------------------
+            @@HashData = 'RadioButton_' || @@Property;
+            @@ColCnt   = DataInfo(@@HashData || '.*.?');
+            if  @@ColCnt < 1 | @@ColCnt > 4 then
+                error('The RadioButton #data structure "' || @@HashData || '" is expected to contain 1-4 columns, not ' || @@ColCnt || '.');
+
+            ;--- How wide by default? ---------------------------------------
+            @@RbColWidth = <$DIALOGTEMPLATE_RADIOBUTTON_COLUMN_WIDTH>;
+
+            ;--- Set up the radio buttons -----------------------------------
+            @@LinesUsed = 0;
+            @@RbX       = 0;
+            @@RbY       = 0;
+            @@RbHeight   = <$DIALOGTEMPLATE_CONTROL_HEIGHT_RadioButton>
+            @@RbExtraGap = <$DIALOGTEMPLATE_CONTROL_HEIGHT_RadioButton_VERTICAL_GAP>
+            @@RbLast     = value('RadioButton_' || @@Property || '.0')
+            @@RbControlWidth = 0;
+            do  @@x = 1 to @@RbLast
+                ;--- Get Parameters -----------------------------------------
+                @@PropValue = value(@@HashData || '.' || @@x || '.1');
+                if  @@ColCnt >= 2 then
+                    @@RbText = value(@@HashData || '.' || @@x || '.2');
+                else
+                    @@RbText = @@PropValue;
+                if  @@ColCnt >= 3 then
+                    @@RbWidth = value(@@HashData || '.' || @@x || '.3');
+                else
+                    @@RbWidth = '';
+                if  @@RbWidth = '' then
+                    @@RbWidth2 = @@RbColWidth;
+                else
+                    @@RbWidth2 = @@RbWidth;
+                if  @@ColCnt >= 4 then
+                    @@RbToolTip = value(@@HashData || '.' || @@x || '.4');
+                else
+                    @@RbToolTip = '';
+                if  @@RbToolTip = '' then
+                    @@RbHelp = ''
+                else
+                do
+                    @@RbHelp = @@RbToolTip || '|';
+                    if  length(@@RbHelp) > <$TABLES_LNG_TBLFLD_RADIOBUTTON_HELP> then
+                        error('Tooltips must be less than <$TABLES_LNG_TBLFLD_RADIOBUTTON_HELP> characters long!', 'The tooltip:',, '   ' || @@RbTooltip,, 'Is ' || length(@@RbToolTip) || ' characters long!');
+                end;
+
+                ;--- Set up the control -------------------------------------
+                @@RadioButtonSetup = @@RadioButtonSetup || "<" || "$Row"
+                @@RadioButtonSetup = @@RadioButtonSetup || " Property=^" || @@Property || '^'
+                @@RadioButtonSetup = @@RadioButtonSetup || " Order=^"    || @@x        || '^'
+                @@RadioButtonSetup = @@RadioButtonSetup || " Value="     || Quoted(@@PropValue)
+                @@RadioButtonSetup = @@RadioButtonSetup || " X=^"        || @@RbX      || '^'
+                @@RadioButtonSetup = @@RadioButtonSetup || " Y=^"        || @@RbY      || '^'
+                @@RadioButtonSetup = @@RadioButtonSetup || " Width='"    || @@RbWidth2 || "'"
+                @@RadioButtonSetup = @@RadioButtonSetup || " Height='"   || @@RbHeight || "'"
+                @@RadioButtonSetup = @@RadioButtonSetup || " Text="      || Quoted(@@RbText)
+                @@RadioButtonSetup = @@RadioButtonSetup || " Help="      || Quoted(@@RbHelp)
+                @@RadioButtonSetup = @@RadioButtonSetup || ">"
+
+                ;--- How wide does the radio control need to be? ------------
+                @@MaxX = @@RbX + @@RbWidth2
+                if  @@MaxX > @@RbControlWidth then
+                    @@RbControlWidth = @@MaxX;
+
+                ;--- Where is the next radio button -------------------------
+                if  @@RbWidth = '' | @@x = @@RbLast then
+                do
+                    ;--- Next button on next line ---------------------------
+                    @@RbY = @@RbY + @@RbHeight + @@RbExtraGap
+                    @@RbX = 0
+                end;
+                else
+                do
+                    ;--- Next button on same line ---------------------------
+                    @@RbX = @@RbX + @@RbWidth2;
+                end;
+            end;
+
+            ;--- Work out some radio button sizing info ---------------------
+            @@ControlHeightD = @@RbY;
+            if  @@EditWidth = '' then
+                @@EditWidth = @@RbControlWidth;
+        end;
+        /*++++++++++++++++++++++++++++++++++++*/
+        when left(@@ControlTypeU, 3) = 'ME:' then
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- "MaskedEdit" control ---------------------------------------
+            @@TypeOfEditControl = 'MaskedEdit'
+            @@ControlHeightD    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_MaskedEdit>;
+            LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_MaskedEdit>';
+            @@MaskedEditMask    = substr(@@ControlType, 4);
+            if  @@MaskedEditMask = '' then
+                error('No mask supplied for the "' || @@TypeOfEditControl || '" control!');
+
+            ;--- Check for invalid parameters -----------------------------------
+            if  @@Max <> '' then
+                error('The "MAX" parameter is not allowed on a "' || @@TypeOfEditControl || '" control!');
+        end;
+        /*++++++++++++++++++++++++++++++++++++*/
+        when left(@@ControlTypeU, 2) = 'XB' then
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- Check Box --------------------------------------------------
+            @@TypeOfEditControl = 'CheckBox'
+            @@ControlHeightD    = <$DIALOGTEMPLATE_CONTROL_HEIGHT_CheckBox>;
+            LabelYAdjust        = '<$DIALOGTEMPLATE_Y_ADJUST_LABEL_DOWN_CheckBox>';
+            @@BlankOk           = 'Y';
+            @@Trim              = 'N';
+
+            ;--- Handle parameters ------------------------------------------
+            if  @@ControlTypeU = 'XB' then
+                @@XbParms = '<$DIALOGTEMPLATE_CHECKBOX_DEFAULT_PARMS>';
+            else
+            do
+                ;--- Basic check of syntax ----------------------------------
+                if  substr(@@ControlType, 3, 1) <> ':' then
+                    error('CheckBox parameters must come after a ":" character.');
+                @@XbParms = substr(@@ControlType, 4);
+                if  pos('<$DIALOGTEMPLATE_CHECKBOX_DELIMITER>', @@XbParms) = 0 then
+                    error('CheckBox parameters must include the false/true delimiter ("<$DIALOGTEMPLATE_CHECKBOX_DELIMITER>").');
+            end;
+            parse var @@XbParms @@XbFalse '<$DIALOGTEMPLATE_CHECKBOX_DELIMITER>' @@XbTrue;
+        end;
+        /*++++++++++++++++++++++++++++++++++++*/
+        otherwise
+        /*++++++++++++++++++++++++++++++++++++*/
+        do
+            ;--- Error ------------------------------------------------------
+            error('The control type of "' || @@ControlType || '" is unknown!');
+        end;
+    end;
+    if  @@ControlHeightT = '' then
+        @@ControlHeightT = @@ControlHeightD;
+
+    ;--- Any data transformations? ------------------------------------------
+    if  @@Trim <> 'N' then
+        @@PropertyTransformations = @@PropertyTransformations || 'TrimValue "' || @@Property || '"<?NewLine>';
+    if  @@Case <> '' & @@Case <> '?' then
+        @@PropertyTransformations = @@PropertyTransformations || 'WantedCase "' || @@Property || '", "' || @@Case || '"<?NewLine>';
+    if  @@TypeOfEditControl = 'CheckBox' then
+        @@PropertyTransformations = @@PropertyTransformations || 'CheckBox "' || @@Property || '", "' || @@XbFalse || '", "' || @@XbTrue || '"<?NewLine>';
+
+    ;--- What Validation for this field -------------------------------------
+    if  @@BlankOk = 'N' then
+    do
+        ;--- Blank entry field is not allowed -------------------------------
+        @@CaValidations = @@CaValidations || 'if Blank(LABEL_' || @@Property || ', "' ||  @@Property || '") then exit function<?NewLine>'
+    end;
+    if  '{$Integer="" $$IsPassed}' = 'Y' then
+    do
+        ;--- This is an integer field ---------------------------------------
+        @@Integer = '{$Integer=""}';
+        @@MinI = '';
+        @@MaxI = '';
+        if  @@Integer <> '' then
+        do
+            ;--- We given a range to validate -------------------------------
+            parse var @@Integer with @@MinI ' to ' @@MaxI;
+            if  @@MinI <> "" & datatype(@@MinI, 'W') = 0 then
+                error('The fields min value of "' || @@MinI || '" is not a valid integer!');
+            if  datatype(@@MaxI, 'W') = 0 then
+                error('The fields max value of "' || @@MinI || '" is not a valid integer!');
+            end;
+        @@CaValidations = @@CaValidations || 'if NotValidInteger(LABEL_' || @@Property ||', "' ||  @@Property || '", "' || strip(@@MinI) || '", "' || strip(@@MaxI) || '") then exit function<?NewLine>'
+        if @@ToolTip = '' then
+        do
+           ;--- Will set the Default tooltip --------------------------------
+           if  @@Integer <> '' then
+               @@ToolTip = 'Enter an integer ' || @@MinI || ' to ' || @@MaxI || '.';
+           else
+               @@ToolTip = 'Enter any integer value.';
+        end
+    end;
+    if  @@MatchRe <> '' then
+    do
+        ;--- Want the contents to match a regular expression ----------------
+        if  @@Case = "?" then
+            @@CaseI = "true"
+        else
+            @@CaseI = "false"
+        @@MatchRe       = ReplaceString(@@MatchRe, '"', '""');
+        @@CaValidations = @@CaValidations || 'if FailsReMatch(LABEL_' || @@Property ||', "' ||  @@Property || '", "' || @@MatchRe || '", ' || @@CaseI || ') then exit function<?NewLine>'
+    end;
+    else
+    do
+        ;--- Check for incorrect use of CASE=? ------------------------------
+        if  @@Case = "?" then
+            error('"CASE=?" only makes sense if used with regular expression validation!');
+    end;
+
+    ;--- Work out basic positioning details ---------------------------------
+    if  translate('{$SameLine="N"}') = 'N' then
+    do
+        ;--- Starting on new line (allow x,y coordinates to be overriden) ---
+        @@LabelX = {$X=^<$DIALOGTEMPLATE_START_X>^};  ;;Previous control on previous "line"
+        @@LabelY = {$Y=^@@CurrentY + LabelYAdjust^};
+    end;
+    else
+    do
+        ;--- Stay on same line ----------------------------------------------
+        @@LabelX   = {$X=^@@NextX^};
+        @@LabelY   = @@NextY + LabelYAdjust;    ;;"Y" parameter ignored
+        @@CurrentY = @@NextY;
+    end;
+    @@LabelWidth = {$LabelWidth=^<$DIALOGTEMPLATE_LABEL_COLUMN_WIDTH>^};
+    @@EditX      = @@LabelX + @@LabelWidth + <$DIALOGTEMPLATE_LABEL_TO_ENTRY_GAP>;
+    @@EditY      = @@CurrentY;
+    if  @@EditWidth = '' then
+        @@EditWidth = <$DIALOGTEMPLATE_ENTRY_COLUMN_WIDTH>;
+
+    ;--- If the next control remains on this line where should it go? -------
+    @@NextX = @@EditX + @@EditWidth + <$DIALOGTEMPLATE_LABEL_TO_ENTRY_GAP>;
+    @@NextY = @@CurrentY;
+
+    ;--- Where would the next line one go? ----------------------------------
+    @@CurrentY = @@CurrentY + @@ControlHeightD + <$DIALOGTEMPLATE_GAP_BETWEEN_CONTROLS>;
+
+    ;--- Work out names of the items ----------------------------------------
+    if  @@TypeOfEditControl = '' then
+    do
+        ;--- "Text" control is only the label (text), no following control ---
+        if  @@ControlName = '' then
+            @@LabelName = 'JustLabel.<?Unique>';  ;;User doesn't care what its called
+        else
+            @@LabelName = @@ControlName;          ;;User has selected their own name
+    end;
+    else
+    do
+        ;--- We are created a control ---------------------------------------
+        @@EditFieldsCnt = @@EditFieldsCnt + 1;
+        if  @@ControlName = '' then
+        do
+            ;--- User doesn't care what the controls are called -------------
+            @@LabelName  = '<$DIALOGTEMPLATE_LABEL_NAME_PREFIX>' || @@EditFieldsCnt
+            @@EditName   = '<$DIALOGTEMPLATE_ENTRY_NAME_PREFIX>' || @@EditFieldsCnt
+        end
+        else
+        do
+            ;--- User has selected their own name ---------------------------
+            @@EditName  =                                          @@ControlName;
+            @@LabelName = '<$DIALOGTEMPLATE_LABEL_NAME_PREFIX>' || @@ControlName;
+        end;
+        @@EditFieldName.@@EditFieldsCnt = @@EditName
+    end;
+
+    ;--- We allow the user to override the control's name (may want to further manipulate) ---
+
+    ;--- Attributes ---------------------------------------------------------
+    if  @@TypeOfEditControl = '' then
+        @@LabelAttributes = '<$DIALOGTEMPLATE_LABEL_ONLY_ATTRIBUTES>';  ;;Just want the label
+    else
+        @@LabelAttributes = '<$DIALOGTEMPLATE_LABEL_ATTRIBUTES>';       ;;Normal: label + Control
+    if  '{$Password='N' $$UPPER}' = 'Y' then
+        @@EditAttributes = @@EditAttributes ' or msidbControlAttributesPasswordInput';
+    @@EditText        = '';
+    if  @@Max <> '' then
+        @@EditText = @@EditText || '{' || @@Max || '}';     ;;Add length restriction
+    @@EditText = @@EditText || @@MaskedEditMask;            ;;Add any "MaskedEdit" info
+
+    ;--- Set up the "HELP" information --------------------------------------
+    @@Help = @@ToolTip;
+    if  @@Help <> '' then
+        @@Help = @@Help || '|';
+    if  length(@@Help) > <$TABLES_LNG_TBLFLD_CONTROL_HELP> then
+        error('Tooltips must be less than <$TABLES_LNG_TBLFLD_CONTROL_HELP> characters long!', 'The tooltip:',, '   ' || @@Tooltip,, 'Is ' || length(@@ToolTip) || ' characters long!');
+#DefineRexx
+
+
+
+
+#(
+    #define @@DefineDialog
+
+    <$Table "Dialog">
+    #(
+       <$Row
+                    Dialog="<??@@DialogName>"
+                HCentering="50"
+                VCentering="50"
+                     Width="370"
+                    Height="270"
+                Attributes="3"
+                     Title="[ProductName] [Setup]"
+             Control_First="BannerBitmap"               ;;First Control
+           Control_Default="Next"
+            Control_Cancel="Cancel"
+                 @Validate=^NEW -BADLINK^
+       >
+    #)
+    <$/Table>
+#)
+#(
+    ;--- This maps the buttons to their actions when pressed ----------------
+    #define @@DialogButtonsControlEvents
+    <$Table "ControlEvent">
+
+    ;--- This code defines what the new dialogs buttons do ------------------
+    ;
+    ;        +--[ Previous Dialog ]--+        +--[ Our NEW Dialog ]--+        +--[ Next Dialog ]--+
+    ;        |                       |<<<<<<<<< Back                 |        |                   |
+    ;        |                       |     +<<< Cancel          Next >>>>>>>>>|                   |
+    ;        +-----------------------+     |  +----------------------+        +-------------------+
+    ;                                      +-- Abort
+
+    ;--- What should the "BACK" button of our dialog do? --------------------
+    #(
+       <$Row
+             Dialog_="<??@@DialogName>"
+            Control_="Back"
+               Event="NewDialog"
+            Argument="<??@@DialogPrev>"
+           Condition="1"
+            Ordering=""
+           @Validate=^NEW -BADLINK^
+       >
+    #)
+
+    ;--- What should the "NEXT" button of our dialog do? --------------------
+    ;#if  [@@CaValidations = '']            ;;Fixed 28/8/2008 (forgot about @@PropertyTransformations)
+    #if   @@PropertyTransformations = '' & @@CaValidations = ''
+        ;--- No validations, just set the property --------------------------
+        #(
+           <$Row
+                 Dialog_="<??@@DialogName>"
+                Control_="Next"
+                   Event="[<??@@DialogValidatedOkProperty>]"
+                Argument="1"
+               Condition="1"
+                Ordering="1"
+               @Validate=^NEW -BADLINK^
+           >
+       #)
+    #elseif
+        ;--- We need to call a custom action --------------------------------
+        #(
+           <$Row
+                 Dialog_="<??@@DialogName>"
+                Control_="Next"
+                   Event="DoAction"
+                Argument="<??@@DialogName>.Validation"
+               Condition="1"
+                Ordering="1"
+               @Validate=^NEW -BADLINK^
+           >
+       #)
+    #endif
+    #(
+       <$Row
+             Dialog_="<??@@DialogName>"
+            Control_="Next"
+               Event="NewDialog"
+            Argument="<??@@DialogNext>"
+           Condition="1 = <??@@DialogValidatedOkProperty>"
+            Ordering="2"
+           @Validate=^NEW -BADLINK^
+       >
+    #)
+
+    ;--- Define what the "CANCEL" button of our dialog does -----------------
+    #(
+       <$Row
+             Dialog_="<??@@DialogName>"
+            Control_="Cancel"
+               Event="SpawnDialog"
+            Argument="CancelDlg"
+           Condition="1"
+            Ordering=""
+           @Validate=^NEW -BADLINK^
+       >
+    #)
+    <$/Table>
+#)
+
+
+
+#(
+    ;--- This DRAWS the buttons (event mapping elsewhere) -------------------
+    #define @@DialogButtons
+
+    ;--- BACK ---------------------------------------------------------------
+    #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="Back"
+                   Type="PushButton"
+                      X="180"
+                      Y="243"
+                  Width="56"
+                 Height="17"
+             Attributes="3"
+               Property=""
+                   Text="[ButtonText_Back]"
+           Control_Next="Next"
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+    #)
+
+    ;--- NEXT ---------------------------------------------------------------
+    #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="Next"
+                   Type="PushButton"
+                      X="236"
+                      Y="243"
+                  Width="56"
+                 Height="17"
+             Attributes="3"
+               Property=""
+                   Text="[ButtonText_Next]"
+           Control_Next="Cancel"
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+    #)
+
+    ;--- CANCEL -------------------------------------------------------------
+    #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="Cancel"
+                   Type="PushButton"
+                      X="304"
+                      Y="243"
+                  Width="56"
+                 Height="17"
+             Attributes="3"
+               Property=""
+                   Text="[ButtonText_Cancel]"
+           Control_Next="BannerBitmap"
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+    #)
+#)
+#(
+    #define @@TopBanner
+
+    ;--- Bitmap Strip along TOP ---------------------------------------------
+    #if [@@EditFieldsCnt = 0]
+        ;--- No entry fields so just close loop -----------------------------
+        #RexxVar @@BannerBitMapPointsTo = 'Back'
+    #elseif
+        ;--- Point to the first entry field ---------------------------------
+        #RexxVar @@BannerBitMapPointsTo =  @@EditFieldName.1
+    #endif
+    #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="BannerBitmap"
+                   Type="Bitmap"
+                      X="0"
+                      Y="0"
+                  Width="374"
+                 Height="44"
+             Attributes="1"
+               Property=""
+                   Text="[BannerBitmap]"
+           Control_Next="<??@@BannerBitMapPointsTo>"
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+    #)
+
+    ;--- Nice Line under bitmap ---------------------------------------------
+    #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="BannerLine"
+                   Type="Line"
+                      X="0"
+                      Y="44"
+                  Width="374"
+                 Height="0"
+             Attributes="1"
+               Property=""
+                   Text=""
+           Control_Next=""
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+   #)
+#)
+#(
+    #define @@DialogDescription
+
+    ;--- Dialog Summary within the banner line ------------------------------
+    #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="Title"
+                   Type="Text"
+                      X="15"
+                      Y="6"
+                  Width="350"
+                 Height="15"
+             Attributes="196611"
+               Property=""
+                   Text="[DlgTitleFont]<??@@DialogSummary>"
+           Control_Next=""
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+    #)
+
+    ;--- Dialog Description within the banner line --------------------------
+    #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="Description"
+                   Type="Text"
+                      X="25"
+                      Y="23"
+                  Width="280"
+                 Height="15"
+             Attributes="196611"
+               Property=""
+                   Text="<??@@DialogDescription>"
+           Control_Next=""
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+   #)
+#)
+#(
+   #define @@BottomLine
+
+   ;--- The actual LINE -----------------------------------------------------
+   #(
+       <$Row
+                Dialog_="<??@@DialogName>"
+                Control="BottomLine"
+                   Type="Line"
+                      X="0"
+                      Y="234"
+                  Width="374"
+                 Height="0"
+             Attributes="1"
+               Property=""
+                   Text=""
+           Control_Next=""
+                   Help=""
+              @Validate=^NEW -BADLINK^
+       >
+    #)
+#)
+
+
+
+;---[4Doco-DIALOGTEMPLATE_DialogInsertLogic]---------------------------------
+#(
+    ;--- Define inserion logic (allow user to replace) ----------------------
+    #define? DIALOGTEMPLATE_DialogInsertLogic
+
+    ;--- This code modifies the "Previous" and "Next" dialogs buttons -------
+    ;
+    ;    +--[ Previous Dialog ]--+        +--[ Our NEW Dialog ]--+        +--[ Next Dialog ]--+
+    ;    |                       |        |                      |<<<<<<<<< Back              |
+    ;    |                  Next >>>>>>>>>|                      |        |                   |
+    ;    +-----------------------+        +----------------------+        +-------------------+
+
+    ;--- Validate parameters -----------------------------------------------
+    {$!:RxVarPrev,RxVarThis,RxVarNext}
+
+    <$Table "ControlEvent">
+       ;--- Correct Next Link (on previous dialog) --------------------------
+       #(
+           <$Row
+                  @Where=^Dialog_ = '<??{$RxVarPrev}>' AND Control_ = 'Next' AND Event = 'NewDialog'^
+                     @OK=^? >= 1^
+                Argument="<??{$RxVarThis}>"
+           >
+       #)
+
+       ;--- Correct "Back Link (on next dialog) -----------------------------
+       #(
+           <$Row
+                  @Where=^Dialog_ = '<??{$RxVarNext}>' AND Control_ = 'Back' AND Event = 'NewDialog'^
+                     @OK=^? >= 1^
+                Argument="<??{$RxVarThis}>"
+           >
+       #)
+    <$/Table>
+#)
+;---[4Doco-DIALOGTEMPLATE_DialogInsertLogic]---------------------------------
+
+
+#NextId UNLOCK "DialogTemplate"
+#NextId POP

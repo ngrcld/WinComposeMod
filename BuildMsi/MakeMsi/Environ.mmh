@@ -1,0 +1,265 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ENVIRON.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   10 Aug 2005 18:43:36  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Environ.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "ENVIRON.MMH"
+
+
+;--- Options ----------------------------------------------------------------
+#define? DEFAULT_ENVIRON_PATH_ATEND     Y        ;;New paths added to end by default
+#define? DEFAULT_ENVIRON_SYSTEM         Y        ;;Use the system environment by default
+#define? DEFAULT_ENVIRON_DOCO           Y        ;;"N" = Don't add to doco (by default)
+#define? DEFAULT_ENVIRON_ROWKEY_PREFIX  EnvKey
+#define? DEFAULT_ENVIRON_HOW            SET_DURING_INSTALLATION, DELETE_ON_UNINSTALL
+
+
+;--- How to handle an environment variable ----------------------------------
+#RexxVar   @@HOW_SET_DURING_INSTALLATION = '='
+#RexxVar   @@HOW_DELETE_ON_INSTALL       = '!'
+#RexxVar   @@HOW_DELETE_ON_UNINSTALL     = '-'
+#RexxVar   @@HOW_CREATE_IF_NONEXISTANT   = '+'
+
+
+;--- Update PATH (type variables) -------------------------------------------
+#( ''
+   #define Path                   ;;Default is to update "PATH"
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Want new item at end or start of list? ------------------------------
+   #if ['{$AtEnd=^<$DEFAULT_ENVIRON_PATH_ATEND>^}' = 'Y']
+       #define+ @@PathValue  [~]{$Delimiter=^;^}{$#1}
+   #elseif
+       #define+ @@PathValue  {$#1}{$Delimiter=^;^}[~]
+   #endif
+
+   ;--- Use the environment macro to do most of the work --------------------
+   <$Environment Name=~{$Name=^PATH^}~ VALUE=^<$@@PathValue>^ {$?}>
+#)
+
+
+;--- Set environment Variables ----------------------------------------------
+#( ''
+   #define Environment
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Do the work ---------------------------------------------------------
+   #evaluate ^^ ^<$Rexx4Environment {$?}>^
+   <??@@Vbs><?RestartLine>
+#)
+#RexxVar @@RowKeyCnt   = 0        ;;Incremented for each GENERATED environment key
+#RexxVar @@HtmlItemCnt = 0        ;;#items for the HTML report
+#DefineRexx 'Rexx4Environment'
+   ;--- Environment for which component? ------------------------------------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- Defaulting ------------------------------------------------------
+       <$Rexx4ValidateInComponent>
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+
+   ;--- How is this item handled? -------------------------------------------
+   @@HowList = '{$How=^<$DEFAULT_ENVIRON_HOW>^}'
+   if  @@HowList = '' then
+       error('No HOW information supplied for the environment variable "' || @@Name || '"');
+   else
+   do
+       ;--- Work out the prefix ---------------------------------------------
+       call ArraySplit '@@How', @@HowList, ',';
+       @@HowPrefix = ''
+       do  @@i = 1 to @@How.0
+           @@RexVar = '@@HOW_' || @@How.@@i
+           if  symbol(@@RexVar) <> 'VAR' then
+               error('A environment HOW type of "' || @@How.@@i || '" is unknown');
+           else
+               @@HowPrefix = @@HowPrefix || value(@@RexVar);
+       end
+   end;
+
+   ;--- Use system or user environment? -------------------------------------
+   if  '{$System=^<$DEFAULT_ENVIRON_SYSTEM>^}' = 'Y' then
+       @@TypePrefix = '*'          ;;SYSTEM
+   else
+       @@TypePrefix = ''           ;;USER
+
+   ;--- What should the row's key be? ---------------------------------------
+   @@RowKey = '{$RowKey=^^}'        ;;Key into Registry table
+   if  @@RowKey = '' then
+   do
+       ;--- User did not supply a registry key (generate one) ---------------
+       @@RowKeyCnt = @@RowKeyCnt + 1
+       if  @@RowKeyCnt > 999 then
+           @@RowKey = '<$DEFAULT_ENVIRON_ROWKEY_PREFIX>' || @@RowKeyCnt;
+       else
+           @@RowKey = '<$DEFAULT_ENVIRON_ROWKEY_PREFIX>' || right(@@RowKeyCnt, 3, '0');
+       @@RowKey = @@RowKey || RxGeneratedKeySuffix;
+   end;
+
+   ;--- Name of the environment variable ------------------------------------
+   @@Name = '{$Name}';
+
+   ;--- What is the value we wish to assign? --------------------------------
+   if  '{$*Value='' $$IsPassed}' = 'Y' then
+   do
+       ;--- Value is an expression ------------------------------------------
+       @@ValStar = '*';
+       {$*Value=^^ $$RxVar:@@Value}            ;;The data!
+   end;
+   else
+   do
+       ;--- Value is a literal ----------------------------------------------
+       if  '{$Value='' $$IsPassed}' = 'N' then
+           error('No value supplied for the environment variable "' || @@Name || '"')
+       @@ValStar = '';
+       {$Value=^^ $$RxVar:@@Value}            ;;The data!
+   end;
+
+   ;--- Start Environment TABLE ---------------------------------------------
+   @@Vbs = ''
+   @@Vbs = @@Vbs || '<' || '$Table "Environment">'
+
+   ;--- Create the row ------------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$Row'
+   @@Vbs = @@Vbs || ' Environment="' || @@RowKey      || '"'
+   @@Vbs = @@Vbs || ' Name="'       || @@TypePrefix || @@HowPrefix    || @@Name  || '"'
+   @@Vbs = @@Vbs || ' ' || @@ValStar || 'Value='       || Quoted(@@Value)
+   @@Vbs = @@Vbs || ' Component_="' || @@Component    || '"'
+   @@Vbs = @@Vbs || '>'
+
+   ;--- End table -----------------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$/Table>'
+
+   ;--- Save information for the HTML report --------------------------------
+   if  '{$Doco='<$DEFAULT_ENVIRON_DOCO>'}' <> 'N' then
+   do
+       ;--- User wants this in the doco -------------------------------------
+       if  @@TypePrefix = '' then
+           @@EnvType = "USER";
+       else
+           @@EnvType = "SYSTEM";
+       @@SortKey = @@Name || 'FF'x || @@Component || 'FF'x || @@EnvType;
+       @@All     = @@SortKey || '00'x || @@Name || '00'x || @@Value || '00'x || @@Component || '00'x || @@EnvType || '00'x || @@HowList || '00'x || RxMmLocation;
+       @@HtmlItemCnt            = @@HtmlItemCnt + 1;
+       @@HtmlItem.@@HtmlItemCnt = @@All;
+       @@HtmlItem.0             = @@HtmlItemCnt;
+   end;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? ENVIRON_BEFORE_BUTTON_FOR_ENVIRONMENT
+#define? ENVIRON_AFTER_BUTTON_FOR_ENVIRONMENT
+#(
+   #define? ENVIRON_BUTTON_FOR_ENVIRONMENT
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$ENVIRON_BEFORE_BUTTON_FOR_ENVIRONMENT>
+   <$BUTTON2 "ENVIRONMENT" Text="Environment Variables" CNT="@@HtmlItemCnt">
+   <$ENVIRON_AFTER_BUTTON_FOR_ENVIRONMENT>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? ENVIRON_BEFORE_REPORT_FOR_ENVIRONMENT
+#define? ENVIRON_AFTER_REPORT_FOR_ENVIRONMENT
+#( ''
+   #define ENVIRON_REPORT_FOR_ENVIRONMENT
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$ENVIRON_BEFORE_REPORT_FOR_ENVIRONMENT>
+
+   ;--- Generate Environment report -----------------------------------------
+   <A NAME="Environment"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$ENVIRON_HTML_NO_Environment>
+   #elseif
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="ENVIRONMENT VARIABLES">
+      <$ENVIRON_HTML_REPORT_START>
+
+      ;--- Sort environment table entries -----------------------------------
+      #evaluate ^^ ^call SortArray '@@HtmlItem'^
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Index = 1 to @@HtmlItemCnt
+          ;--- Split off components -----------------------------------------
+          #DefineRexx ''
+               parse var @@HtmlItem.@@Index @@SortKey '00'x @@Name '00'x @@Value '00'x @@Component '00'x @@EnvType '00'x @@HowList '00'x @@MmLocation;
+          #DefineRexx
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$ENVIRON_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$ENVIRON_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$ENVIRON_AFTER_REPORT_FOR_ENVIRONMENT>
+#)
+
+
+#( '<?NewLine>'
+   #define? ENVIRON_HTML_NO_Environment
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="ENVIRONMENT VARIABLES">
+       <P><B>
+       <CENTER>There are no environment variables.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? ENVIRON_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="4" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>Variable</TH>
+       <TH>Value</TH>
+       <TH>Type</TH>
+       <TH>Action</TH>
+       <TH>Component</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? ENVIRON_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+       <TD><??@@Name></TD>
+       <TD><??@@Value></TD>
+       <TD><??@@EnvType></TD>
+       <TD><??@@HowList></TD>
+       <TD><??@@Component></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? ENVIRON_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> environment variable(s).
+   </CENTER>
+#)
+
+
+#NextId UNLOCK "ENVIRON.MMH"
+

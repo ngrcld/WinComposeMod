@@ -1,0 +1,331 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   PY2MSI.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.1  $
+;          $Date:   26 Feb 2007 17:22:08  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/PY2MSI.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+; DESCRIPTION
+; ~~~~~~~~~~~
+; This header:
+;   1. allows a user to define how the compile of Python scripts
+;      should be performed.
+;   2. Compiles the ".py" files specified into ".EXE" (using "PY2EXE").
+;   3. Builds the MSI.
+;   4. Allows you to define extra files (not yet)
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- Only load support once -------------------------------------------------
+;----------------------------------------------------------------------------
+#ifdef  PY2MSI_LOADED
+    ;--- Already loaded -----------------------------------------------------
+    #eof 1
+#endif
+#define PY2MSI_LOADED
+
+
+;----------------------------------------------------------------------------
+;--- Local Namespace, START -------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId PUSH
+#NextId
+
+
+;----------------------------------------------------------------------------
+;--- What mode are we funtioning in? ----------------------------------------
+;----------------------------------------------------------------------------
+#ifdef  MAKEMSI_VERSION
+    ;--- MAKEMSI.MMH already included ---------------------------------------
+    #define @@PY2MSI_MAKEMSI_PREVIOUSLY_LOADED Y
+#elseif
+    ;--- We well need to do so... -------------------------------------------
+    #define @@PY2MSI_MAKEMSI_PREVIOUSLY_LOADED N
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Some Defaults ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? PY2MSI_OUTPUT_DIR                  out
+#define? PY2MSI_OPTION_dist_dir             <$PY2MSI_OUTPUT_DIR>\distribute
+#define? PY2MSI_OPTION_build_dir            build                   ;;want: <$PY2MSI_OUTPUT_DIR>\build
+#define? PY2MSI_COMPILE_PY_NAME             <$PY2MSI_OUTPUT_DIR>\<??InputFile $$FilePart:N>.py
+#define? PY2MSI_INSTALL_DIR                 [ProgramFilesFolder]\<$PY2MSI_MSI_PRODUCT_NAME>
+#define? PY2MSI_SHORTCUT_DIR                [ProgramMenuFolder]\<$PY2MSI_MSI_PRODUCT_NAME>
+#define? PY2MSI_DEFAULT_COMPILE_COPYRIGHT                           ;;Override this in your own header!
+#define? PY2MSI_DEFAULT_COMPILE_TYPE        console
+#define? PY2MSI_OPTION_compressed           1
+#define? PY2MSI_OPTION_optimize             2
+#define? PY2MSI_OPTION_ascii                1
+#define? PY2MSI_OPTION_bundle_files         1
+
+
+;----------------------------------------------------------------------------
+;--- Work out some basic MSI product information ----------------------------
+;----------------------------------------------------------------------------
+#ifndef PY2MSI_MSI_PRODUCT_NAME
+    ;--- User didn't supply, we will use the name of the ".MM" --------------
+    #if ['<$@@PY2MSI_MAKEMSI_PREVIOUSLY_LOADED>' = 'N']
+        ;--- Use the name of the ".MM" (best we can do) ---------------------
+        #define PY2MSI_MSI_PRODUCT_NAME <?InputFile $$FilePart:BaseName>
+    #elseif
+        ;--- Get information from the ".ver" file ---------------------------
+        #define PY2MSI_MSI_PRODUCT_NAME <$ProdInfo.ProductName>
+    #endif
+#endif
+#ifndef PY2MSI_MSI_PRODUCT_VERSION
+    #if ['<$@@PY2MSI_MAKEMSI_PREVIOUSLY_LOADED>' = 'N']
+        ;--- Use the date/time as the version (YY.MM.DD.HHMM) ---------------
+        #DefineRexx ''
+            @@TS  = TimeStamp();
+            @@Ver = substr(@@TS, 3,2) || "." || substr(@@TS, 5,2) || "." || substr(@@TS, 7,2) || "." || substr(@@TS, 9,4);
+            call MacroSet 'PY2MSI_MSI_PRODUCT_VERSION', @@Ver;
+        #DefineRexx
+    #elseif
+        ;--- Get information from the ".ver" file ---------------------------
+        #define PY2MSI_MSI_PRODUCT_VERSION  <$ProductVersion>
+    #endif
+#endif
+#ifndef PY2MSI_MSI_COMPANY
+    #if ['<$@@PY2MSI_MAKEMSI_PREVIOUSLY_LOADED>' = 'N']
+        ;--- User should probably override ----------------------------------
+        #define PY2MSI_MSI_COMPANY <??*USERNAME>          ;;Use "USERNAME" environment variable
+    #elseif
+        ;--- Get information from the ".ver" file ---------------------------
+        #define PY2MSI_MSI_COMPANY <$COMPANY_CONTACT_NAME>
+    #endif
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- START Compile definition -----------------------------------------------
+;----------------------------------------------------------------------------
+#(  ''
+    #define PyCompile
+
+    ;--- Validate passed parameters -----------------------------------------
+    {$!Keywords}
+    {$!:VERSION,COMPANY,COPYRIGHT,PRODUCTNAME}
+
+    ;--- Dump main product details ------------------------------------------
+    #info ^PYTHON DETAILS^
+    #info ^~~~~~~~~~~~~~~^
+    #info ^Product: <$PY2MSI_MSI_PRODUCT_NAME>^
+    #info ^Version: <$PY2MSI_MSI_PRODUCT_VERSION>^
+    #info ^Company: <$PY2MSI_MSI_COMPANY>^
+
+    ;--- Start "setup" file -------------------------------------------------
+    #output "<$PY2MSI_COMPILE_PY_NAME>" ASIS
+    #( '<?NewLine>'
+        from distutils.core import setup
+        import py2exe
+
+        ;--- Define EXE property --------------------------------------------
+        <?NewLine><?NewLine>
+        <?_>### EXE properties #####################################################
+        <?_>class PyExe:
+        <?_>    def __init__(self, **kw):
+        <?_>
+        <?_>        ### VersionInfo resources ###################################
+        <?_>        self.name         = r"{$ProductName=^<$PY2MSI_MSI_PRODUCT_NAME>^}"         #File's Product Name
+        <?_>        self.version      = r"{$Version=^<$PY2MSI_MSI_PRODUCT_VERSION>^}"          #File's Product+File version
+        <?_>        self.company_name = r"{$Company=^<$PY2MSI_MSI_COMPANY>^}"                  #File's Company
+        <?_>        self.copyright    = r"{$Copyright=^<$PY2MSI_DEFAULT_COMPILE_COPYRIGHT>^}"  #File's Copyright
+        <?_>
+        <?_>        ### Override the above defaults #############################
+        <?_>        self.__dict__.update(kw)
+        <?NewLine><?NewLine>
+    #)
+#)
+
+
+;----------------------------------------------------------------------------
+;--- END Compile definition -------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+    #define /PyCompile
+
+    #if @@ExeCnt = 0
+        #error ^You must use the "COMPILE" command at least once!^
+    #endif
+
+    ;--- Output the Setup command -------------------------------------------
+    #(  '<?NewLine>'
+        <?NewLine><?NewLine>
+        <?_>### Compile #####################################################
+        <?_>setup(
+
+        <?_>    options = {"py2exe":
+        <?_>                        {
+        <?_>                           "compressed":   <$PY2MSI_OPTION_Compressed>,
+        <?_>                           "optimize":     <$PY2MSI_OPTION_optimize>,
+        <?_>                           "ascii":        <$PY2MSI_OPTION_ascii>,
+        <?_>                           "bundle_files": <$PY2MSI_OPTION_bundle_files>,
+        <?_>                           "dist_dir":     r"<$PY2MSI_OPTION_dist_dir>"
+        <?_>                        }
+        <?_>              }
+        <?_>    ,
+
+        <?NewLine><?NewLine>
+        #{ for @@i = 1 to @@TypeCnt
+           <?_>    <??@@Type.@@i> = [<?=value('@@' || @@Type.@@i)>],
+        #}
+        <?_>    #zipfile=None,
+        <?_>)
+    #)
+
+    ;--- Complete the file --------------------------------------------------
+    #output
+
+    ;--- Start the compile --------------------------------------------------
+    #info ^Compiling the Python scripts...^
+    #DefineRexx ''
+        ;--- Py2EXE bug means that build dir needs deleting if redirecting output ---
+        call AddressCmd 'rd /s /q "<$PY2MSI_OPTION_build_dir>" >nul 2>&1';
+
+        ;--- Start with clean dist directory --------------------------------
+        call AddressCmd 'rd /s /q "<$PY2MSI_OPTION_dist_dir>" >nul 2>&1';
+
+        ;--- Actual compile step --------------------------------------------
+        @@OutputFile = '<$PY2MSI_OUTPUT_DIR>\<??InputFile $$FilePart:N>(compile).TXT';
+        @@Cmd = '"<$PY2MSI_COMPILE_PY_NAME>" py2exe';
+        @@Cmd = @@Cmd || ' > "' || @@OutputFile || '" 2>&1';
+        @@Rc = AddressCmd('cmd.exe /c ' || @@Cmd);
+    #DefineRexx
+    #if @@Rc <> 0
+        ;--- Display an error message ---------------------------------------
+        #DefineRexx ''
+            @@Output = charin(@@OutputFile, 1, 99999);
+            call FileClose @@OutputFile;
+            call say copies('*+', 39);
+            call say @@Output;
+            call say copies('*+', 39);
+            if  pos('running py2exe', @@Output) = 0 then;
+                @@Reason = "You don't seem to have python and/or py2exe installed!";
+            else;
+                @@Reason = "You do seem to have python and py2exe installed...";
+        #DefineRexx
+        #error ^Compile failed, expected RC=0, got RC=<??@@Rc>, from:{NL}{NL}<??@@Cmd>{NL}{NL}<??@@Reason>^
+    #endif
+    #info ^Successfully compiled the python files^
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Definition of a single EXE ---------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@TypeCnt = '0'
+#RexxVar @@ExeCnt  = '0'
+#( ''
+    #define PyScript
+
+    #evaluate ^^ ^<$@@Rexx4PyScript {$?}>^
+    <?NewLine><?NewLine>
+    <??@@C>
+    <?NewLine><?NewLine>
+#)
+#DefineRexx '@@Rexx4PyScript'
+    ;--- Name of this EXE? --------------------------------------------------
+    @@PyName = '{$#1}'
+
+    ;--- Get File property Parameters ---------------------------------------
+    @@Version     = "{$Version=^^}";
+    @@Company     = "{$Company=^^}";
+    @@CopyRight   = "{$Copyright=^^}";
+    @@Description = "{$Description=^^}";
+    @@ProductName = "{$ProductName=^^}"
+    {$Extra=^^ $$RxVar:@@Extra};               ;;Playsafe (allows user to specify "unknown" parameters
+    if  @@Description = '' then
+        @@Description = 'Compiled Python Script: ' || @@PyName
+    if  @@ProductName = '' then
+        @@ProductName = @@PyName
+
+    ;--- Alias fo this EXE? -------------------------------------------------
+    @@Type   = '{$Type=^<$PY2MSI_DEFAULT_COMPILE_TYPE>^}';
+    @@ExeCnt = @@ExeCnt + 1
+    @@Alias  = 'EXE_' || @@ExeCnt || '_' || @@Type;
+
+    ;--- Keep Track of Types ------------------------------------------------
+    @@Fnd = 'N';
+    do  @@I =  1 TO @@TypeCnt
+        if @@Type = @@Type.@@I then
+        do
+            ;--- Found it ---------------------------------------------------
+            @@Fnd = 'Y';
+            leave;
+        end;
+    end;
+    if  @@Fnd = 'N' then
+    do
+        ;--- Initialize for this type ---------------------------------------
+        @@TypeCnt        = @@TypeCnt + 1;
+        @@Type.@@TypeCnt = @@Type;              ;;Remember about this type
+        @@{$Type} = ''
+    end;
+    @@{$Type} = strip(@@{$Type} || ' ' || @@Alias);
+
+    ;--- Output the correct lines to define this EXE file -------------------
+    @@C = @@Alias || ' = PyExe(<?NewLine>';
+    @@C =     @@C || '    script       = r"' || @@PyName || '",  #EXE Name to generate<?NewLine>'
+    if  @@Description <> '' then
+        @@C = @@C || '    description  = r"' || @@Description || '",    #Description of this EXE<?NewLine>'
+    if  @@Version <> '' then
+        @@C = @@C || '    version      = r"' || @@Version || '",    #Product+File Version details<?NewLine>'
+    if  @@Company <> '' then
+        @@C = @@C || '    company_name = r"' || @@Company || '",    #Company Details<?NewLine>'
+    if  @@CopyRight <> '' then
+        @@C = @@C || '    copyright    = r"' || @@CopyRight || '",  #Copyright Text<?NewLine>'
+    if  @@ProductName <> '' then
+        @@C = @@C || '    name         = r"' || @@ProductName || '",  #Product Name<?NewLine>'
+    if  @@Extra <> '' then
+        @@C = @@C || '    ' || @@Extra || '<?NewLine>'
+    @@C = @@C || ')'
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Extra files ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+    #define PyFile
+
+    #info ^Extra distribution files not yet supported^
+
+
+;**    [CommentBlockStart     (September 25, 2005 10:45:58 AM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|        # file setup.py
+;**|     [...]
+;**|     import glob
+;**|     [...]
+;**|     data_files=[("images",
+;**|                 ["images/BeefBuilder.ico",
+;**|                  "images/add-arrow.bmp",
+;**|                  "images/add-node.bmp",
+;**|                  "images/subtract.bmp",
+;**|                  "images/struct-a-file.gif",
+;**|                  "images/export.bmp",
+;**|                  "images/new.bmp",
+;**|                  "images/open.bmp",
+;**|                  "images/save.bmp"]),
+;**|                 ("pool", glob.glob("pool/*.py*"))]
+;**|     [...]
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (September 25, 2005 10:45:58 AM EST, Dennis)
+
+
+
+
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Local Namespace, END ---------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId POP

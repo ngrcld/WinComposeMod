@@ -1,0 +1,397 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   INI.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.11  $
+;          $Date:   24 Mar 2015 18:35:04  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/INI.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "INI.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainIniRelatedOptions]---
+#define? DEFAULT_INI_HOW             ADD_OR_UPDATE      ;;Default for "HOW" parameter
+#define? DEFAULT_INI_ROWKEY_PREFIX   Ini                ;;Key prefix for "IniFile" table entry
+#define? DEFAULT_INI_DOCO            Y                  ;;"N" = Don't add to doco (by default)
+#define? INI_VALUE_NULL_PROPERTY     IniValueIsNull     ;;"" to generate an error message or name of a NON-EXISTING property (so "[property]" evaluates to "")
+;---[4DocoMainIniRelatedOptions]---
+
+
+;--- Constants to place into VBS --------------------------------------------
+#( '<?NewLine>'
+   #define IniVbsVariables
+   <?NewLine>
+
+   const msidbIniFileActionAddLine    = 0
+   const msidbIniFileActionCreateLine = 1
+   const msidbIniFileActionAddTag     = 3
+#)
+#RexxVar @@Ia_ADD_OR_UPDATE  = 'msidbIniFileActionAddLine'
+#RexxVar @@Ia_ADD_ONLY       = 'msidbIniFileActionCreateLine'
+#RexxVar @@Ia_ADD_OR_APPEND  = 'msidbIniFileActionAddTag'
+
+
+;----------------------------------------------------------------------------
+;--- INIFILE ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@IniFileStart    = ''   ;;"" = not in "IniFile"    block
+#RexxVar @@IniSectionStart = ''   ;;"" = not in "IniSection" block
+#( ''
+   #define IniFile
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@IniFileStart>' <> '']
+       #error ^You have not completed an "IniFile" block started at "<??@@IniFileStart>"!^
+   #endif
+   #push   "IniFile Command"
+   #RexxVar @@IniFileStart = ^<?=GetInputFileNameAndLine()>^
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!:#1,DIR,COMPONENT}
+
+   ;--- Do the work! --------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4IniFile {$?}>^
+   <??@@VbsDir><?RestartLine>
+
+   ;--- Start the INI Table -------------------------------------------------
+   <$Table "IniFile">
+#)
+#DefineRexx '@@Rexx4IniFile'
+   ;--- Base Filename of INI (not a key) ------------------------------------
+   @@IniFile = '{$#1}';
+
+   ;--- Handle Directory ----------------------------------------------------
+   if  '{$Dir=^^}' = '' then
+   do
+       ;--- Defauls to "" (MSI default for Windows Folder") -----------------
+       @@VbsDir    = '';
+       @@IniDirKey = '';
+   end;
+   else
+   do
+       ;--- User specified a value ------------------------------------------
+       <$Rexx4MakeDirectoryTree DIR=^{$DIR}^>;
+       @@VbsDir    = DTVBS;
+       @@IniDirKey = DT_KEYNAME;
+   end;
+
+   ;--- Entries for which component? ----------------------------------------
+   @@ComponentDef = '{$Component=^^}';
+   if  @@ComponentDef = '' then
+   do
+       ;--- Defaulting ------------------------------------------------------
+       <$Rexx4ValidateInComponent>
+       @@ComponentDef = RxComponent.RxComponentNestingLevel;
+   end;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- /INIFILE ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define /IniFile
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@IniFileStart>' = '']
+       #error ^There is no "IniFile" block to complete!^
+   #endif
+   #if ['<??@@IniSectionStart>' <> '']
+       #error ^You have not yet completed a "IniSection" started at "<??@@IniSectionStart>"!^
+   #endif
+   #pop "IniFile Command"
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!:}
+
+   ;--- End the "IniFile" table ---------------------------------------------
+   #RexxVar @@IniFileStart = ""
+   <$/Table>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- IniSection -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define IniSection
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if [@@IniFileStart = '']
+       #error ^You must be within a "IniFile" block to start an "IniSection"!^
+   #endif
+   #if ['<??@@IniSectionStart>' <> '']
+       #error ^You have not completed an "IniSection" block started at "<??@@IniSectionStart>"!^
+   #endif
+   #push   "IniSection Command"
+   #RexxVar @@IniSectionStart = ^<?=GetInputFileNameAndLine()>^
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!:#1}
+
+   ;--- Remember the name of the section ------------------------------------
+   #RexxVar @@IniSection  = ^{$#1}^
+#)
+
+
+;----------------------------------------------------------------------------
+;--- /IniSection ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define /IniSection
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@IniSectionStart>' = '']
+       #error ^There is no "IniSection" block to complete!^
+   #endif
+   #pop    "IniSection Command"
+   #RexxVar @@IniSectionStart = ^^
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!:}
+
+   ;--- Finished the section ------------------------------------------------
+   #RexxVar @@IniSection  = ^^
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- INI --------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Ini
+   <$UpdateMmLocation>
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1,VALUE,*VALUE,HOW,ROWKEY,COMPONENT,DOCO}
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@IniSectionStart>' = '']
+       #error ^You are not within an "IniSection" block!^
+   #endif
+
+   ;--- Do the work! --------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4Ini {$?}>^
+   <??@@Vbs><?RestartLine>
+#)
+#RexxVar @@RowKeyCnt   = 0
+#RexxVar @@HtmlItemCnt = 0                   ;;#items for the HTML report
+#DefineRexx '@@Rexx4Ini'
+    ;--- Handle the value parameter -----------------------------------------
+    if  '{$*Value='' $$IsPassed}' = 'Y' then
+    do
+       ;--- Value is an expression ------------------------------------------
+       @@ValStar = '*';
+       {$*Value=^^ $$RxVar:@@Value}            ;;The data!
+       @@Value4Doco = @@Value;
+    end;
+    else
+    do
+        ;--- Value is a literal ----------------------------------------------
+        if  '{$Value='' $$IsPassed}' = 'N' then
+            error('No value supplied for the INI named "{$#1}"!')
+        @@ValStar = '';
+        {$Value=^^ $$RxVar:@@Value}            ;;The data!
+        @@Value4Doco = @@Value;
+
+        ;--- Windows Installer doesn't handle null values! ------------------
+        if  @@Value = '' then
+        do
+            @@NoSuchProp = '<$INI_VALUE_NULL_PROPERTY>';
+            if  @@NoSuchProp = '' then
+                error('You supplied an invalid value for the VALUE parameter (for "{$#1}")');
+            else
+                @@Value = '[' || @@NoSuchProp || ']';
+        end;
+    end;
+
+   ;--- Translate the action ------------------------------------------------
+   @@ActionKey = '@@Ia_{$How=^<$DEFAULT_INI_HOW>^}'
+   if  symbol(@@ActionKey) <> 'VAR' then
+       error('The HOW value of "{$How}" is not valid! (for "{$#1}")');
+   else
+       @@Action = value(@@ActionKey);
+
+   ;--- What should the row's key be? ---------------------------------------
+   @@RowKey    = '{$RowKey=^^}'        ;;Key into INI table
+   if  @@RowKey = '' then
+   do
+       ;--- User did not supply a registry key (generate one) ---------------
+       @@RowKeyCnt = @@RowKeyCnt + 1
+       if  @@RowKeyCnt > 999 then
+           @@RowKey = '<$DEFAULT_INI_ROWKEY_PREFIX>' || @@RowKeyCnt;
+       else
+           @@RowKey = '<$DEFAULT_INI_ROWKEY_PREFIX>' || right(@@RowKeyCnt, 3, '0');
+       @@RowKey = @@RowKey || RxGeneratedKeySuffix;
+   end;
+
+   ;--- The user can override the component here ----------------------------
+   if  '{$Component='' $$IsPassed}' = 'N' then
+       @@Component = @@ComponentDef;        ;;Use the value supplied on "IniFile"
+   else
+   do
+       ;--- User supplied a value (allow for '') ----------------------------
+       @@Component = '{$Component}';
+       if  @@Component = '' then
+       do
+           ;--- Want current component --------------------------------------
+           <$Rexx4ValidateInComponent>
+           @@Component = RxComponent.RxComponentNestingLevel;
+       end;
+   end;
+
+   ;--- Create the required INI entry ---------------------------------------
+   @@Vbs =          '<' || '$Row'
+   @@Vbs = @@Vbs ||      ' Component_="' || @@Component  || '"'
+   @@Vbs = @@Vbs ||       ' *FileName=^MakeSfnLfn("' || @@IniDirKey || '", "' || @@IniFile || '")^'
+   @@Vbs = @@Vbs ||     ' DirProperty="' || @@IniDirKey  || '"'
+   @@Vbs = @@Vbs ||         ' Section="' || @@IniSection || '"'
+   @@Vbs = @@Vbs ||         ' IniFile="' || @@RowKey     || '"'
+   @@Vbs = @@Vbs ||         ' *Action="' || @@Action     || '"'
+   @@Vbs = @@Vbs ||             ' Key="{$#1}"'
+   @@Vbs = @@Vbs ||     ' ' || @@ValStar || 'Value=' || Quoted(@@Value)
+   @@Vbs = @@Vbs || '>'
+
+   ;--- Add to INI report ---------------------------------------------------
+   if  '{$Doco='<$DEFAULT_INI_DOCO>'}' <> 'N' then
+   do
+       ;--- User wants this in the doco -------------------------------------
+       @@SortKey = @@IniFile || 'FF'x || @@IniDirKey  || 'FF'x || @@IniSection  || 'FF'x || '{$#1}';
+       @@All     = @@SortKey || '00'x || @@IniFile || '00'x || @@IniDirKey || '00'x || @@IniSection || '00'x || '{$#1}' || '00'x || @@Value4Doco || '00'x || @@RowKey  || '00'x || @@Component  || '00'x || @@Action || '00'x || RxMmLocation;
+       @@HtmlItemCnt            = @@HtmlItemCnt + 1;
+       @@HtmlItem.@@HtmlItemCnt = @@All;
+       @@HtmlItem.0             = @@HtmlItemCnt;
+   end;
+#DefineRexx
+
+
+
+
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? INI_BEFORE_BUTTON
+#define? INI_AFTER_BUTTON
+#(
+   #define? INI_BUTTON
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$INI_BEFORE_BUTTON>
+   <$BUTTON2 "INIS" Text="INI" CNT="@@HtmlItemCnt">
+   <$INI_AFTER_BUTTON>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? INI_BEFORE_REPORT
+#define? INI_AFTER_REPORT
+#( ''
+   #define? INI_REPORT
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$INI_BEFORE_REPORT>
+
+   ;--- Generate Environment report -----------------------------------------
+   <A NAME="INIS"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$INI_HTML_NO_ENTRIES>
+   #elseif
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="INI FILE">
+      <$INI_HTML_REPORT_START>
+
+      ;--- Sort INI table entries --------------------------------------
+      #evaluate ^^ ^call SortArray '@@HtmlItem'^
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Index = 1 to @@HtmlItemCnt
+          ;--- Split off components -----------------------------------------
+          #DefineRexx '' NOPACK
+               parse var @@HtmlItem.@@Index . '00'x @@BaseFileName '00'x @@DirKey '00'x @@Section '00'x @@Key '00'x @@Value '00'x @@RowKey '00'x @@Component '00'x @@Action '00'x @@MmLocation;
+               if   @@Value = '' then
+                    @@Value = '&nbsp;';             ;;Make sure table looks OK
+               if  @@DirKey = '' then
+                   @@DirKey = "WindowsFolder";      ;;This is the default location that Windows Installer defines if this value is null
+          #DefineRexx
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$INI_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$INI_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$INI_AFTER_REPORT>
+#)
+
+
+#( '<?NewLine>'
+   #define? INI_HTML_NO_ENTRIES
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="INI Files">
+       <P><B>
+       <CENTER>There are no INI Entries.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? INI_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="6" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>INI</TH>
+       <TH>Dir</TH>
+       <TH>Section</TH>
+       <TH>Key</TH>
+       <TH>Value</TH>
+       <TH>Component</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? INI_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+       <TD><??@@BaseFileName></TD>
+       <TD><??@@DirKey></TD>
+       <TD><??@@Section></TD>
+       <TD><??@@Key></TD>
+       <TD><??@@Value></TD>
+       <TD><??@@Component></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? INI_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> INI entries.
+   </CENTER>
+#)
+
+#NextId UNLOCK "INI.MMH"

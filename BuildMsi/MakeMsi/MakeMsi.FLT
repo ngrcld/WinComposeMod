@@ -1,0 +1,185 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MAKEMSI.FLT
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.4  $
+;          $Date:   06 Aug 2017 08:29:24  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MakeMsi.flt.pvcs  $
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- Only Allow this to be included once ------------------------------------
+;----------------------------------------------------------------------------
+#ifdef MAKEMSI_FLT_VERSION
+   ;--- Some how including it twice! ----------------------------------------
+   #eof 1
+#endif
+#define MAKEMSI_FLT_VERSION 17.216
+
+
+;--- Some helper macros -----------------------------------------------------
+#ifndef FLT_HELPER_MACROS_DEFINED
+        ;--- Don't do this twice --------------------------------------------
+        #define FLT_HELPER_MACROS_DEFINED
+
+        ;--- Define helpers -------------------------------------------------
+        #( ''
+           #define FilterNoLongerSupportsTheMacroMacro
+
+           #ifdef {$#1}
+                  #error ^The "{$#1}" ("FILTER_") macro is no longer supported you will need to modify the macro and the equivalent new macro starts with "FILTER_HOOK_" and uses the "MsiValFilter" command.^
+           #endif
+        #)
+        #define REASON_YONKS Incorrect in that it works (for 15+ years)
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Ignore "internal errors" -----------------------------------------------
+;----------------------------------------------------------------------------
+#ifndef FILTER_SEE_ICE_INTERNAL_ERRORS
+   #define+ REASON1                   KNOWN MICROSOFT BUG:
+   #define+ REASON_MACRO_NOT_DEFINED  and "FILTER_SEE_ICE_INTERNAL_ERRORS" was not defined
+           ;/-UNKNOWN   ICE Internal Error/
+           <$MsiValFilter "UNKNOWN   ICE Internal Error" Comment=^<$REASON1> The validation itself failed <$REASON_MACRO_NOT_DEFINED>^>
+
+           ;/-Based on the tables and columns in your database, it should be marked with a schema between/
+           <$MsiValFilter "Based on the tables and columns in your database, it should be marked with a schema between" Comment=^<$REASON1> Simply incorrect <$REASON_MACRO_NOT_DEFINED>^>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- "darice.cub" specific (over W2K validations - "logo.cub") --------------
+;----------------------------------------------------------------------------
+#define+ REASON1   KNOWN MICROSOFT BUG IN "darice.cub":
+        ;/-has a directory that is a public property (ALL CAPS) and is under user profile directory./
+        <$MsiValFilter "has a directory that is a public property (ALL CAPS) and is under user profile directory." Comment=^<$REASON1> Simply incorrect^>
+
+        ;/-Property `AdminUser` found in column `ControlCondition`.`Condition`/
+        <$MsiValFilter "Property `AdminUser` found in column `ControlCondition`.`Condition`" Comment=^<$REASON1> Simply incorrect^>
+
+        ;/-Property `AdminUser` found in column `ControlEvent`.`Condition`/
+        <$MsiValFilter "Property `AdminUser` found in column `ControlEvent`.`Condition`" Comment=^<$REASON1> Simply incorrect^>
+
+        #define REASON2 <$REASON_YONKS> in the context of how MAKEMSI performs major upgrades
+            ;/-This product should remove only older versions of itself. No Maximum version was detected for the current product./
+            <$MsiValFilter "This product should remove only older versions of itself. No Maximum version was detected for the current product." Comment=^<$REASON1> <$REASON2>^>
+
+            ;/-Upgrade.VersionMin and Upgrade.VersionMax cannot both be null. UpgradeCode is /
+            <$MsiValFilter "Upgrade.VersionMin and Upgrade.VersionMax cannot both be null. UpgradeCode is " Comment=^<$REASON1> <$REASON2>^>
+
+        ;/-Complete functionality of the MsiFileHash table is only available with Windows Installer version 1.5. Your schema is/
+        <$MsiValFilter "Complete functionality of the MsiFileHash table is only available with Windows Installer version 1.5. Your schema is" Comment=^<$REASON_YONKS>^>
+
+
+;----------------------------------------------------------------------------
+;--- We are just about to pass through ALL ERRORS ---------------------------
+;----------------------------------------------------------------------------
+<$FilterNoLongerSupportsTheMacroMacro "FILTER_BEFORE_ERROR_FILTER">
+#ifdef FILTER_HOOK_BEFORE_ERROR_FILTER
+   ;--- User filter hook ----------------------------------------------------
+   <$FILTER_HOOK_BEFORE_ERROR_FILTER>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Pass through ALL ERRORS ------------------------------------------------
+;----------------------------------------------------------------------------
+;/+ ERROR /
+<$MsiValFilter " ERROR " Comment=^All messages containing " ERROR " and not previously filtered out are treated as errors.^ TYPE="+">
+
+
+;----------------------------------------------------------------------------
+;--- We just passed through ALL ERRORS --------------------------------------
+;----------------------------------------------------------------------------
+<$FilterNoLongerSupportsTheMacroMacro "FILTER_AFTER_ERROR_FILTER">
+#ifdef FILTER_HOOK_AFTER_ERROR_FILTER
+   ;--- User filter hook ----------------------------------------------------
+   <$FILTER_HOOK_AFTER_ERROR_FILTER>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Remove line added by the find.exe filter -------------------------------
+;----------------------------------------------------------------------------
+;/----------/
+<$MsiValFilter "---------" Comment=^This line exists because of MAKEMSI filter processing (via FIND.EXE)^>
+
+
+;----------------------------------------------------------------------------
+;--- Remove blank lines -----------------------------------------------------
+;----------------------------------------------------------------------------
+;/-/
+<$MsiValFilter "" Comment=^Blank lines are ignored^>
+
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Ignore any hard coding of directory locations via property table -------
+;----------------------------------------------------------------------------
+#ifndef FILTER_NO_WARNING_FOR_HARDCODED_DIRECTORY_ENTRIES
+   ;/- appears to be hardcoded in the property table to a local drive/
+   <$MsiValFilter " appears to be hardcoded in the property table to a local drive" Comment=^ANZ frequently forces hardcoding via it's standards such as "D:" being a server data drive and "FILTER_NO_WARNING_FOR_HARDCODED_DIRECTORY_ENTRIES" was not defined^>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- We don't care about "REINSTALLMODE" being in the property table --------
+;----------------------------------------------------------------------------
+#ifndef FILTER_WANT_WARNING_FOR_RESINSTALLMODE_IN_PROP_TABLE
+   ;/-REINSTALLMODE is defined in the Property table./
+   <$MsiValFilter "REINSTALLMODE is defined in the Property table" Comment=^MAKEMSI is performing major updates so this message doesn't matter and "FILTER_WANT_WARNING_FOR_RESINSTALLMODE_IN_PROP_TABLE" was not defined^>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Ignore ASSOCIATION type warnings ---------------------------------------
+;----------------------------------------------------------------------------
+#ifndef FILTER_NO_WARNING_FOR_SHOULD_BE_REGISTERED_VIA_PROGID
+   #define+ REASON1   MAKEMSI registers associations via registry and "FILTER_NO_WARNING_FOR_SHOULD_BE_REGISTERED_VIA_PROGID" was not defined.
+           ;/- Icon associations should be registered via the ProgId and Icon tables/
+           <$MsiValFilter " Icon associations should be registered via the ProgId and Icon tables" Comment=^<$REASON1>^>
+
+           ;/- Shell extension verbs info should be registered via the Verb table./
+           <$MsiValFilter " Shell extension verbs info should be registered via the Verb table." Comment=^<$REASON1>^>
+
+           ;/- should be registered via the ProgId table/
+           <$MsiValFilter " should be registered via the ProgId table" Comment=^<$REASON1>^>
+
+           ;/-ProgId - CLSID associations should be registered via the ProgId and Class tables/
+           <$MsiValFilter "ProgId - CLSID associations should be registered via the ProgId and Class tables" Comment=^<$REASON1>^>
+#endif
+
+#ifndef FILTER_NO_WARNING_FOR_SHOULD_BE_REGISTERED_VIA_EXTENSION
+   #define+ REASON1   MAKEMSI registers associations via registry and "FILTER_NO_WARNING_FOR_SHOULD_BE_REGISTERED_VIA_EXTENSION" was not defined.
+           ;/- should be registered via the Extension table/
+           <$MsiValFilter " should be registered via the Extension table" Comment=^<$REASON1>^>
+#endif
+
+
+;--- All other warnings to go through ---------------------------------------
+<$FilterNoLongerSupportsTheMacroMacro "FILTER_BEFORE_WARNING_FILTER_ALL">
+#ifdef FILTER_HOOK_BEFORE_WARNING_FILTER_ALL
+   ;--- User filter hook ----------------------------------------------------
+   <$FILTER_HOOK_BEFORE_WARNING_FILTER_ALL>
+#endif
+
+
+;--- We treat All OTHER WARNING as errors -----------------------------------
+;/+ WARNING/
+<$MsiValFilter " WARNING" Comment=^All messages containing " WARNING" and not previously filtered out are treated as errors.^ TYPE="+">
+
+
+<$FilterNoLongerSupportsTheMacroMacro "FILTER_AFTER_WARNING_FILTER_ALL">
+#ifdef FILTER_HOOK_AFTER_WARNING_FILTER_ALL
+   ;--- User filter hook ----------------------------------------------------
+   <$FILTER_HOOK_AFTER_WARNING_FILTER_ALL>
+#endif
+
+
+;--- Probably should never get here... Pass anything else through -----------
+;/+*/
+<$MsiValFilter "*" Comment=^Don't really expect to get this far but anything not already filtered is treated as an error^ TYPE="+">

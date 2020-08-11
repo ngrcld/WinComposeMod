@@ -1,0 +1,242 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SERVICE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   10 Aug 2005 18:43:42  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/service.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "SERVICE.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainServiceRelatedOptions]---
+#define? DEFAULT_SERVICE_CONTROL_INSTALL_EVENTS    STOP START
+#define? DEFAULT_SERVICE_CONTROL_UNINSTALL_EVENTS  STOP DELETE
+#define? DEFAULT_SERVICE_INSTALL_PROCESS           OWN
+#define? DEFAULT_SERVICE_INSTALL_START             AUTO
+#define? DEFAULT_SERVICE_INSTALL_ERRORS            NORMAL VITAL
+;---[4DocoMainServiceRelatedOptions]---
+
+
+;--- Constants to place into VBS --------------------------------------------
+#( '<?NewLine>'
+   #define ServiceVbsVariables
+   <?NewLine>
+
+   ;--- ServiceControl, INSTALL ---------------------------------------------
+   const msidbServiceControlEventStart           = &H001
+   const msidbServiceControlEventStop            = &H002
+   const msidbServiceControlEventDelete          = &H008
+
+   ;--- ServiceControl, UNINSTALL -------------------------------------------
+   const msidbServiceControlEventUninstallStart  = &H010
+   const msidbServiceControlEventUninstallStop   = &H020
+   const msidbServiceControlEventUninstallDelete = &H080
+
+   ;--- ServiceInstall ServiceTypes -----------------------------------------
+   const SERVICE_WIN32_OWN_PROCESS   = &H010
+   const SERVICE_WIN32_SHARE_PROCESS = &H020
+   const SERVICE_INTERACTIVE_PROCESS = &H100
+
+   ;--- ServiceInstall StartTypes -------------------------------------------
+   const SERVICE_AUTO_START    = &H02
+   const SERVICE_DEMAND_START  = &H03
+   const SERVICE_DISABLED      = &H04
+   const SERVICE_BOOT_START    = &H00
+   const SERVICE_SYSTEM_START  = &H01
+
+   ;--- ServiceInstall ErrorControl -----------------------------------------
+   const SERVICE_ERROR_IGNORE                 = &H00
+   const SERVICE_ERROR_NORMAL                 = &H01
+   const SERVICE_ERROR_CRITICAL               = &H03
+   const msidbServiceInstallErrorControlVital = 32768    '&H08000 (stupid VB does 16 bit 2's comp!)
+#)
+
+;--- Map ServiceControl Events ----------------------------------------------
+#RexxVar @@SC_INSTALL_START    = 'msidbServiceControlEventStart'
+#RexxVar @@SC_INSTALL_STOP     = 'msidbServiceControlEventStop'
+#RexxVar @@SC_INSTALL_DELETE   = 'msidbServiceControlEventDelete'
+#RexxVar @@SC_UNINSTALL_START  = 'msidbServiceControlEventUninstallStart'
+#RexxVar @@SC_UNINSTALL_STOP   = 'msidbServiceControlEventUninstallStop'
+#RexxVar @@SC_UNINSTALL_DELETE = 'msidbServiceControlEventUninstallDelete'
+
+;--- Map ServiceInstall Process Types ---------------------------------------
+#RexxVar @@SiProcess_OWN          = 'SERVICE_WIN32_OWN_PROCESS'
+#RexxVar @@SiProcess_SHARE        = 'SERVICE_WIN32_SHARE_PROCESS'
+#RexxVar @@SiProcess_INTERACTIVE  = 'SERVICE_INTERACTIVE_PROCESS'
+
+;--- Map ServiceInstall start modes -----------------------------------------
+#RexxVar @@SiStart_AUTO         = 'SERVICE_AUTO_START'
+#RexxVar @@SiStart_DEMAND       = 'SERVICE_DEMAND_START'
+#RexxVar @@SiStart_DISABLED     = 'SERVICE_DISABLED'
+#RexxVar @@SiStart_BOOT         = 'SERVICE_BOOT_START'
+#RexxVar @@SiStart_SYSTEM       = 'SERVICE_SYSTEM_START'
+
+;--- Map ServiceInstall Error control ---------------------------------------
+#RexxVar @@SiError_IGNORE       = 'SERVICE_ERROR_IGNORE'
+#RexxVar @@SiError_NORMAL       = 'SERVICE_ERROR_NORMAL'
+#RexxVar @@SiError_CRITICAL     = 'SERVICE_ERROR_CRITICAL'
+#RexxVar @@SiError_VITAL        = 'msidbServiceInstallErrorControlVital'
+
+
+;----------------------------------------------------------------------------
+;--- ServiceControl ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define ServiceControl
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Do some Initialization ----------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4ServiceControl {$?}>^
+
+   ;--- Set up the table row ------------------------------------------------
+   <$Table "ServiceControl">
+   #(
+       <$Row
+           ServiceControl=^<??@@RowKey>^
+                     Name=^{$Name}^
+                    Event=^<??@@Event>^
+                Arguments={$Arguments=~~ $$AQ}
+                     Wait=^<??@@Wait>^
+               Component_=^<??@@Component>^
+
+       >
+   #)
+   <$/Table>
+   {$!:NAME,ATINSTALL,ATUNINSTALL,ARGUMENTS,WAIT,COMPONENT,ROWKEY}
+#)
+#DefineRexx '@@Rexx4AtParms'
+   do  while {$AtVar} <> ''
+       ;--- Get next event that the user specified --------------------------
+       parse var {$AtVar} @@AnEvent ' ' {$AtVar}
+
+       ;--- Get the correct VBS constant ------------------------------------
+       @@Var = '@@SC_{$When}_' || @@AnEvent;
+       if  symbol(@@Var) <> 'VAR' then
+           error('The "{$When}" event of "' || @@AnEvent || '" is unknown!');
+       @@Const = value(@@Var);
+
+       ;--- Add to the list -------------------------------------------------
+       if  @@Event <> '' then
+           @@Event = @@Event || ' or ';
+       @@Event = @@Event || @@Const;
+   end;
+#DefineRexx
+#DefineRexx '@@Rexx4ServiceControl'
+   ;--- Handle "AtInstall" and "AtUnInstall" --------------------------------
+   @@Event = ''
+   @@Ev    = '{$AtInstall=^<$DEFAULT_SERVICE_CONTROL_INSTALL_EVENTS>^}';
+   <$@@Rexx4AtParms When='INSTALL' AtVar='@@Ev'>
+   @@Ev    = '{$AtUnInstall=^<$DEFAULT_SERVICE_CONTROL_UNINSTALL_EVENTS>^}';
+   <$@@Rexx4AtParms When='UNINSTALL' AtVar='@@Ev'>
+   if  @@Event = '' then
+       error('No install or uninstall events were specified!');
+
+   ;--- Handle WAIT parameter -----------------------------------------------
+   if  translate('{$WAIT=^Y^}') = 'N' then
+       @@Wait = 0;
+   else
+       @@Wait = 1;
+
+   ;--- Which component will this be belong to ------------------------------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- Defaulting ------------------------------------------------------
+       <$Rexx4ValidateInComponent>
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+
+   ;--- What should the row's key be? ---------------------------------------
+   @@RowKey     = '{$RowKey=^^}'        ;;Key into ServiceControl table
+   if  @@RowKey = '' then
+   do
+       ;--- Prefer to use the service name as the basis ---------------------
+       {$Name $$RxVar:@@Name}
+       @@RowKey = @@Name
+       <$Rexx2FixMsiIdAndEnsureUnique IdVar="@@RowKey">
+   end;
+#DefineRexx
+
+
+
+
+;----------------------------------------------------------------------------
+;--- ServiceInstall ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+   #define ServiceInstall
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Do some Initialization ----------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4ServiceInstall {$?}>^
+
+   ;--- Set up the table row ------------------------------------------------
+   <$Table "ServiceInstall">
+   #(
+       <$Row
+           ServiceInstall=^<??@@RowKey>^
+                     Name=^{$Name}^
+              DisplayName=^{$DisplayName=~{$Name}~}^
+              ServiceType=^<??@@ServiceType>^
+                StartType=^<??@@StartType>^
+             ErrorControl=^<??@@ErrorControl>^
+           LoadOrderGroup=^{$LoadOrderGroup=~~}^
+             Dependencies=^{$Dependencies=~~}^
+                StartName=^{$UserName=~~}^
+                 Password=^{$Password=~~}^
+                Arguments={$Arguments=~~ $$AQ}
+               Component_=^<??@@Component>^
+              Description=`<??@@Description>`
+       >
+   #)
+   <$/Table>
+   {$!:NAME,DISPLAYNAME,DESCRIPTION,PROCESS,START,ERRORS,LOADORDERGROUP,DEPENDENCIES,USERNAME,PASSWORD,ARGUMENTS,COMPONENT,ROWKEY}
+#)
+#DefineRexx '@@Rexx4ServiceInstall'
+   <$MapBits ResultVar=^@@ServiceType^  RxMapVarName=^@@SiProcess_^ BitList=^{$Process=~<$DEFAULT_SERVICE_INSTALL_PROCESS>~}^ What=^service type^>
+   <$MapBits ResultVar=^@@StartType^    RxMapVarName=^@@SiStart_^   BitList=^{$Start=~<$DEFAULT_SERVICE_INSTALL_START>~}^     What=^service start type^>
+   <$MapBits ResultVar=^@@ErrorControl^ RxMapVarName=^@@SiError_^   BitList=^{$Errors=~<$DEFAULT_SERVICE_INSTALL_ERRORS>~}^   What=^service error control^>
+
+   ;--- Get description -----------------------------------------------------
+   {$Description='' $$RxVar:@@Description}
+   if  @@Description = '' then
+       @@Description = space( GetInputFileNameAndLine() );
+
+   ;--- Which component will this be belong to ------------------------------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- Defaulting ------------------------------------------------------
+       <$Rexx4ValidateInComponent>
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+
+   ;--- What should the row's key be? ---------------------------------------
+   @@RowKey     = '{$RowKey=^^}'        ;;Key into ServiceInstall table
+   if  @@RowKey = '' then
+   do
+       ;--- Prefer to use the service name as the basis ---------------------
+       {$Name $$RxVar:@@Name}
+       @@RowKey = @@Name
+       <$Rexx2FixMsiIdAndEnsureUnique IdVar="@@RowKey">
+   end;
+#DefineRexx
+
+
+#NextId UNLOCK "SERVICE.MMH"
+

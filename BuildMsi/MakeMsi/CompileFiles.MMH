@@ -1,0 +1,1707 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   CompileFiles.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   04 Jul 2018 18:24:08  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/CompileFiles.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "CompileFiles.MMH"
+#(
+    #define  Compile
+    #warning "Obsolete macro" ^Please use "Cabinet" instead of "Compile"^
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Known Compression levels -----------------------------------------------
+;----------------------------------------------------------------------------
+;---[Options4Doco-Known Compression levels]---
+#define  COMPRESS_NONE      NONE                ;;2007-09-12: Doesn't appear to work?
+#define  COMPRESS_MEDIUM    MSZIP
+#define  COMPRESS_BEST      LZX                 ;;Builds smallest MSI
+;---[Options4Doco-Known Compression levels]---
+
+
+;---[Options4Doco-MainCompileOptions]---
+;---------------------------------------------------------------------------------
+;--- GLOBAL DEFAULT options when option not specified on the "Cabinet" command ---
+;---------------------------------------------------------------------------------
+#define? CABINET_ALIAS_DEFAULT                 [DEFAULT]             ;;If no or empty alias provided
+#define? CABINET_ALIAS_FREQUENTLY_CHANGES      [FrequentlyChanges]   ;;
+#define? CABINET_CACHE                         Y                     ;;Y/N cache results
+#define? CABINET_CABDDF_Compression            ON                    ;;ON/OFF - Want to compress files?
+#define? CABINET_CABDDF_CompressionType        <$COMPRESS_MEDIUM>
+#define? CABINET_CABDDF_CompressionLevel       7                     ;;Valid 1-7
+#define? CABINET_CABDDF_CompressionMemory      21                    ;;Valid 10-21
+#define? CABINET_CABDDF_ClusterSize            4096                  ;;Safe for CD-ROM, floppies (512) etc
+#define? CABINET_CAB_FILE_NAME_FORMAT          MM_*                  ;;Name of generated 8.3 formatted CAB filename (without extension). MM01.cab, MM01_2.cab etc.
+;---[Options4Doco-MainCompileOptions]---
+
+;---[Options4Doco]---
+;------------------------------------------------------------------------------------
+;--- MAKEMSI generates some COMPILE commands for you (choose the "cache" option!) ---
+;------------------------------------------------------------------------------------
+#define?  CABINET_CACHE_VALUE_FOR_COMPILE_TO_PREPARE_FOR_MM_MERGE
+#define?  CABINET_CACHE_VALUE_FOR_COMPILE_ENDPASS1
+
+
+;----------------------------------------------------------------------------
+;--- For "CABINET_CABDDF_MaxDiskSize" (2GB limit on cabinet) ----------------
+;----------------------------------------------------------------------------
+#ifndef CABINET_MAX_VALID_CAB_SIZE                            ;;0 would work if not for MAKECAB.EXE bug(s)
+    ;--- User hasn't overriden value so define to 2GB less a safety margin ---
+    #define   @@2GB           2000000000                       ;;2GB as per "http://en.wikipedia.org/wiki/Gigabyte"
+    #define   @@SafetyMargin  1 * 1024 * 1024                  ;;Allow 1MB
+    #evaluate ^CABINET_MAX_VALID_CAB_SIZE^ ^<$@@2GB> - (<$@@SafetyMargin>)^
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- More options (only those above can vary per "COMPILE" command) ---------
+;----------------------------------------------------------------------------
+#define? CABINET_MAKECAB_EXE                   MakeCab.exe                    ;;Allow user ability to add path information etc (double quote if it contains spaces!)
+#define? CABINET_MAKECAB_EXE_DOS_WAIT_FOR_EXIT /c                             ;;Change to "/K" to require user to type "exit" (debugging...)
+#define? CABINET_CABDDF_MaxDiskSize            0                              ;;0 = No Limit, needs to be multiple of 512 bytes [0 = good value for caching cab files otherwise msi size changes can invalidate all caches at once]
+#define? CABINET_RESERVED_BYTES_ON_MEDIA1      50000                          ;;On top of that required by MSI (or files specified by "MsiExtraFiles" commands)
+#define? CABINET_CABDDF_ReservePerCabinetSize  8
+#define? CABINET_CABDDF_FolderSizeThreshold    1
+#define? CABINET_CAB_PER_COMPONENT             N                   ;;Doesn't work yet (don't set to "Y"). If you know why let me know!
+#define? CABINET_DELETE_CAB_FILES_IN_LOG_DIR   Y                   ;;Delete these temporary CAB files (Y/N)? May be useful for debugging.
+#define? CABINET_CAB_EXTRA_COMMANDS                                ;;Any extra DDF commands you might wish to add (use "{NL}" for newline)
+#define? CABINET_MAKECAB_VERBOSITY             1                   ;;1 (Low) - 3 (High). Determines how much is displayed/logged during "compile"
+#define? CABINET_SEE_MAKECAB_OUTPUT            1                   ;;1=YES 0=Hide
+#define? CABINET_CAB_RPT_DISPLAY_PREFIX        "    | "
+#define? CABINET_DISKPROMPT_PROPERTY           <$ProdInfo.ProductName> version <$ProductVersion> - [1]      ;;[1] gets replaces with "DiskPrompt" from "Media" table
+#define? CABINET_HOOK_BEFORE_MAY_NOT_HAVE_ANY_FILES                ;;HOOK: Just before checking file count, if no files then next hook never invoked.
+#define? CABINET_HOOK_BEFORE                                       ;;HOOK: We know we need to do something :-)
+#if <$CABINET_CABDDF_MaxDiskSize> = 0 | '<$CABINET_CABDDF_MaxDiskSize>' = <$CABINET_MAX_VALID_CAB_SIZE>
+    ;--- User did not specify media size so no point having external --------
+    #define? CABINET_TYPE   <$CABINET_CAB_IMBEDDED_INTO_MSI>
+#elseif
+    ;--- User specified a media size so default to external cabs! -----------
+    #define? CABINET_TYPE   <$CABINET_CAB_EXTERNAL_WITH_MSI>
+#endif
+
+;----------------------------------------------------------------------------
+;--- Where are the external CABs placed? ("{#}" = disk number) --------------
+;----------------------------------------------------------------------------
+#define? CABINET_MEDIA_DISK2_ONWARDS_DIR.D   .               ;;Same directory as MSI (good for testing - No need to create media)
+#define? CABINET_MEDIA_DISK2_ONWARDS_DIR.P   OtherDisks.MSI\<$CABINET_MEDIA_VolumeLabel_TEMPLATE>
+#define? CABINET_MEDIA_DISK2_ONWARDS_DIR     <$CABINET_MEDIA_DISK2_ONWARDS_DIR.[MMMODE]>
+
+
+;----------------------------------------------------------------------------
+;--- Some other MULTI CAB/DISK templates ("{#}" = disk number) --------------
+;----------------------------------------------------------------------------
+#define? CABINET_MEDIA_DISK_NUMBER_DESC_TEMPLATE  Disk #{#}
+#define? CABINET_MEDIA_VolumeLabel_TEMPLATE       AppDisk #{#}
+
+
+;----------------------------------------------------------------------------
+;--- Compile types ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define CABINET_CAB_IMBEDDED_INTO_MSI  ImbeddedCabs   ;;default method, cans imbedded within the MSI
+#define CABINET_CAB_EXTERNAL_WITH_MSI  ExternalCabs   ;;Cab filename MUST be 8.3 format!
+
+
+;----------------------------------------------------------------------------
+;--- Media Capacities (warning, see: CABINET_MAX_VALID_CAB_SIZE) -----------
+;----------------------------------------------------------------------------
+#define? COMPRESS_CAPACITY_CDROM      (640*1024*1024)    ;;640MB (as bytes)
+#define? COMPRESS_CAPACITY_DVD-R(SL)  4707319808         ;;DVD capacities from: http://en.wikipedia.org/wiki/DVD#DVD_disc_capacity
+#define? COMPRESS_CAPACITY_DVD-R(DL)  8543666176
+#define? COMPRESS_CAPACITY_DVD+R(SL)  4700372992
+#define? COMPRESS_CAPACITY_DVD+R(DL)  8547991552
+;---[Options4Doco]---
+
+
+;---[4Doco-CacheFileStamp]---
+#( '<?NewLine>'
+   #define? CABINET_VBSCRIPT_FUNCTION_CacheFileStamp
+
+   '---------------------------------------
+   'Available objects:
+   '     * oFS
+   '     * oInstaller
+   '
+   ' By default only modification time and file size matter (you could add file version, md5 etc)
+   '---------------------------------------
+   <?NewLine><?NewLine>
+
+   function CacheFileStamp(ByVal FileName)      'Creates a string which should change if the file changes
+        ;--- Want to generate a comment which identifies the file info ---
+        CacheFileStamp = ""
+        dim oFile : set oFile = oFS.GetFile(FileName)
+            CacheFileStamp = <$CABINET_VBSCRIPT_EXRESSION_CacheFileStamp>
+        set oFile = Nothing
+   end function
+   <$CABINET_VBSCRIPT_EXTRA_FUNCTIONS_CacheFileStamp>       ;;User may want to add their own functions and use "CABINET_VBSCRIPT_EXRESSION_CacheFileStamp"
+#)
+#(
+    #define? CABINET_VBSCRIPT_EXRESSION_CacheFileStamp
+
+    ;--- in ".ddf" file this is what is compared for differences (it begins with ";>>>") ---
+    "FileSize:"        & oFile.Size &               ;;File size
+    ", LastModified: " & oFile.DateLastModified     ;;Last modified
+#)
+#define? CABINET_VBSCRIPT_EXTRA_FUNCTIONS_CacheFileStamp
+;---[4Doco-CacheFileStamp]---
+
+
+
+;----------------------------------------------------------------------------
+;--- Cabinet Command --------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define Cabinet
+
+   ;--- Mark location -------------------------------------------------------
+   <$UpdateMmLocation>
+
+   ;--- Validate passed parameters -----------------------------------------
+   {$!KEYWORDS}                              ;;Don't Expect any keywords!
+   {$!:#1,Compression,Type,Level,Memory,ClusterSize,CabinetName,Cache,Default4}
+
+   ;--- Increase nesting level #1/2-------------------------------------------
+   #push "CABINET Macros"
+
+   ;--- Set up the alias ----------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4Cabinet {$?ResetUsed} {$?}>^
+#)
+#define @@MakeSureVbStringSafe {$#1} = ReplaceString({$#1}, '"', '""')  ;;Make sure OK for imbedding in a VBSCRIPT string
+#define @@VBSTRINGIT             "' || ReplaceString({$#1}, "'", "''") || '"
+#DefineRexx 'RxReplaceCabinetCodes'
+    if  {$#1} = ''  then {$#1} = '<$CABINET_ALIAS_DEFAULT>'
+    if  {$#1} = '!' then {$#1} = '<$CABINET_ALIAS_FREQUENTLY_CHANGES>'
+#DefineRexx
+#DefineRexx 'RxCabinetMustPreExist'
+    ;--- Replace any codes --------------------------------------------------
+    <$RxReplaceCabinetCodes {$?}>
+
+    ;--- Now validate -------------------------------------------------------
+    @@Key = '@@CABINET_' || c2x(translate({$#1}));
+    if  symbol(@@Key) <> 'VAR' then
+        error('The cabinet alias of "' || {$#1} || '" is unknown', "Please define it before refering to it on the file or files commands!");
+#DefineRexx
+#DefineRexx '@@Rexx4Cabinet'
+    ;--- Get and check the alias --------------------------------------------
+    {$#1='' $$RxVAR:@@CompressCfgAlias}       ;;Name that represents these options (needs to be file safe as also use in cached dir name)
+            <$RxReplaceCabinetCodes "@@CompressCfgAlias">
+    @@Len = length(@@CompressCfgAlias)
+    @@Max = <$TABLES_FILESOURCE_CabinetAlias_MAX_LENGTH>
+    if  @@Len > @@Max then
+        error('The cabinet alias of "' || @@CompressCfgAlias || '" is ' || @@Len || ' characters long, this is longer than the max of <$TABLES_FILESOURCE_CabinetAlias_MAX_LENGTH> (TABLES_FILESOURCE_CabinetAlias_MAX_LENGTH)');
+    @@KeySafeAlias = @@CompressCfgAlias
+    <$Rexx2FixMsiId IDVAR="@@KeySafeAlias">
+
+   ;--- Increase nesting level #2/2-------------------------------------------
+   {$Default4='' $$RxVAR:@@Default4}
+   if   @@Default4 <> '' then
+   do
+        ;--- Don't want to require a "/Cabinet command ----------------------
+        ;call ProcessPop "'CABINET Macros'"
+        call StackPop   translate("CABINET Macros")
+   end;
+   else
+   do
+       ;--- The "Default4" parameter wasn't used ----------------------------
+       if   '{$IncreaseNesting=^Y^}' <> 'N' then
+       do
+           ;--- Invoked by "Cabinet" macro ----------------------------------
+           RxCabinetNestingLevel = RxCabinetNestingLevel + 1
+           RxCabinetAlias.RxCabinetNestingLevel = @@CompressCfgAlias  ;;Remember (possibly translated from code) cabinet name!
+       end
+   end
+
+    ;--- Handle options -----------------------------------------------------
+    {$Compression=''   $$RxVAR:@@Compression}
+    {$Type=''          $$RxVAR:@@CompressionType}
+    {$Level=''         $$RxVAR:@@CompressionLevel}
+    {$Memory=''        $$RxVAR:@@CompressionMemory}
+    {$ClusterSize=''   $$RxVAR:@@CompressionClusterSize}
+    {$CabinetName=''   $$RxVAR:@@CabinetName}
+    {$Cache=''         $$RxVAR:@@CabinetCache}
+    if  @@Compression            = ''  then @@Compression            = '<$CABINET_CABDDF_Compression>'
+    if  @@CompressionType        = ''  then @@CompressionType        = '<$CABINET_CABDDF_CompressionType>'
+    if  @@CompressionLevel       = ''  then @@CompressionLevel       = '<$CABINET_CABDDF_CompressionLevel>'
+    if  @@CompressionMemory      = ''  then @@CompressionMemory      = '<$CABINET_CABDDF_CompressionMemory>'
+    if  @@CompressionClusterSize = ''  then @@CompressionClusterSize = '<$CABINET_CABDDF_ClusterSize>'
+    if  @@CabinetName            = ''  then @@CabinetName            = '<$CABINET_CAB_FILE_NAME_FORMAT>'
+    if  @@CabinetCache           = ''  then @@CabinetCache           = '<$CABINET_CACHE>'
+    <$@@MakeSureVbStringSafe "@@Compression">
+    <$@@MakeSureVbStringSafe "@@CompressionType">
+    <$@@MakeSureVbStringSafe "@@CompressionLevel">
+    <$@@MakeSureVbStringSafe "@@CompressionMemory">
+    <$@@MakeSureVbStringSafe "@@CompressionClusterSize">
+    <$@@MakeSureVbStringSafe "@@CabinetName">
+    <$@@MakeSureVbStringSafe "@@CabinetCache">
+;**    [CommentBlockStart     (6 April 2018 3:18:34 PM, Dennis)
+;**+----------------------------------------------------------------------
+;**|    if  pos('?', @@CabinetName) = 0 then
+;**|        error('The cabinet filename format must contain "?" to represent the cabinet number', '("' || @@CabinetName || '") is invalid')
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (6 April 2018 3:18:34 PM, Dennis)
+
+    ;--- Create a VBS string list that holds all the options ----------------
+    @@S =          '<$@@VBSTRINGIT "@@Compression">'
+    @@S = @@S || ', <$@@VBSTRINGIT "@@CompressionType">'
+    @@S = @@S || ', <$@@VBSTRINGIT "@@CompressionLevel">'
+    @@S = @@S || ', <$@@VBSTRINGIT "@@CompressionMemory">'
+    @@S = @@S || ', <$@@VBSTRINGIT "@@CompressionClusterSize">'
+    @@S = @@S || ', <$@@VBSTRINGIT "@@CabinetName">'
+    @@S = @@S || ', <$@@VBSTRINGIT "@@CabinetCache">'
+    @@S = @@S || ', <$@@VBSTRINGIT "@@KeySafeAlias">'
+
+    ;--- Validate info if alias seen before otherwise save string away ------
+    @@Key = '@@CABINET_' || c2x(translate(@@CompressCfgAlias));
+    if  symbol(@@Key) = 'VAR' then
+    do
+        ;--- Seen before, make sure options are the same! -------------------
+        @@Prev = value(@@Key);
+        if @@S <> @@Prev then
+        do
+           if {$?PARMS} > 1 then       ;;If any parameters (except #1) were passed show error, otherwise allow for now
+              error('The cabinet alias of "' || @@CompressCfgAlias || '" has been used before', "That's OK but the options must remain the same!");
+        end
+    end
+    else
+    do
+        ;--- First time this alias has been used ----------------------------
+        call value @@Key, @@S           ;;Save the options string
+
+        ;--- Add to vbscript ------------------------------------------------
+;**    [CommentBlockStart     (6 April 2018 3:50:42 PM, Dennis)
+;**+----------------------------------------------------------------------
+;**|        @@Vbs = '@@CompileMsi "' || @@CompressCfgAlias || '", array( ' || @@S || ' )' || '0D0A'x
+;**|        RxCabinetVbscript2Compile = RxCabinetVbscript2Compile || '0D0A'x || @@Vbs
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (6 April 2018 3:50:42 PM, Dennis)
+
+        @@Vbs = '@@CompileMsi "' || @@CompressCfgAlias || '", array( ' || @@S || ' )<' || '?NewLine>'
+        if RxCabinetVbscript2Compile = '' then
+           RxCabinetVbscript2Compile = '<' || '?NewLine>'
+        RxCabinetVbscript2Compile = RxCabinetVbscript2Compile || @@Vbs
+    end;
+
+    ;--- Define this as the default for some extensions? --------------------
+    do  while @@Default4 <> ""
+        ;--- Get next extension ---------------------------------------------
+        parse var @@Default4 @@Default4One '|' @@Default4;
+
+        ;--- Map the extension to the Default cabinet name ------------------
+        if  left(@@Default4One, 1) = "." then @@Default4One = substr(@@Default4One, 2)    ;;Remove the leading "."
+        call MacroSet "_CABINET_DEFAULT_FOR_EXTN_" || @@Default4One, @@CompressCfgAlias, "Y";
+    end;
+#DefineRexx
+#DefineRexx ''
+    ;--- Initialze global rexx variables for the Cabinet command ------------
+    RxCabinetVbscript2Compile = ''
+    RxCabinetNestingLevel     = 0
+    <$@@Rexx4Cabinet '<$CABINET_ALIAS_DEFAULT>' IncreaseNesting="N">  ;;Save options for the default
+               RxCabinetAlias.0 = '<$CABINET_ALIAS_DEFAULT>'   ;;.0 = DEFAULT ALIAS NAME (the "Cabinet" command is optional (not within a cabinet block
+    ;<$@@Rexx4Cabinet '<$CABINET_ALIAS_FREQUENTLY_CHANGES>' Cache="N" IncreaseNesting="N">
+    <$@@Rexx4Cabinet '<$CABINET_ALIAS_FREQUENTLY_CHANGES>' IncreaseNesting="N">
+#DefineRexx
+
+
+
+;**    [CommentBlockStart     (12 November 2017 12:08:43 PM, Dennis)
+;**+----------------------------------------------------------------------
+;**|#define? CABINET_CABDDF_Compress               ON                  ;;ON/OFF - Want to compress files?
+;**|#define? CABINET_CABDDF_CompressionType        <$COMPRESS_MEDIUM>
+;**|#define? CABINET_CABDDF_CompressionLevel       7                   ;;Valid 1-7
+;**|#define? CABINET_CABDDF_CompressionMemory      21                  ;;Valid 10-21
+;**|#define? CABINET_CABDDF_ClusterSize            4096                ;;Safe for CD-ROM, floppies (512) etc
+;**|#define? CABINET_CAB_FILE_NAME_FORMAT                 MM*                 ;;Name of generated 8.3 formatted CAB filename (without extension). MM01.cab, MM01_2.cab etc.
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (12 November 2017 12:08:43 PM, Dennis)
+
+
+;----------------------------------------------------------------------------
+;--- /Cabinet Command -------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define /Cabinet
+
+   ;--- Mark location -------------------------------------------------------
+   <$UpdateMmLocation>
+
+
+   ;--- Validate nesting ----------------------------------------------------
+   #if [RxCabinetNestingLevel <= 0]
+       #error "You are not currently within a cabinet!"
+   #endif
+   #if ['{$#1=^^}' <> '']
+       ;--- User wishes to match start/end cabinet names for safety ---------
+       #if ['{$#1}' <> RxCabinetAlias.RxCabinetNestingLevel]
+           #error ^You are currently processing cabinet "<??RxCabinetAlias.RxCabinetNestingLevel>"{NL}You can't close cabinet "{$#1}"!^
+       #endif
+   #endif
+   #RexxVar RxCabinetNestingLevel - 1
+   #pop "CABINET Macros"
+#)
+
+
+
+
+
+;--- VBS constants/Variables ------------------------------------------------
+#( '<?NewLine>'
+   #define CompileVbsVariables
+   const msiUILevelNone             = 2
+   const msiRunModeSourceShortNames = 9
+   dim   CabinetSummary
+#)
+
+
+#(  '<?NewLine>'
+    #define Vbs4CompileAtEndOfPass
+
+   <?NewLine><?NewLine>
+   '--- Vbs4CompileAtEndOfPass #{$#1} START ---
+       @@SAY "Starting Compile for Pass {$#1}"
+           CabinetSummary = ""
+           <??RxCabinetVbscript2Compile><?RestartLine>
+                    #RexxVar RxCabinetVbscript2Compile = ''
+           <$TableDelete "<$MAKEMSI_TABLENAME_FILESOURCE>">
+
+          ;--- No need to die if this logging step fails --------------------
+          on error resume next
+              CreateDir("<$MAKEMSI_CABINET_CACHE_DIR>")
+              dim oSummary{$#1}  : set oSummary{$#1} = oFS.CreateTextFile("<$MAKEMSI_CABINET_CACHE_DIR>\[CABINET SUMMARY, pass {$#1}].txt", true)
+              oSummary{$#1}.write CabinetSummary
+              oSummary{$#1}.close()
+          on error goto 0
+
+
+       @@SAY "Finished Compile for Pass {$#1}"
+
+       ;--- Finished changes (remove "changes in progress" marker) --------------
+       #if  [<$MSI_COMPLETE_AT_END_OF_PASS> = {$#1}]
+            ;--- We are in the last pass to be executed and have finished all updates ---
+            <$/##MsiMarkChangesInProgress>
+       #endif
+
+
+
+   '--- Vbs4CompileAtEndOfPass #{$#1} END ---
+   <?NewLine><?NewLine>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- OK lets try a simple "compile" -----------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define CompileMsiFunctions_VARIABLES
+   ;;Will remove when "compile.mmh" is no more
+#)
+#( '<?NewLine>'
+   #define CompileMsiFunctions
+
+
+   ;--- Create "@@CabKey" ---------------------------------------------------
+   ;#evaluate ^^ ^<$@@Rexx2GetValidCabKey>^
+
+   <?NewLine>
+   '=========================================================================
+;      sub @@CompileMsi(ByVal Reason, ByVal CacheAlias, ByVal RxMmLocation, ByVal RxMmLocationFSN)
+       sub @@CompileMsi(CacheAlias, CompileOptions)
+   '=========================================================================
+       ;--- Have problems with "DiskPrompt" otherwise (if .MM changes to "NEW") ---
+       #define+ DEFAULT_ROW_VALIDATE_NO_WHERE FIELD
+
+       ;--- split up "CompileOptions" ---------------------------------------
+       dim OptionCompression            : OptionCompression            = CompileOptions(0)
+       dim OptionCompressionType        : OptionCompressionType        = CompileOptions(1)
+       dim OptionCompressionLevel       : OptionCompressionLevel       = CompileOptions(2)
+       dim OptionCompressionMemory      : OptionCompressionMemory      = CompileOptions(3)
+       dim OptionCompressionClusterSize : OptionCompressionClusterSize = cint(CompileOptions(4))
+       dim OptionCabinetName            : OptionCabinetName            = CompileOptions(5)
+       dim OptionCabinetCache           : OptionCabinetCache           = CompileOptions(6)
+       dim OptionKeySafeAlias           : OptionKeySafeAlias           = CompileOptions(7)
+
+       ;--- Any files to compile --------------------------------------------
+       <$CABINET_HOOK_BEFORE_MAY_NOT_HAVE_ANY_FILES>
+       dim NumFiles2Compile : NumFiles2Compile = NumberOfFilesNeedingCompile(CacheAlias)
+       if   NumFiles2Compile = 0 then
+            @@Say "No files to compile for """ & CacheAlias & """"
+            exit sub
+       end if
+       <$CABINET_HOOK_BEFORE>
+
+       ;--- Init ------------------------------------------------------------
+       dim CompileStart : CompileStart = timer()
+       dim Cmt : Cmt = "STARTING COMPILE"
+       Cmt = Cmt & "  ("
+           if   OptionCabinetCache = "N" then
+                Cmt = Cmt & "no cache for this compile"
+           else
+                Cmt = Cmt & "cache: """ & CacheAlias & """"
+                #if  ['<$MAKEMSI_CABINET_CACHE_DIR>' = '']
+                     ;--- Caching is disabled -----------------------------------
+                     Cmt       = Cmt & " is DISABLED"
+                     CacheAlias = ""
+                #endif
+           end if
+       Cmt = Cmt & ")"
+       @@Say ""
+       @@Say GetAmPmTime() & ": " & Cmt
+       dim CacheDir
+       if   OptionCabinetCache = "N" then
+            CacheDir = ""               ;;Value never used, still...
+       else
+           CacheDir = "<$MAKEMSI_CABINET_CACHE_DIR>"
+           if  right(CacheDir, 1) <> "\" then CacheDir = CacheDir & "\"
+           CacheDir = CacheDir & CacheAlias & "\"
+       end if
+       dim NextDiskId    : NextDiskId    = GetNextDiskId()
+       dim NextFileSeq   : NextFileSeq   = GetNextFileSequence()                           'Next file sequence number
+       dim CompileNumber : CompileNumber = GetCompileNumber()                              'As Text "01" etc
+       CompileNumber = 99 'DB$ 2018-04-06
+       dim CompileLogDir : CompileLogDir = "<$MAKEMSI_CABINET_DIR>\#" & CompileNumber & ", " & CacheAlias      'Dir shortname must be "#xx, {Whatever}", that is the cab # between a hash and a comma
+                           CompileLogDir = "<$MAKEMSI_CABINET_DIR>\" & CacheAlias 'DB$ 2018-04-06
+       CreateDir(CompileLogDir)
+;**    [CommentBlockStart     (6 April 2018 3:20:30 PM, Dennis)
+;**+----------------------------------------------------------------------
+;**|       @@Say "Compile #" & CompileNumber & " for " & NumFiles2Compile & " file(s) with sequence numbers " & NextFileSeq & " to " & (NextFileSeq+NumFiles2Compile-1)
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (6 April 2018 3:20:30 PM, Dennis)
+       @@Say "Processing sequence numbers " & NextFileSeq & " to " & (NextFileSeq+NumFiles2Compile-1) & " - " & NumFiles2Compile & " file(s)"
+       on error resume next         'Why here??????????????????????
+       <?NewLine>
+
+       ;--- Do we wish to see the "Installing" panel? -----------------------
+       oInstaller.UILevel = msiUILevelNone
+       <?NewLine>
+
+       ;--- Set DISKPROMPT property (unless disabled) -----------------------
+       #if  ['<$CABINET_DISKPROMPT_PROPERTY>' <> '']
+            ;--- User wants or is allowing this property to be created ------
+            #ifndef MAKEMSI_CREATING_MERGE_MODULE
+                    ;--- Doesn't make sense for merge module ----------------
+                    <$Property "DiskPrompt" Value="<$CABINET_DISKPROMPT_PROPERTY>">
+            #endif
+       #endif
+
+       ;--- Work through file table adjusting sequence number etc -----------
+       @@Say "@Opening the ""<$MAKEMSI_TABLENAME_FILESOURCE>"" (uncompiled) table"
+       dim SqlQueryFiles2Compile : SqlQueryFiles2Compile = "SELECT File,FileName,Directory_,Sequence,File.Attributes,SourceFile, FileSize, Component, Date,Time FROM File,Component,<$MAKEMSI_TABLENAME_FILESOURCE> WHERE CabinetAlias = '" & CacheAlias & "' and Component_=Component and File=File_ ORDER BY `Component`, `Directory_`"
+       SqlOpenExec SqlQueryFiles2Compile
+       <?NewLine>
+
+       ;--- Work out how much space we need to reserve for disk #1 ----------
+       @@Say "@Work out media space and requirements"
+       dim MaxDiskSize, AvailableBytes, ReservedBytes, MsiFileSize
+
+;--- Removed rexx code, can't see issue for now... --------------------------
+MaxDiskSize = <$CABINET_CABDDF_MaxDiskSize>
+MaxDiskSize = (MaxDiskSize \ OptionCompressionClusterSize ) * OptionCompressionClusterSize    ;;Round down to multiple of cluster size
+;**    [CommentBlockStart     (13 November 2017 6:04:16 PM, Dennis)
+;**+----------------------------------------------------------------------
+;**|       #( ''
+;**|          #DefineRexx ''
+;**|
+;**|            ;--- Work around to vbscript "cdbl()" and "\" operator issues ---
+;**|            @@MaxDiskSize = <$CABINET_CABDDF_MaxDiskSize>;
+;**|            @@MaxDiskSize = (@@MaxDiskSize % OptionCompressionClusterSize ) * OptionCompressionClusterSize;   ;;Round down to multiple of cluster size
+;**|            @@BiggestLng  = 2147483647;
+;**|            if  @@MaxDiskSize <= @@BiggestLng then;
+;**|                @@MaxDiskSize = 'clng(' || @@MaxDiskSize || ')';
+;**|            else;
+;**|                @@MaxDiskSize = 'cdbl(' || @@MaxDiskSize || ')';
+;**|          #DefineRexx
+;**|       #)
+;**|       MaxDiskSize = <??@@MaxDiskSize>
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (13 November 2017 6:04:16 PM, Dennis)
+
+
+       VbsCheck "Working out media details"
+       if  MaxDiskSize = 0 then
+           @@say "@Media size not specified (no limit to size of generated cab files)"
+           AvailableBytes = 0
+       else
+           ;--- We have a specified media size ------------------------------
+           say ""
+           say "Media size is " & AddComma2Long(MaxDiskSize) & " bytes."
+           set oFile = oFS.GetFile("<$MSI_MSINAME>")
+           VbsCheck "Could not get the size for ""<$MSI_MSINAME>"""
+           MsiFileSize    = oFile.size
+           ReservedBytes  = MsiFileSize + <??RxMsiExtraFilesTotalBytes> + <$CABINET_RESERVED_BYTES_ON_MEDIA1>
+           AvailableBytes = MaxDiskSize - ReservedBytes
+          'AvailableBytes = (AvailableBytes \ OptionCompressionClusterSize ) * OptionCompressionClusterSize         ;;Round down to multiple of cluster size
+           AvailableBytes = int(AvailableBytes / OptionCompressionClusterSize ) * OptionCompressionClusterSize         ;;Round down to multiple of cluster size
+           dim ReservedBytesCma : ReservedBytesCma = AddComma2Long(ReservedBytes)
+           dim PadLng           : PadLng           = len(ReservedBytesCma) + 1
+           say "Reserving " & ReservedBytesCma & " bytes on media #1 (" & AddComma2Long(AvailableBytes) & " bytes available):"
+           say "  = MSI      : " & Pad(AddComma2Long(MsiFileSize), PadLng, " ")
+           if   <??RxMsiExtraFilesTotalBytes> <> 0 then
+                say "  + Extra    : " & Pad(AddComma2Long("<??RxMsiExtraFilesTotalBytes>"), PadLng, " ") & " (via ""MsiExtraFiles"" commands)"
+           end if
+           say "  + Reserved : " & Pad(AddComma2Long(<$CABINET_RESERVED_BYTES_ON_MEDIA1>), PadLng, " ") & " (see ""CABINET_RESERVED_BYTES_ON_MEDIA1"")"
+           say ""
+           if   AvailableBytes < 10000 then     ;;Picked a smallish value
+                error "Too little space is available (" & AddComma2Long(AvailableBytes) & " bytes) on media 1!"
+           end if
+       end if
+       VbsCheck "Failed working out media info"
+
+       ;--- What is the aabinet file name? ---------------------------------
+       @@Say "@Working out the cabinet related filenames"
+       dim CabBase, CabFile
+      ;CabBase   = CompileLogDir & replace("\" & OptionCabinetName, "*", CompileNumber)
+      ;CabBase   = CompileLogDir & "\" & OptionCabinetName & CompileNumber
+       dim CabSN : CabSN = replace(OptionCabinetName, "*", OptionKeySafeAlias)
+                   CabSN = replace(CabSN,             "?", CompileNumber)
+                   CabSN = replace(CabSN,            "__", "_")
+                   if right(CabSN, 1) = "_" then CabSN = left(CabSN, len(CabSN)-1)
+       CabBase   = CompileLogDir & "\" & CabSN
+       CabFile   = CabBase       & ".cab"
+
+       ;--- Create the start of the MAKEMSI DDF file ------------------------
+       dim oFileRec, FileKey, DirKey, MmSrcFile, MmSrcFileName4DiffRpt, FileDate, FileTime
+       dim SrcBase, RptFile, InfFile, CmdFile, CabDdf, CabOutput
+       SrcBase   = CompileLogDir & "\{MAKECAB}."
+       CabDdf    = SrcBase & "INPUT." & CacheAlias & ".ddf"                         ;;"MAKECAB.EXE" Input file
+       InfFile   = SrcBase & "INPUT." & CacheAlias & ".inf"                         ;;"MAKECAB.EXE" Generated file
+       RptFile   = SrcBase & "OUTPUT.REPORT.rpt"
+       CabOutput = SrcBase & "OUTPUT.CONSOLE.txt"
+       CmdFile   = SrcBase & "EXECUTE.FOR.DEBUGGING.<$BatchExtn>"                    ;;Create ".cmd", only used for debugging/testing
+
+       ;---------------------------------------------------------------------------
+       VbsCheck "About to create the DDF file"
+       Dim CabStream : Set CabStream = oFS.CreateTextFile(CabDdf, true)
+       VbsCheck "Could not create the DDF file """ & CabDdf & """"
+       CabStream.WriteLine ";" & String(70, "=")                        ;;=========================================
+       CabStream.WriteLine "; Generated at    : " &  Now()
+       dim CacheCmt
+       if   OptionCabinetCache = "N" then
+            CacheCmt = "No caching for this compile"
+       else
+            CacheCmt = CacheDir
+       end if
+       CabStream.WriteLine "; Cache Alias     : " & CacheAlias
+       CabStream.WriteLine "; Cache Options   : " & join(CompileOptions, ",")
+       CabStream.WriteLine "; Caching to      : " & CacheCmt
+       SqlQueryFiles2Compile = replace(SqlQueryFiles2Compile, " WHERE ", vbCRLF & ";                 :        WHERE ") 'LONG? line causes: out\GamsToolBox.mm\Log\MakeCab\#01, [DEFAULT]\GamsToolBox.ddf(4): ERROR: {nothing}
+       CabStream.WriteLine "; SQL QUERY       : " & SqlQueryFiles2Compile
+       CabStream.WriteLine ";" & String(70, "=")                        ;;=========================================
+       CabStream.WriteLine ""
+       CabStream.WriteLine ".Option explicit"
+       CabStream.WriteLine ".Set MaxErrors=1"
+;CabStream.WriteLine ".set GenerateInf=OFF"
+       @@Say "@Adding Option explicit... to the DDF file"
+
+       CabStream.WriteLine ".Set UniqueFiles=ON"
+       CabStream.WriteLine ".Set MaxDiskSize="  & MaxDiskSize
+       if AvailableBytes <> 0 then
+            ;--- We have a specified media size -----------------------------
+           CabStream.WriteLine ".Set MaxDiskSize1=" & AvailableBytes
+       end if
+       CabStream.WriteLine ".Set InfHeader="
+       CabStream.WriteLine ".Set InfFooter="
+       CabStream.WriteLine ".Set DiskDirectoryTemplate=."
+       CabStream.WriteLine ".Set Cabinet=ON"
+       CabStream.WriteLine vbCRLF
+       @@Say "@Adding options that can vary per MAKEMSI ""Compile"" command to the DDF file"
+       CabStream.WriteLine ";---The following are for options that can vary per MAKEMSI ""Compile"" command ----"
+       CabStream.WriteLine ".Set Compress="          & OptionCompression
+       CabStream.WriteLine ".Set CompressionType="   & OptionCompressionType
+       CabStream.WriteLine ".Set CompressionLevel="  & OptionCompressionLevel
+       CabStream.WriteLine ".Set CompressionMemory=" & OptionCompressionMemory
+       CabStream.WriteLine ".Set ClusterSize="       & OptionCompressionClusterSize
+       CabStream.WriteLine vbCRLF
+       CabStream.WriteLine ReplaceCurliesText("<$CABINET_CAB_EXTRA_COMMANDS>")
+
+       ;--- Optimization settings (not directly compression related) --------
+       @@Say "@Adding Optimization settings to the DDF file"
+       CabStream.WriteLine vbCRLF
+       CabStream.WriteLine ".Set ReservePerCabinetSize=<$CABINET_CABDDF_ReservePerCabinetSize>"
+       CabStream.WriteLine ".Set   FolderSizeThreshold=<$CABINET_CABDDF_FolderSizeThreshold>"
+
+       ;--- File names ------------------------------------------------------
+       @@Say "@Adding file names to the DDF file"
+       CabStream.WriteLine vbCRLF
+       CabStream.WriteLine ".Set         RptFileName=" & RptFile
+       CabStream.WriteLine ".Set         InfFileName=" & InfFile
+       CabStream.WriteLine ".Set        CabinetName1=" & CabFile
+       CabStream.WriteLine ".Set CabinetNameTemplate=" & CabBase & "_*.CAB"
+
+       ;--- Disk header and format ------------------------------------------
+       @@Say "@Adding disk list to the DDF file"
+       CabStream.WriteLine vbCRLF
+       CabStream.WriteLine ".Set InfDiskHeader="
+       CabStream.WriteLine ".Set InfDiskHeader1="";=================================="""
+       CabStream.WriteLine ".Set InfDiskHeader2="";===          DISK List         ==="""
+       CabStream.WriteLine ".Set InfDiskHeader3="";=== <disk number>,<disk label> ==="""
+       CabStream.WriteLine ".Set InfDiskHeader4="";=================================="""
+       CabStream.WriteLine ".Set InfDiskHeader5=[disk list]"
+       CabStream.WriteLine ".Set InfDiskLineFormat=*disk#*,*label*"
+
+
+       ;--- Cabinet List ---------------------------------------------------------
+       @@Say "@Adding cabinet list to the DDF file"
+       CabStream.WriteLine vbCRLF
+       CabStream.WriteLine ".Set InfCabinetHeader="
+       CabStream.WriteLine ".Set InfCabinetHeader1="";==========================================================="""
+       CabStream.WriteLine ".Set InfCabinetHeader2="";===                   CABINET List                      ==="""
+       CabStream.WriteLine ".Set InfCabinetHeader3="";=== <cabinet number>,<disk number>,<cabinet file name>  ==="""
+       CabStream.WriteLine ".Set InfCabinetHeader4="";==========================================================="""
+       CabStream.WriteLine ".Set InfCabinetHeader5=[cabinet list]"
+       CabStream.WriteLine ".Set InfCabinetLineFormat=*cab#*,*disk#*,*cabfile*"
+
+       ;--- File list header and format -------------------------------------
+       @@Say "@Adding file list to the DDF file"
+       CabStream.WriteLine vbCRLF
+       CabStream.WriteLine ".Set InfFileHeader="
+       CabStream.WriteLine ".Set InfFileHeader1="";==============================================================="""
+       CabStream.WriteLine ".Set InfFileHeader2="";===                        File List                        ==="""
+       CabStream.WriteLine ".Set InfFileHeader3="";=== <disk number>,<cabinet number>,<file key>,<file number> ==="""
+       CabStream.WriteLine ".Set InfFileHeader4="";==============================================================="""
+       CabStream.WriteLine ".Set InfFileHeader5=[file list]"
+       CabStream.WriteLine ".Set InfFileLineFormat=*disk#*,*cab#*,*file*,*file#*"
+
+
+       ;--- GAP (check I/O) -------------------------------------------------
+       CabStream.WriteLine vbCRLF
+       CabStream.WriteLine vbCRLF
+       VbsCheck "Error writing to the DDF file """ & CabDdf & """"
+       <?NewLine>
+       <?NewLine>
+
+       ;--- Get the current directory ---------------------------------------
+       @@Say "@Getting the current directory"
+       dim oFile, CurrentDir83, CurrentDir83Len
+       set oFile       = oFS.GetFolder(".")
+       @@Say "@Current directory (long) = """ & oFile.Path      & """"
+       @@Say "@Current directory (8.3)  = """ & oFile.ShortPath & """"
+       CurrentDir83    = ucase(oFile.ShortPath)
+       if   right(CurrentDir83, 1) <> "\" then
+            CurrentDir83 = CurrentDir83 & "\"
+       end if
+       @@Say "@Current directory = """ & CurrentDir83 & """"
+       CurrentDir83Len = len(CurrentDir83)
+       set oFile = Nothing
+       VbsCheck "Error getting the current directory"
+
+       ;--- Work through each file (group by component) ---------------------
+       @@Say "@Work through the ""<$MAKEMSI_TABLENAME_FILESOURCE>"" table"
+       dim InfSeqOffset        : InfSeqOffset      = NextFileSeq - 1  ;;Generated .INF numbers always start from 1 (file sequence numbers don't neccessarily).
+       dim NewSequenceNumber   : NewSequenceNumber = InfSeqOffset     ;;First file is this number + 1
+       dim LastComponent       : LastComponent     = ""
+       dim UniqueCompCnt       : UniqueCompCnt     = 0
+       dim FileComp
+       do
+           ;--- Fetch the next file record ----------------------------------
+           set oFileRec = SqlViewFetch()
+           if  oFileRec is Nothing then exit do
+
+           ;--- Get details -------------------------------------------------
+           FileKey   = oFileRec.StringData(1)
+           DirKey    = oFileRec.StringData(3)
+           MmSrcFile = oFileRec.StringData(6)
+           FileComp  = oFileRec.StringData(8)
+           FileDate  = oFileRec.StringData(9)
+           FileTime  = oFileRec.StringData(10)
+           <?NewLine><?NewLine>
+           if   CurrentDir83 <> ucase(left(MmSrcFile, CurrentDir83Len)) then
+                MmSrcFileName4DiffRpt = MmSrcFile
+           else
+                ;--- Directory is off THE current directory -------------
+                MmSrcFileName4DiffRpt = mid(MmSrcFile, CurrentDir83Len+1)
+                if instr(MmSrcFileName4DiffRpt, "\") = 0 then
+                   MmSrcFileName4DiffRpt = ".\" & MmSrcFileName4DiffRpt
+                end if
+           end if
+           <?NewLine><?NewLine>
+           dim BarPos, FilesName, MsiSrcFile
+           FilesName = oFileRec.StringData(2)
+           BarPos = InStr(FilesName, "|")
+           If  BarPos <> 0 then
+               FilesName = mid(FilesName, BarPos+1)
+           End If
+;**      CommentBlock  /* (Monday 11/08/2003, 15:22:00, by Dennis Bareis) */
+;**+--------------------------------------------------------------------------
+;**|           MsiSrcFile = oSession.SourcePath(DirKey)
+;**|           VbsCheck "Could not get the source path: '" & DirKey & "'"
+;**|           MsiSrcFile = MsiSrcFile & FilesName
+;**+--------------------------------------------------------------------------
+;**                    /* (Monday 11/08/2003, 15:22:00, by Dennis Bareis) */
+           <?NewLine>
+
+;**    [CommentBlockStart     (19 July 2006 17:34:13, Dennis)
+;**+----------------------------------------------------------------------
+;**|           ;--- The html doco's file size is incorrect ------------------
+;**|           if  FileKey ="<$FILE_HTMLRPT_ROWKEY>" then
+;**|;**      CommentBlock  /* (Monday 11/08/2003, 15:22:08, by Dennis Bareis) */
+;**|;**+--------------------------------------------------------------------------
+;**|;**|               oFileRec.IntegerData(7) = oInstaller.FileSize(MsiSrcFile)
+;**|;**+--------------------------------------------------------------------------
+;**|;**                    /* (Monday 11/08/2003, 15:22:08, by Dennis Bareis) */
+;**|               oFileRec.IntegerData(7) = oInstaller.FileSize(MmSrcFile)
+;**|               VbsCheck "Could not get the doco file size for """ & MmSrcFile & """"
+;**|           end if
+;**|
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (19 July 2006 17:34:13, Dennis)
+           ;--- MAKECAB workaround (line length bug/feature) ----------------
+           #ifndef CABINET_DONT_SHORTEN_FILENAME_TO_WORKAROUND_MAKECAB_BUGS
+               ;--- An 8.3 name will always be shorter! ---------------------
+               set oFile = oFS.GetFile(MmSrcFile)
+               VbsCheck "Getting file object for '" & MmSrcFile & "'"
+               MmSrcFile = oFile.ShortPath
+               set oFile = Nothing
+
+               ;--- A relative name (to current dir) will be shorter --------
+               if   CurrentDir83 = ucase(left(MmSrcFile, CurrentDir83Len)) then
+                    ;--- Directory is off THE current directory -------------
+                    MmSrcFile = mid(MmSrcFile, CurrentDir83Len+1)   ;;Remove the directory bit (ends with "\")
+               end if
+           #endif
+
+           ;--- Update sequence number --------------------------------------
+           NewSequenceNumber = NewSequenceNumber + 1
+           oFileRec.IntegerData(4) = NewSequenceNumber
+           oView.Modify msiViewModifyUpdate, oFileRec
+           VbsCheck "Failed updating the sequence number for '" & FileKey & "'"
+           <?NewLine>
+
+           ;--- Need to start a new CAB file? -------------------------------
+           if   LastComponent <> FileComp then
+                UniqueCompCnt = UniqueCompCnt + 1
+                CabStream.WriteLine ""
+                CabStream.WriteLine ""
+                CabStream.WriteLine ";---"
+                CabStream.WriteLine ";--- Component #" & UniqueCompCnt & " """ & FileComp & """ (starts with SEQ #" & NewSequenceNumber & ") ---"
+                CabStream.WriteLine ";---"
+                #if ['<$CABINET_CAB_PER_COMPONENT>' = 'Y']
+                    ;--- We want a new cab for every new component ----------
+                    if  LastComponent <> "" then
+                        ;--- Start a new CAB --------------------------------
+                        ;CabStream.WriteLine ".new disk"
+                        ;CabStream.WriteLine ".New Folder"          ;;Stops cabinet creation...
+                        CabStream.WriteLine ".New Cabinet"
+                    end if
+                #endif
+           end if
+           LastComponent = FileComp
+
+           ;--- Add this file to the cab file -------------------------------
+           dim DdfFileCmt : DdfFileCmt = ""
+           if   CacheAlias <> "" then
+                ;--- Want to generate a comment which identifies the file info ---
+                err.clear()
+                DdfFileCmt = CacheFileStamp(MmSrcFile)
+                if  DdfFileCmt = "" or err.number <> 0 then
+                    ;--- Need "random" text to ensure cache not used! -------
+                    DdfFileCmt = "CacheFileStamp() failed at " & now() & ErrDetails()
+                    err.clear()
+                end if
+                #define @@FILE_DETAILS_PREFIX   ;>>>
+                DdfFileCmt = "<$@@FILE_DETAILS_PREFIX> " & DdfFileCmt & " <<<"
+                CabStream.WriteLine "<$@@FILE_DETAILS_PREFIX> FILE: " & MmSrcFileName4DiffRpt   ;;Need this line fo "fc.exe" output doesn't confuse people....
+                CabStream.WriteLine DdfFileCmt
+                DdfFileCmt = vbCRLF
+           end if
+           dim DdfFileLine : DdfFileLine = """" & MmSrcFile & """" & " " & FileKey
+           if   FileDate <> "" then DdfFileLine = DdfFileLine & " /DATE=" & FileDate
+           if   FileTime <> "" then DdfFileLine = DdfFileLine & " /TIME=" & FileTime
+           CabStream.WriteLine DdfFileLine & DdfFileCmt
+           if   CacheAlias <> "" then
+                CabStream.WriteLine "<$@@FILE_DETAILS_PREFIX>"                                  ;;Need this line fo "fc.exe" output doesn't confuse people....
+           end if
+       loop
+       CabStream.close()
+       SqlViewClose()
+       <?NewLine>
+
+       ;--- Delete any previous redirected "MAKECAB.EXE" output -------------
+       DeleteFile(CabOutput)
+       DeleteFile(RptFile)
+       DeleteFile(InfFile)
+       <?NewLine>
+       <?NewLine>
+
+       ;--- If there were no files then exit! -------------------------------
+       if   NewSequenceNumber = 0 then
+            @@Say "There are no files in the MSI..."
+       else
+           ;--- OK we are about to make the cab (do we have a cached version) ---
+           dim ReadFromCache : ReadFromCache = false
+           dim CacheDiffers  : CacheDiffers  = false             ;;True if caching is on *AND* cache found to differ
+           dim CacheMsg      : CacheMsg = "?"
+           if   OptionCabinetCache = "N" then
+                CacheMsg = "CACHING NOT REQUESTED"
+           else
+                ;--- We want to use the cache if we have a copy stored ------
+                @@Say "@Checking cache at """ & CacheDir & """"
+                dim CachedCabFile    : CachedCabFile    = CacheDir & oFS.GetFileName(CabFile)
+                dim CachedCabDdf     : CachedCabDdf     = CacheDir & oFS.GetFileName(CabDdf)
+                dim CachedRptFile    : CachedRptFile    = CacheDir & oFS.GetFileName(RptFile)
+                dim CachedInfFile    : CachedInfFile    = CacheDir & oFS.GetFileName(InfFile)
+                dim CachedCmdFile    : CachedCmdFile    = CacheDir & oFS.GetFileName(CmdFile)
+
+                ;--- Some difference diagnostic reporting files -------------
+                dim CachedPrevDiffCabDdf  : CachedPrevDiffCabDdf  = CacheDir &   "[DDF, previous, had differences].ddf"
+                dim CacheComparedTextOLD  : CacheComparedTextOLD  = CacheDir &   "[DDF, compared text, previous].txt"
+                dim CacheComparedTextNEW  : CacheComparedTextNEW  = CacheDir &   "[DDF, compared text, new].txt"
+                dim CacheComparedTextDIFF : CacheComparedTextDIFF = CacheDir &   "[DDF, DIFFERENCES REPORT].txt"    ;;This is not used in actual detection of differences, just used after the fact for diagnostics
+                dim CacheLastUsedAt       : CacheLastUsedAt       = CacheDir &   "[Existing Cache Last Used at file's timestamp].txt"
+
+                ;--- Check cache --------------------------------------------
+                dim HaveAll : HaveAll = oFs.FileExists(CachedCabFile) and oFs.FileExists(CachedCabDdf) and oFs.FileExists(CachedRptFile) and oFs.FileExists(CachedInfFile) and oFs.FileExists(CachedCmdFile)
+                if  not HaveAll then
+                    ;--- Something wrong ------------------------------------
+                    if  oFs.FolderExists(CacheDir) then
+                        @@say "Cache is corrupt (cache folder exists)"
+                        CacheMsg = "EXISTING CACHE CORRUPT"
+                    else
+                        @@say "Cache doesn't exist"
+                        CacheMsg = "NO EXISTING CACHE"
+                    end if
+                else
+                    ;--- The cache exists, see if we can use it -------------
+                    @@say "Cache exists.  Any file/option differences since last build?"
+                    dim DdfTxtNew : DdfTxtNew = @@GetDdfFileContentsForCacheCompare(CabDdf)
+                    dim DdfTxtOld : DdfTxtOld = @@GetDdfFileContentsForCacheCompare(CachedCabDdf)
+                    if  DdfTxtNew = "" or DdfTxtOld = "" then
+                        @@Say "Oops, not sure so won't use cache..."
+                        CacheMsg = "NOT SURE ABOUT CACHE STATE"
+                    else
+                        if  DdfTxtNew <> DdfTxtOld then
+                            @@Say "Differences found, can't use the cache..."
+                            CacheDiffers = true
+                            CacheMsg     = "NEW FILES FOUND, RECOMPILED AND CACHED"
+                        else
+                            @@Say "No differences found so we can still use the cache..."
+                            CacheMsg = "NO NEW FILES, USED EXISTING CACHE"
+                            ReadFromCache = true
+                        end if
+                    end if
+
+                    ;--- Read from cache if thats needed --------------------
+                    if  ReadFromCache then
+                        @@say "Copying cached files now..."
+                        ReadFromCache = false           'Play it safe
+                        DeleteFile(CabFile)
+                        DeleteFile(CabDdf)
+                        DeleteFile(RptFile)
+                        DeleteFile(InfFile)
+                        DeleteFile(CmdFile)
+                        oFS.CopyFile CachedCabFile, CabFile, false
+                        oFS.CopyFile CachedCabDdf,  CabDdf,  false
+                        oFS.CopyFile CachedRptFile, RptFile, false
+                        oFS.CopyFile CachedInfFile, InfFile, false
+                        oFS.CopyFile CachedCmdFile, CmdFile, false
+                        if  err.number = 0 then
+                            @@say "@Successfully copied all files from the cache..."
+                            ReadFromCache = true
+                            dim OutStream : set OutStream = oFS.CreateTextFile(CacheLastUsedAt, true)
+                                OutStream.write "EXISTING CACHE LAST READ @ " & now()
+                            OutStream.Close()
+                        else
+                            @@say "Failed getting files from cache, will need to rebuild cabinets..."
+                            err.clear()             'Don't fail build just because of this
+                        end if
+                    end if
+                end if
+           end if
+
+           ;--- Make the cab ----------------------------------------------------
+           if   not ReadFromCache then
+               @@Say "COMPILING: Creating cabinet file(s)"
+               dim MakeCabCmd : MakeCabCmd = """<$CABINET_MAKECAB_EXE>"" /f """ & CabDdf & """ /v<$CABINET_MAKECAB_VERBOSITY>"
+               err.clear
+               dim CabCmd, CabRc
+               #ifdef IsNT
+                   ;--- NT based ----------------------------------------------------
+                   CabCmd = MakeCabCmd & " <$Stderr2Out> | <$NAME_REGINA.EXE> <$NAME_TEE.REX>  '" & CabOutput & "' ""!Throughput:"""
+                   CabCmd = "<$cmd.exe> /c """ & CabCmd & """"          'Windows "feature"
+                   KeepMakecabExeCommandLineForDebugging CmdFile, CabCmd, MakeCabCmd
+                   CabRc  = oShell.Run(CabCmd, <$CABINET_SEE_MAKECAB_OUTPUT>, True)
+                   VbsCheck "Failed making the cab file (does ""<$CABINET_MAKECAB_EXE>"" exist?)"
+                   If  CabRc <> 0 Then
+                       if  not oFs.FileExists(CabOutput) then
+                           Error "MAKECAB.EXE failed (no output generated - does ""<$CABINET_MAKECAB_EXE>"" exist?)"
+                       else
+                           ;--- Output info hasn't got CR code, look for error message ---
+                           err.clear()
+                           set OutStream = oFS.OpenTextFile(CabOutput, ForReading)
+                           dim GenOutput : GenOutput     = OutStream.readall()
+                           dim GenErrTxt : GenErrTxt     = ""
+                           OutStream.Close()
+                           if  err.number <> 0 then
+                               GenOutput = ""
+                           else
+                               ;--- Fix output ----------------------------------
+                               GenOutput = replace(GenOutput, vbCR,      "")
+                               GenOutput = replace(GenOutput, vbLF,      vbCRLF)
+                               GenOutput = replace(GenOutput, " ERROR:", vbCRLF & vbCRLF & "ERROR:")
+
+                               ;--- Display the information ---------------------
+                               say ""
+                               say "MAKECAB FAILED - OUTPUT FOLLOWS"
+                               say "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                               say GenOutput
+
+                               ;--- Look for error text -------------------------
+                               dim Pos : Pos = instr(GenOutput, "ERROR:")
+                               if   Pos <> 0 then
+                                    ;--- Keep everything that follow ------------
+                                    GenErrTxt = mid(GenOutput, Pos)
+                               end if
+
+                               ;--- Don't want output to be too long... ---------
+                               if  len(GenOutput) > 6000 then
+                                   GenOutput = "..." & right(GenOutput, 6000)
+                               end if
+                               if  len(GenErrTxt) > 6000  then
+                                   GenErrTxt = "..." & right(GenErrTxt, 6000)
+                               end if
+
+                               ;--- Rewrite the file ----------------------------
+                               set OutStream = oFS.CreateTextFile(CabOutput, true)
+                               OutStream.write GenOutput
+                               OutStream.Close()
+                           end if
+
+                           ;--- Display the output for diagnosis ------------------------
+                           'ViewFile CabOutput
+
+                           ;--- Generate an error message -------------------------------
+                           if   GenErrTxt <> "" then
+                                GenErrTxt = vbCRLF & vbCRLF & "CAB ERROR TEXT" & vbCRLF & "~~~~~~~~~~~~~~" & vbCRLF & GenErrTxt
+                           end if
+                           Error "MAKECAB.EXE (compile) step failed..." & GenErrTxt
+                       end if
+                   end if
+               #elseif
+                   ;--- DOS (NT command line too long for DOS - No logging, RC bug, sigh..) -
+                   CabCmd = "<$cmd.exe> <$CABINET_MAKECAB_EXE_DOS_WAIT_FOR_EXIT> " & MakeCabCmd  ;;Will wait for exit...
+                   KeepMakecabExeCommandLineForDebugging CmdFile, CabCmd, MakeCabCmd
+                   CabRc = oShell.Run(CabCmd, <$CABINET_SEE_MAKECAB_OUTPUT>, True)
+                   VbsCheck "Failed making the cab file (does ""<$CABINET_MAKECAB_EXE>"" exist?)"
+                   if  not oFs.FileExists(InfFile) then
+                       Error "MAKECAB.EXE failed (no output generated - does ""<$CABINET_MAKECAB_EXE>"" exist?)"
+                   end if
+               #endif
+           end if
+
+           ;--- We created the CAB file successfully (do we want to cache it?) ---
+           if   ReadFromCache then
+                @@say "Files originally read from cache so we won't recache :-)"
+           else
+                ;--- Files didn't come from the cache (which we may or may not have) ---
+                if   OptionCabinetCache = "N" then
+                    @@say "Will not cache as this wasn't requested"
+                else
+                    @@say "Caching to """ & CacheDir & """"
+                    CreateDir(CacheDir)
+                    DeleteFile(CachedPrevDiffCabDdf)
+                    DeleteFile(CacheComparedTextOLD)
+                    DeleteFile(CacheComparedTextNEW)
+                    DeleteFile(CacheComparedTextDIFF)
+                    DeleteFile(CacheLastUsedAt)
+                    if  CacheDiffers then
+                        ;--- Make copy of the previous version of the compared file ---
+                        if oFS.FileExists(CachedCabDdf) then
+                            ;--- Keep previous so user can compare the files for debugging issues ---
+                            oFS.MoveFile CachedCabDdf, CachedPrevDiffCabDdf
+                        end if
+
+                        ;--- Create some diagnostic files (ignore failures) ---
+                        err.clear()
+                        dim DiagStream
+                        set DiagStream = oFS.CreateTextFile(CacheComparedTextOLD, True)
+                            DiagStream.write DdfTxtOld
+                            DiagStream.close
+                        set DiagStream = Nothing
+                        set DiagStream = oFS.CreateTextFile(CacheComparedTextNEW, True)
+                            DiagStream.write DdfTxtNew
+                            DiagStream.close
+                        set DiagStream = Nothing
+                        #ifdef IsNT
+                            dim DiffCmd : DiffCmd = "fc.exe """ & CacheComparedTextOLD & """ """ & CacheComparedTextNEW & """"
+                            set DiagStream = oFS.CreateTextFile(CacheComparedTextDIFF, True)
+                                DiagStream.WriteLine "RAW       COMMAND: " & DiffCmd
+                                            DiffCmd = DiffCmd & " <$Stderr2Out> > """ & CacheComparedTextDIFF & """"
+                                DiagStream.WriteLine "CAPTURING COMMAND: " & DiffCmd
+                                            DiffCmd = "<$cmd.exe> /c """ & DiffCmd & """"          'Windows "feature"
+                                DiagStream.WriteLine "EXECUTED  COMMAND: " & DiffCmd
+                                DiagStream.WriteLine vbCRLF
+                                DiagStream.WriteLine "Like a scary amount of core Windows features the FC.EXE command has many bugs/features, some being: " & vbCRLF
+                                DiagStream.WriteLine "     (1) The /A switch causes at LEAST shorter differences to not display AT ALL (/A: Displays only first and last lines for each set of differences)" & vbCRLF
+                                DiagStream.WriteLine "     (2) When /A is not used you will INCONSISTENTLY see some non-different lines"
+                                DiagStream.WriteLine "         (worked around by adding extra lines to the .DDF file)." & vbCRLF
+                                DiagStream.WriteLine "     (3) The second file's name is upper cased!" & vbCRLF
+                                DiagStream.WriteLine vbCRLF
+                                DiagStream.WriteLine "Note that MAKEMSI doesn't use ""fc.exe"" to detect differences, it's only used to generate this diagnostic report once differences have already been found." & vbCRLF
+                                DiagStream.WriteLine string(100, "~")
+                                DiagStream.WriteLine vbCRLF & vbCRLF
+                                DiagStream.close
+                            set DiagStream = Nothing
+                            DiffCmd = replace(DiffCmd, "<$Stderr2Out> > ", "<$Stderr2Out> >> ")
+                            oShell.Run DiffCmd, 0, False                           'No need to wait for it
+                        #endif
+                    end if
+                    DeleteFile(CachedCabFile)
+                    DeleteFile(CachedCabDdf)
+                    DeleteFile(CachedRptFile)
+                    DeleteFile(CachedInfFile)
+                    DeleteFile(CachedCmdFile)
+                    oFS.CopyFile CabFile, CachedCabFile, false
+                    oFS.CopyFile CabDdf,  CachedCabDdf,  false
+                    oFS.CopyFile RptFile, CachedRptFile, false
+                    oFS.CopyFile InfFile, CachedInfFile, false
+                    oFS.CopyFile CmdFile, CachedCmdFile, false
+                    if  err.number = 0 then
+                        @@say "@Successfully copied all files to the cache..."
+                    else
+                        @@say "Failed putting files into the cache..."
+                        err.clear()             'Don't fail build just because of this
+                    end if
+                end if
+           end if
+
+
+           ;--- Display the RPT file --------------------------------------------
+           #ifndef CABINET_DONT_DISPLAY_CAB_RPT_FILE
+               if  oFS.FileExists(RptFile) then
+                   ;--- RPT file exists so display it ---------------------------
+                   @@Say "@Displaying: " & RptFile
+                   say ""
+                   dim CacheMsgHash : CacheMsgHash = "### " & CacheMsg & " ###"
+                   say <$CABINET_CAB_RPT_DISPLAY_PREFIX> & CacheMsgHash
+                   say <$CABINET_CAB_RPT_DISPLAY_PREFIX> & string(len(CacheMsgHash), "~")
+                   dim RptStream : set RptStream = oFS.OpenTextFile(RptFile, ForReading)
+                   do  while RptStream.AtEndOfStream <> true
+                       say <$CABINET_CAB_RPT_DISPLAY_PREFIX> & RptStream.ReadLine
+                   loop
+                   RptStream.close
+                   say ""
+               end if
+           #endif
+
+           ;--- Read the INF to see how many cabinet files were created -----
+           @@Say "@Reading the generated INF file - CAB Section"
+           if  not oFS.FileExists(InfFile) then
+               Error "We expected the file """ & InfFile & """ to have been generated by the compile."
+           end if
+           dim CabDisk(), CabName(), CabMaxSeq()
+           dim CabBits, InfLine
+           dim CabCnt       : CabCnt        = 0
+           dim FoundSection : FoundSection  = false
+           dim InfStream    : set InfStream = oFS.OpenTextFile(InfFile, ForReading)
+           do  while InfStream.AtEndOfStream <> true
+                ;--- Read the line ------------------------------------------
+                InfLine = InfStream.ReadLine()
+
+                ;--- In Cab list section? -----------------------------------
+                if  not FoundSection then
+                    ;--- Look for the start ---------------------------------
+                    if  InfLine = "[cabinet list]" then
+                        FoundSection = true
+                    end if
+                else
+                    ;--- We are in the CAB section --------------------------
+                    if  InfLine = "" then
+                        ;--- End of section ---------------------------------
+                        exit do
+                    else
+                        ;--- process this line ------------------------------
+                        CabBits = split(InfLine, ",", 3)        ;;Filename can have "," in it :-)
+                        redim preserve CabDisk(CabCnt)
+                        redim preserve CabName(CabCnt)
+                        redim preserve CabMaxSeq(CabCnt)
+                        CabDisk(CabCnt)   = CabBits(1)
+                        CabName(CabCnt)   = CabBits(2)
+                        CabMaxSeq(CabCnt) = 0
+                        CabCnt            = CabCnt + 1
+                    end if
+                end if
+           loop
+           InfStream.close
+           VbsCheck "Failed reading the INF for cab file information"
+           if   CabCnt <> 0 then
+                @@say "Generated " & CabCnt & " cab file(s)."
+           else
+                Error "No cab files appear to have been generated (see """ & InfFile & """)."
+           end if
+
+           ;--- Re-Read the INF to see which files are in which cabinets ----
+           @@Say "@Reading the generated INF file - FILE Section"
+           dim CabNumber, ThisSeq
+           FoundSection  = false
+           set InfStream = oFS.OpenTextFile(InfFile, ForReading)
+           do  while InfStream.AtEndOfStream <> true
+                ;--- Read the line ------------------------------------------
+                InfLine = InfStream.ReadLine()
+
+                ;--- In Cab list section? -----------------------------------
+                if  not FoundSection then
+                    ;--- Look for the start ---------------------------------
+                    if  InfLine = "[file list]" then
+                        FoundSection = true
+                    end if
+                else
+                    ;--- We are in the FILE section -------------------------
+                    if  InfLine = "" then
+                        ;--- End of section ---------------------------------
+                        exit do
+                    else
+                        ;--- process this line ------------------------------
+                        CabBits = split(InfLine, ",")
+                        CabNumber = CabBits(1)
+                        ThisSeq   = clng(CabBits(3)) + InfSeqOffset         ;;INF numbers always start with 1
+                        if  ThisSeq > CabMaxSeq(CabNumber-1) then
+                            CabMaxSeq(CabNumber-1) = ThisSeq
+                        end if
+                    end if
+                end if
+           loop
+           InfStream.close
+           VbsCheck "Failed reading the INF for file sequence file information"
+           <?NewLine>
+           <?NewLine>
+
+
+           ;--- Update the Cache Summary --------------------------------------------
+                              CabinetSummary = CabinetSummary & Pad(CacheAlias, 50, " ") & vbTAB & CacheMsg & vbTAB & NumFiles2Compile & " files"
+           if CabCnt > 1 then CabinetSummary = CabinetSummary & " in " & CabCnt & " cabinets"
+                              CabinetSummary = CabinetSummary & vbCRLF
+
+
+           ;--- Do what with the CAB? ---------------------------------------
+           #ifdef MAKEMSI_CREATING_MERGE_MODULE
+                ;--- This is a merge module! --------------------------------
+                if  CabCnt <> 1 then
+                    Error "Only a single can file is supported for merge modules (generated " & CabCnt & ")!"
+                end if
+                dim MergeModuleCabFile : MergeModuleCabFile = CabName(0)
+                @@Say "Adding CAB : " & MergeModuleCabFile
+                <$Table "_Streams" CREATE="N">
+                #(
+                    <$Row
+                             Name="MergeModule.CABinet"
+                           ;*Data=^"<$MAKEMSI_CABINET_DIR>\<$CABINET_CAB_FILE_NAME_FORMAT>.cab"^
+                            *Data="MergeModuleCabFile"
+                        @Validate="NEW -MISSINGDATA"
+                    >
+                #)
+                <$/Table>
+                VbsCheck "Failed adding the merge modules cab file"
+           #else
+               ;--- Making an MSI (not a merge module) ----------------------
+               dim ThisCabFile, ThisDisk, MaxSeq, LastNonZeroSeq
+               dim CabKey, MediaCabinet
+               for CabNumber = 1 to CabCnt
+                   ;--- Handle each CAB file --------------------------------
+                   ThisCabFile = CabName(CabNumber-1)
+                   ThisDisk    = CabDisk(CabNumber-1)
+                   MaxSeq      = CabMaxSeq(CabNumber-1)
+                   @@Say "Processing CAB #" & CabNumber & ": " & ThisCabFile
+                   if  not oFS.FileExists(ThisCabFile) then
+                       Error "The CAB file #" & CabNumber & " (""" & ThisCabFile & """) doesn't exist!"
+                   end if
+                   if   MaxSeq <> 0 then
+                        ;--- Remember sequence number (next cab may not start any new files!) ---
+                        LastNonZeroSeq = MaxSeq
+                   else
+                        ;--- A file is probably spanning at least 3 cabs (one before and after this one) ---
+                        MaxSeq = LastNonZeroSeq
+                        if  LastNonZeroSeq = 0 then
+                            Error "Did not find file sequence information for the CAB file #" & CabNumber & " (""" & ThisCabFile & """)!"
+                        end if
+                   end if
+
+                   ;--- How are we storing cabs? ----------------------------
+                   #if ['<$CABINET_TYPE>' = '<$CABINET_CAB_IMBEDDED_INTO_MSI>']
+                       ;--- Putting the CAB into the MSI ------------------------
+                       ;CabKey       = "cab_" & CabNumber & ".cab"
+                       CabKey = oFS.GetFileName(ThisCabFile)
+                       MediaCabinet = "#<$MAKEMSI_TABLENAME_CABS>." & CabKey
+                       <$Table "<$MAKEMSI_TABLENAME_CABS>">
+                           <$CFW_DefineValidationEntries4MAKEMSI_TABLENAME_CABS>
+                           <$Row *Name="CabKey" *Data="ThisCabFile" @Validate="NEW -MISSINGDATA">
+                           VbsCheck "Failed imbedding the cab file """ & ThisCabFile & """ into the MSI!"
+                       <$/Table>
+                   #elseif
+                       ;--- Keep the cab externally (must have 8.3 filename) ---
+                       dim oCabFile    : set oCabFile = oFS.GetFile(ThisCabFile)
+                       dim CabFile83   : CabFile83    = ShortName(oCabFile, true)
+                       set oCabFile = Nothing
+                       if   ucase(CabFile83) <> ucase(oFS.GetFileName(ThisCabFile)) then
+                            Error "The CAB file #" & CabNumber & " (""" & ThisCabFile & """) doesn't have a valid 8.3 name!" & vbCRLF & vbCRLF & "All external cabinets be have 8.3 formatted filenames."
+                       end if
+
+                       ;--- Copy the file where? ----------------------------
+                       dim  DestinationDir : DestinationDir = oFS.GetParentFolderName("<$MSI_MSINAME>")
+                       dim  DestRelDir
+                       if   ThisDisk = 1 then
+                            ;--- Same directory as MSI ----------------------
+                            DestRelDir = ""
+                       else
+                            ;--- Use the user supplied template -------------
+                            DestRelDir = "<$CABINET_MEDIA_DISK2_ONWARDS_DIR>"
+                            DestRelDir = replace(DestRelDir, "{#}", ThisDisk)
+                       end if
+                       if   DestRelDir <> "" then
+                            DestinationDir = DestinationDir & "\" & DestRelDir
+                            if  not oFS.FolderExists(DestinationDir) then
+                                @@say "@Creating destination folder : " & DestinationDir
+                                CreateDir DestinationDir
+                                VbsCheck "Failed creating the destination folder """ & DestinationDir & """."
+                            end if
+                       end if
+
+                       ;--- Copy the file -----------------------------------
+                       @@say "@Copying cab #" & ThisDisk
+                       CabKey       = oFS.GetFileName(ThisCabFile)
+                       MediaCabinet = CabKey
+                       err.clear()
+                       dim DestinationCab : DestinationCab = DestinationDir & "\" & CabKey
+                       oFS.CopyFile ThisCabFile, DestinationCab, true
+                       VbsCheck "Failed Copying CAB """ & ThisCabFile & """ to """ & DestinationCab & """"
+                   #endif
+
+                   ;--- Work out the Disk prompt ----------------------------
+                   dim DiskPrompt : DiskPrompt = "<$CABINET_MEDIA_DISK_NUMBER_DESC_TEMPLATE>"
+                   DiskPrompt = replace(DiskPrompt, "{#}", ThisDisk)
+                   if   len(DiskPrompt) > <$TABLES_LNG_MEDIA_DISKPROMPT> then
+                        error "We generated a disk prompt of """ & DiskPrompt & """ which is too long, the longest valid prompt is <$TABLES_LNG_MEDIA_DISKPROMPT> characters!{NL}Update the ""CABINET_MEDIA_DISK_NUMBER_DESC_TEMPLATE"" macro!"
+                   end if
+
+                   ;--- Work out the Volume Label ---------------------------
+                   dim VolumeLabel : VolumeLabel = "<$CABINET_MEDIA_VolumeLabel_TEMPLATE>"
+                   VolumeLabel = replace(VolumeLabel, "{#}", ThisDisk)
+                   if   len(VolumeLabel) > <$TABLES_LNG_MEDIA_VolumeLabel> then
+                        error "We generated a volume label of """ & VolumeLabel & """ which is too long, the longest valid label is <$TABLES_LNG_MEDIA_VolumeLabel> characters!{NL}Update the ""CABINET_MEDIA_VolumeLabel_TEMPLATE"" macro!"
+                   end if
+
+                   ;--- Update "Media" table ------------------------------------
+                   @@Say "@Update the ""Media"" table"
+                   <$Table "Media">
+                   #(
+                       <$Row
+                                 *DiskId="NextDiskId"
+                           *LastSequence="MaxSeq"
+;                          *LastSequence="NewSequenceNumber"
+                             *DiskPrompt="DiskPrompt"
+                            *VolumeLabel="VolumeLabel"
+                                *Cabinet="MediaCabinet"
+                               @Validate="NEW -MISSINGDATA"
+                       >
+                       VbsCheck "Failed updating the media table!"
+                   #)
+                   NextDiskId = NextDiskId + 1
+                   <$/Table>
+               next
+           #endif
+
+           ;--- Delete the file source table --------------------------------
+           ;@@say "@Deleting the file source information table"
+           ;<$TableDelete "<$MAKEMSI_TABLENAME_FILESOURCE>">
+
+           ;--- Now delete the temporay CAB files if thats what user wants ---
+           #if  ['<$CABINET_DELETE_CAB_FILES_IN_LOG_DIR>' <> 'N']
+                @@say "@Deleting the " & CabCnt & " temporary cab file(s)"
+                for CabNumber = 1 to CabCnt
+                    ;--- Handle each CAB file --------------------------------
+                    DeleteFile CabName(CabNumber-1)
+                next
+           #endif
+       end if
+
+       ;--- END -------------------------------------------------------------
+       @@Say GetAmPmTime() & ": Finished compile. Took " & ElapsedSince(CompileStart) & " seconds."
+       @@Say ""
+   end sub
+
+
+
+
+   <?NewLine><?NewLine>
+   '=========================================================================
+   function @@GetDdfFileContentsForCacheCompare(DdfFileName)
+   '        We are comparing the .DDF file lines:
+   '           (1) That don't begin ";" (not a comment)
+   ;           (2) Comment lines that start with ";>>>"
+   '=========================================================================
+       on error resume next
+       dim T        : T        = ""
+       dim FiPrefix : FiPrefix = "<$@@FILE_DETAILS_PREFIX>"
+       dim FileLine
+       dim DdfStream : set DdfStream = oFS.OpenTextFile(DdfFileName, ForReading)
+       do  while DdfStream.AtEndOfStream <> true
+           FileLine = trim(DdfStream.ReadLine)
+           if left(FileLine, 1) = ";" then
+              ;--- Want to ignore most comments -----------------------------
+              if left(FileLine, len(FiPrefix)) <> FiPrefix then
+                 ;--- Not a comment that we care about ----------------------
+                 FileLine = ""
+              end if
+           end if
+           if   FileLine <> "" then
+                T = T & FileLine & vbCRLF
+           end if
+       loop
+       DdfStream.Close()
+       @@GetDdfFileContentsForCacheCompare = T
+   end function
+
+
+   ;--- User defined (or standard) function ---------------------------------
+   <?NewLine><?NewLine>
+   <$CABINET_VBSCRIPT_FUNCTION_CacheFileStamp>
+   <?NewLine><?NewLine>
+
+
+   <?NewLine><?NewLine>
+   '=========================================================================
+    sub CompileInitializationAtStartOfPass1()
+   '=========================================================================
+        ;--- Delete all existing contents "#1", "#2" dirs etc ---------------
+        DeleteDir "<$MAKEMSI_CABINET_DIR>"
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   sub KeepMakecabExeCommandLineForDebugging(ByVal CmdFile, ByVal CmdLineComplete, ByVal CmdLine)
+   '=========================================================================
+        ;--- Ignore any errors (this is non-critical) -----------------------
+        on error goto 0
+        @@Say "@Creating: " & CmdFile
+        dim CurrentDir : CurrentDir = oFS.GetAbsolutePathName(".")
+        dim CmdStream  : set CmdStream = oFS.CreateTextFile(CmdFile, true)
+        CmdStream.WriteLine "@echo off"
+        CmdStream.WriteLine "@rem ***"
+        CmdStream.WriteLine "@rem *** This batch file makes it easier to test MAKECAB.EXE in isolation (perhaps for testing the performance impact of "".DDF"" changes)"
+        CmdStream.WriteLine "@rem *** It needs to be run from the "".MM"" directory!"
+        CmdStream.WriteLine "@rem ***"
+        CmdStream.WriteLine "@rem *** MAKECAB CMD  : " & CmdLine
+        CmdStream.WriteLine "@rem *** MAKEMSI Runs : " & CmdLineComplete
+        CmdStream.WriteLine "@rem *** Runs From    : " & CurrentDir
+        CmdStream.WriteLine "@rem ***"
+        CmdStream.WriteLine ""
+        CmdStream.WriteLine "setlocal"
+        CmdStream.WriteLine "cd " & CurrentDir
+        CmdStream.WriteLine CmdLine
+        CmdStream.WriteLine "pause"
+        CmdStream.close()
+        err.clear()
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub @@Say(ByVal Text)
+   '=========================================================================
+       ;--- Special handling if an error code found -------------------------
+       dim ErrNumb : ErrNumb = err.number
+       dim ErrDesc : ErrDesc = err.description
+       dim Suffix  : Suffix  = ""
+       if  ErrNumb <> 0 then
+           Suffix = " {{ ERROR?: 0x" & hex(ErrNumb) & " (" & ErrNumb & ")"
+           if   ErrDesc <> "" then
+                Suffix = Suffix & " - " & ErrDesc
+           end if
+           Suffix = Suffix & " }}"
+       end if
+       Text = Text & Suffix
+       <?NewLine>
+
+       ;--- Handle the text -------------------------------------------------
+       MmLL = "CompileFiles.MMH"
+       if  left(Text, 1) = "@" then
+           ;--- We only display the text if err.number is non-zero ----------
+           MmLT = mid(Text, 2)
+           if  ErrNumb <> 0 then
+               Say Text
+           end if
+       else
+           MmLT = Text
+           Say Text
+       end if
+   end sub
+;**    [CommentBlockStart     (24 September 2017 9:27:19 AM, Dennis)
+;**+----------------------------------------------------------------------
+;**|   '=========================================================================
+;**|   sub @@Say(Text)
+;**|   '=========================================================================
+;**|       MmLL = "CompileFiles.MMH"
+;**|       if  left(Text, 1) = "@" then
+;**|           MmLT = mid(Text, 2)             ;;Don't display message as well!
+;**|       else
+;**|           MmLT = Text
+;**|           Say Text
+;**|       end if
+;**|   end sub
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (24 September 2017 9:27:19 AM, Dennis)
+
+   ;<$@@MediaTableDiskIdFunctions>
+   <?NewLine><?NewLine>
+   '=========================================================================
+   function GetCompileNumber()
+   '=========================================================================
+        ;--- Init number ----------------------------------------------------
+        dim CompileNumber : CompileNumber = 0
+
+        ;--- See if there are any existing "#" dirs... ----------------------
+        if  oFS.FolderExists("<$MAKEMSI_CABINET_DIR>") then
+            ;--- Folder exists so get as object and iterate -----------------
+            dim oMainDir : set oMainDir = oFS.GetFolder("<$MAKEMSI_CABINET_DIR>")
+            dim oDir
+            for each oDir in oMainDir.SubFolders
+                ;--- Get shortname ------------------------------------------
+                dim FolderName : FolderName = oDir.name     '#01, [DEFAULT]
+
+                ;--- Now truncate and the "," and extract the number ('01' etc) ---
+                dim FolderNumb : FolderNumb = mid(FolderName, 2)
+                dim CmaPos     : CmaPos = instr(FolderNumb, ",")
+                if  CmaPos <> 0 then
+                    FolderNumb = left(FolderNumb, CmaPos-1)
+                end if
+                if  left(FolderName, 1) = "#" and IsNumeric(FolderNumb) then
+                    ;--- It is a compile folder -----------------------------
+                    if  cint(FolderNumb) > CompileNumber then
+                        ;--- This is the highest we have seen... ------------
+                        CompileNumber = cint(FolderNumb)
+                    end if
+                end if
+            next
+        end if
+        set oMainDir = Nothing
+        set oDir     = Nothing
+
+        ;--- Return next number as string ------------------------------------
+        CompileNumber = CompileNumber + 1
+        GetCompileNumber = cstr(CompileNumber)
+        if  len(GetCompileNumber) = 1 then
+            GetCompileNumber = "0" & GetCompileNumber
+        end if
+   end function
+
+
+   <?NewLine><?NewLine>
+   '=========================================================================
+   function NumberOfFilesNeedingCompile(ThisAlias)
+   '=========================================================================
+        NumberOfFilesNeedingCompile = clng(0)
+        if  TableExists("<$MAKEMSI_TABLENAME_FILESOURCE>") then
+            ;--- Table Exists -----------------------------------------------
+            <$Table "<$MAKEMSI_TABLENAME_FILESOURCE>">
+                <$Row @Where=^CabinetAlias = '<$VbExp EXP=ThisAlias>'^ @Code="Y" @VALIDATE="">
+                      NumberOfFilesNeedingCompile = NumberOfFilesNeedingCompile + 1
+               <$/Row>
+            <$/Table>
+        end if
+   end function
+
+
+   <?NewLine><?NewLine>
+   '=========================================================================
+   function GetNextFileSequence()        'First entry is one
+   '=========================================================================
+        ;--- We need to read "File" table ----------------------------------
+        GetNextFileSequence = 0
+        if  TableExists("File") then
+            ;--- File exists, look for the highest number -------------------
+            <$Table "File">
+                <$Row @Where="" @Code="Y" @VALIDATE="">     ;;Some stupid merge modules have component names which are too long - let later validation explain to user (don't die here)
+                #( '<?NewLine>'
+                   ;--- Record the hisgest value ------------------------
+                   if   <$COLINT.File.Sequence> > GetNextFileSequence then
+                        GetNextFileSequence = <$COLINT.File.Sequence>
+                   end if
+               #)
+               <$/Row>
+            <$/Table>
+        end if
+
+       ;--- Increment number to next available ------------------------------
+       GetNextFileSequence = GetNextFileSequence + 1        ;;Results in one if table non-existant or empty
+   end function
+
+
+   <?NewLine><?NewLine>
+   '=========================================================================
+   function GetNextDiskId()        'First entry is one
+   '=========================================================================
+        ;--- We need to read "Media" table ----------------------------------
+        GetNextDiskId = 0
+        if  TableExists("Media") then
+            ;--- Table exists, look for the highest number ----------------
+            <$Table "Media">
+                <$Row @Where="" @Code="Y" @VALIDATE="">     ;;Some stupid merge modules have component names which are too long - let later validation explain to user (don't die here)
+                #( '<?NewLine>'
+                   ;--- Record the hisgest value ------------------------
+                   if   <$COLINT.Media.DiskId> > GetNextDiskId then
+                        GetNextDiskId = <$COLINT.Media.DiskId>
+                   end if
+               #)
+               <$/Row>
+            <$/Table>
+        end if
+
+       ;--- Increment number to next available ------------------------------
+       GetNextDiskId = GetNextDiskId + 1        ;;Results in one if table non-existant or empty
+   end function
+#)
+
+
+
+
+
+
+;**    [CommentBlockStart     (18 July 2006 17:40:43, Dennis)
+;**+----------------------------------------------------------------------
+;**|#( '<?NewLine>'
+;**|    #define @@MediaTableDiskIdFunctions
+;**|
+;**|   <?NewLine>
+;**|   '=========================================================================
+;**|   sub SaveCompileBaseDiskIdForPass2Hole(MergeMediaDiskId)
+;**|   ' This is only called in pass #1 if late merging as we need to create a
+;**|   ' "hole" as the compile process in pass 2 happens "out of order".
+;**|   '=========================================================================
+;**|        on error resume next
+;**|        dim MediaFile : MediaFile = "<$MSI_NAME_OF_FILE_FORCED_MEDIA_DISKID_RANGE>"
+;**|        dim oStream : set oStream = oFS.CreateTextFile(MediaFile, true)
+;**|        VbsCheck "Could not create the MEDIA DISKID file """ & MediaFile & """"
+;**|        oStream.writeLine(MergeMediaDiskId)
+;**|        oStream.Close()
+;**|        VbsCheck "Could not write to the MEDIA DISKID file """ & MediaFile & """"
+;**|   end sub
+;**|
+;**|   <?NewLine>
+;**|   '=========================================================================
+;**|   function RestoreCompileBaseDiskIdForPass2Hole()
+;**|   ' The file we are looking for will only exist in pass 2 where a "late"
+;**|   ' merge was performed on at least one merge module in pass 1.
+;**|   '=========================================================================
+;**|        on error resume next
+;**|        dim MediaFile : MediaFile = "<$MSI_NAME_OF_FILE_FORCED_MEDIA_DISKID_RANGE>"
+;**|        if  not oFS.FileExists(MediaFile) then
+;**|            ;--- Not overriding normal behaviour ----------------------------
+;**|            RestoreCompileBaseDiskIdForPass2Hole = -1
+;**|        else
+;**|            ;--- Read the contents of the file ------------------------------
+;**|            dim oStream : set oStream = oFS.OpenTextFile(MediaFile, ForReading)
+;**|            VbsCheck "Could not open the MEDIA DISKID file """ & MediaFile & """ (created by the late merge in pass 1)."
+;**|            dim FirstLine : FirstLine = oStream.ReadLine()
+;**|            oStream.Close()
+;**|            VbsCheck "Could not read the MEDIA DISKID file """ & MediaFile & """ (created by the late merge in pass 1)."
+;**|            RestoreCompileBaseDiskIdForPass2Hole = clng(FirstLine)
+;**|        end if
+;**|   end function
+;**|
+;**|   <?NewLine>
+;**|   '=========================================================================
+;**|   sub NextDiskIdInitialization()
+;**|   '=========================================================================
+;**|        ;--- Need to initialize? Allow it to be called more than once -------
+;**|        if  @@MediaTableDiskId = -1 then
+;**|            ;--- If returned value is not "-1" then use it as correct value ---
+;**|            @@MediaTableDiskId = RestoreCompileBaseDiskIdForPass2Hole()
+;**|
+;**|            ;--- We need to read "Media" table ------------------------------
+;**|            if  @@MediaTableDiskId = -1 then
+;**|                ;--- There may be no table or no entries in the table -------
+;**|                @@MediaTableDiskId = 0
+;**|                if  TableExists("Media") then
+;**|                    ;--- Table exists, look at all rows in the table ------------
+;**|                    <$Table "Media">
+;**|                        <$Row @Where="" @Code="Y" @VALIDATE="">     ;;Some stupid merge modules have component names which are too long - let later validation explain to user (don't die here)
+;**|                        #( '<?NewLine>'
+;**|                           ;--- Record the hisgest value ------------------------
+;**|                           if   <$COLINT.Media.DiskId> > @@MediaTableDiskId then
+;**|                                @@MediaTableDiskId = <$COLINT.Media.DiskId>
+;**|                           end if
+;**|                       #)
+;**|                       <$/Row>
+;**|                    <$/Table>
+;**|                end if
+;**|            end if
+;**|       end if
+;**|   end sub
+;**|
+;**|
+;**|   <?NewLine>
+;**|   '=========================================================================
+;**|   function NextDiskId()                'Used in Media Table
+;**|   '=========================================================================
+;**|        ;--- Get the next value ---------------------------------------------
+;**|        @@MediaTableDiskId = CurrentDiskId() + 1
+;**|
+;**|        ;--- Return it ------------------------------------------------------
+;**|        NextDiskId = @@MediaTableDiskId
+;**|   end function
+;**|
+;**|   <?NewLine>
+;**|   '=========================================================================
+;**|   function CurrentDiskId()
+;**|   '=========================================================================
+;**|        ;--- Validate initialization done -----------------------------------
+;**|        if  @@MediaTableDiskId = -1 then
+;**|            error "BUG: NextDiskId() initialization not yet performed..."
+;**|        end if
+;**|
+;**|        ;--- Return the current value ---------------------------------------
+;**|        CurrentDiskId = @@MediaTableDiskId
+;**|   end function
+;**|#)
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (18 July 2006 17:40:43, Dennis)
+
+
+;**    [CommentBlockStart     (June 18, 2004 12:14:33 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|#(
+;**|   #define UseLongOrShorterVersion
+;**|
+;**|   ;--- Validate the Disk Prompt message ------------------------
+;**|   #RexxVar @@MaxLng       = '{$MaxLng}'
+;**|   #RexxVar @@LongVersion  = ^{$LongText}^
+;**|   #RexxVar @@ShortVersion = ^{$ShortText}^
+;**|   #RexxVar @@ForWhat      = ^{$ForWhat}^
+;**|   #DefineRexx ''
+;**|       @@LongLng  = length(@@LongVersion);
+;**|       @@ShortLng = length(@@ShortVersion);
+;**|   #DefineRexx
+;**|   #if [@@LongLng <= @@MaxLng]
+;**|       ;--- Long text is OK -------------------------------------------------
+;**|       #define+ {$Macro} <??@@LongVersion>
+;**|   #elseif
+;**|       ;--- Try the shorter text --------------------------------------------
+;**|       #if [@@ShortVersion = '']
+;**|           ;--- Don't have shorter text (user prefers an error message) ---
+;**|           #error ^Your <??@@ForWhat> text of{NL}{NL}    "<??@@LongVersion>"{NL}{NL}Is <??@@LongLng> bytes long.{NL}The longest allowed is "<??@@MaxLng>" characters (no shorter version available).^
+;**|       #elseif
+;**|           ;--- We have shorter text, make sure it fits! --------------------
+;**|           #if [@@ShortLng <= @@MaxLng]
+;**|               ;--- Short text is OK ----------------------------------------
+;**|               #define+ {$Macro} <??@@ShortVersion>
+;**|           #elseif
+;**|               ;--- The shorter text is too long also! ----------------------
+;**|               #error ^Your <??@@ForWhat> text of{NL}{NL}    "<??@@LongVersion>"{NL}{NL}Is <??@@LongLng> bytes long. The longest allowed is "<??@@MaxLng>" characters.{NL}{NL}The shorter text of{NL}{NL}    "<??@@ShortVersion>"{NL}{NL}Is also too long (at <??@@ShortLng> bytes)!^
+;**|           #endif
+;**|       #endif
+;**|   #endif
+;**|#)
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (June 18, 2004 12:14:33 PM EST, Dennis)
+
+
+#NextId UNLOCK "CompileFiles.MMH"
+

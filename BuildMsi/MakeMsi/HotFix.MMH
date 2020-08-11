@@ -1,0 +1,435 @@
+;----------------------------------------------------------------------------
+;    MODULE NAME:   HOTFIX.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.5  $
+;          $Date:   02 Jan 2007 17:18:04  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/HotFix.MMH.pvcs  $
+;
+; DESCRIPTION
+; ~~~~~~~~~~~
+; Common header file to handle hotfixes, can override many defaults.
+; This is not automatically include by MAKEMSI, you must also specify
+; the name of your makemsi support file in "HOTFIX_USE_THIS_MAKEMSI_SUPPORT".
+;
+; The main script should be installed into a directory whose name is
+; significant and should be the id of the hotfix (such as "KB123456").
+; This "parent directory" name is configuration and is used in the
+; validation of the hotfix installation state.
+; I recommend that you either keep a constant script name across all
+; hotfixes or name it as per the "parent directory".
+; There should be one only EXE in this dir (the installation EXE)
+;
+; You may need to vary command line options to package older or possibly
+; even newer hotfixes, the switches being used are valid for version
+; "6.1.22.0" of the updater.
+;
+; Example .VER product info:
+;       ;++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;       ; ProductName = MicrosoftHotFix<??RxHotFixId>
+;       ; DESCRIPTION = Installs hotfix <??RxHotFixId> via the Microsoft
+;       ;             = supplied "<??RxHotFixExe>" installer.
+;       ;             = Installation and uninstall success is validated.
+;       ; ...
+;       ;++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;
+;
+; You may want to alter the options for "groups" of hotfixs, for example you
+; may be creating hotfixes for WIN2000 and WINXP and possibly even for different
+; service pack levels within that, I'd recommend creation of option files such
+; as "HotFix4Win2000.MMH" which set up launch conditions etc for that
+; situation, and these be used by your ".MM" script which only has the
+; required "#include" command.
+;
+; As always items defined with "#define?" are options, also look for
+; "#ifdef" and "#ifndef".
+;----------------------------------------------------------------------------
+
+
+;----------------------------------------------------------------------------
+;--- Version ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define HOTFIX_VERSION 06.363
+
+
+;----------------------------------------------------------------------------
+;--- Execute Install under these conditions ---------------------------------
+;----------------------------------------------------------------------------
+#define? HOTFIX_APPLY_CONDITION     0
+#(
+    #define? HOTFIX_APPLY_ABORTED_TEXT
+
+    This hotfix will not install as you haven't configured the
+    "HOTFIX_APPLY_CONDITION" & "HOTFIX_APPLY_ABORTED_TEXT" definitions.
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Default Launch Failure message suffix (to display OS details) ----------
+;----------------------------------------------------------------------------
+#( ''
+    ;--- If "HOTFIX_APPLY_CONDITION" fails, display this message ------------
+    #define? HOTFIX_APPLY_ABORTED_TEXT_OS_DETAILS
+
+    ;--- Tack this onto end of user message ---------------------------------
+    <$CRLF>
+    <$CRLF>
+    Computer OS  : [VersionNT]<$CRLF>
+    Build Level  : [WindowsBuild]<$CRLF>
+    Service Pack : [ServicePackLevel].[ServicePackLevelMinor]<$CRLF>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Work out hotfix ID, EXE ------------------------------------------------
+;----------------------------------------------------------------------------
+#define? HOTFIX_REXX_EXP_FOR_HOTFIX_ID  FilePart('n', GetCurrentDirectory());
+#define? HOTFIX_EXE_MASK                *.exe        ;;We require exactly one match
+#define? HOTFIX_QFECHECK.EXE_BASENAME   QfeCheck.exe  ;;defines the name of the EXE (no path)
+#(
+    #define? HOTFIX_STRFINFO_KEYWORDS_TO_DUMP
+    FileDescription
+    FileVersion
+    ProductName
+    ProductVersion
+    CompanyName
+    Author
+    Maintainer
+    OriginalFileName
+    "Proc. Architecture"
+    Language
+    "Package Type"
+    "Applies To"
+    "KB Article Number"
+    "Build Date"
+    "Installer Engine"
+    "Installation Type"
+    "Installer Version"
+    "Self-Extractor Version"
+    "Support Link"
+#)
+#DefineRexx ''
+    ;--- Get hotfix ID ------------------------------------------------------
+    RxHotFixId = <$HOTFIX_REXX_EXP_FOR_HOTFIX_ID>;
+    call Info 'HotFix  ID: "' || RxHotFixId || '"'
+
+    ;--- Should be only 1 installation EXE ----------------------------------
+    call Files4Mask "<$HOTFIX_EXE_MASK>", "@@Exe";
+    @@Cnt = 0
+    do @@x = 1 to @@Exe.0
+       RxHotFixExe = FilePart('n', @@Exe.@@x);
+       if   translate(RxHotFixExe) <> translate('<$HOTFIX_QFECHECK.EXE_BASENAME>') then
+       do
+            ;--- Not a "known" EXE ------------------------------------------
+            call Info 'HotFix EXE: "' || RxHotFixExe || '"'
+            @@Cnt = @@Cnt + 1
+
+            ;--- Now dump EXE INFO ------------------------------------------
+            @@UpdateVer                                  = '';
+            @@SupportsSwitchesInInstallerVersion5_3_24_3 = 'N';
+            @@SupportsSwitchesInInstallerVersion6_1_22_0 = 'N';
+            #if ['<$HOTFIX_STRFINFO_KEYWORDS_TO_DUMP $$IsBlank>' = 'N']
+                ;--- Use SFRFINFO to dump properties ------------------------
+                @@TempFile  = RexGetTmpFileName('HF?????.TMP');
+                @@Cmd       = 'StrFInfo.exe "' || RxHotFixExe || '" <$HOTFIX_STRFINFO_KEYWORDS_TO_DUMP>';
+                @@Rc = AddressCmd(@@Cmd || ' > "' || @@TempFile || '" 2>&1');
+                if  @@Rc = 0 then
+                do
+                   ;--- Read the programs output --------------------------------
+                   call info "+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*"
+                   do   while lines(@@TempFile) <> 0
+                        ;--- Read the next line ---------------------------------
+                        @@ThisLine = strip(linein(@@TempFile));
+                        parse var @@ThisLine @@KeyWord '=' @@KeyValue;
+                        if  @@KeyValue <> 'FAILED' & @@KeyValue <> '' & translate(@@KeyWord) <> translate('$Translation') then
+                        do
+                            ;--- Have a valid value -------------------------------------
+                            call info @@Keyword || ": " || @@KeyValue;
+                            if translate(@@Keyword) = translate('Installer Version') then
+                            do
+                                ;--- Have INSTALLER VERSION (display in summary) ---
+                                @@UpdateVer = @@KeyValue;        ;;Determines what command lines we can use...
+                                call Summary "HotFix Installer Level", @@UpdateVer
+                            end;
+                        end;
+                   end;
+                   call info "+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*"
+                   call FileClose @@TempFile;
+                   call _SysFileDelete @@TempFile;
+                end;
+            #endif
+       end;
+    end;
+    if  @@Cnt <> 1 then
+        error('The hotfix directory should contain exactly one EXE (matching "<$HOTFIX_EXE_MASK>").', 'We found ' || @@Exe.0 || '.');
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Load MAKEMSI (start MSI) -----------------------------------------------
+;----------------------------------------------------------------------------
+#define? HOTFIX_USE_THIS_MAKEMSI_SUPPORT       ME.MMH
+#include "<$HOTFIX_USE_THIS_MAKEMSI_SUPPORT>"
+
+
+;----------------------------------------------------------------------------
+;--- If we Can determine installer levels -----------------------------------
+;----------------------------------------------------------------------------
+#if [@@UpdateVer <> '']
+    #DefineRexx ''
+        ;--- See what switches are supported --------------------------------
+        <$CompareFileVersions V1EXP=^@@UpdateVer^ V2EXP=^'6.1.22.0'^ ResultVar="@@CompareRc">
+        if  @@CompareRc < 0 then
+            @@SupportsSwitchesInInstallerVersion6_1_22_0 = 'N'
+        else
+            @@SupportsSwitchesInInstallerVersion6_1_22_0 = 'Y'
+        <$CompareFileVersions V1EXP=^@@UpdateVer^ V2EXP=^'5.3.24.3'^ ResultVar="@@CompareRc">
+        if  @@CompareRc < 0 then
+            @@SupportsSwitchesInInstallerVersion5_3_24_3 = 'N'
+        else
+            @@SupportsSwitchesInInstallerVersion5_3_24_3 = 'Y'
+    #DefineRexx
+#endif
+
+
+;--------------------------------------------------------------------------------------------------------
+;--- See "http://support.microsoft.com/kb/262841" (nit all documented switches work for all versions) ---
+;--------------------------------------------------------------------------------------------------------
+#define? HOTFIX_SWITCHES_EXTENDED_REPORTING /ER                          ;;/ER Supported by all versions
+#if [@@SupportsSwitchesInInstallerVersion5_3_24_3 = 'N']
+    ;--- Either release is too low (< 5.3.24.3) or we don't know either way so playing safe by default ---
+    #define? HOTFIX_SWITCHES_NO_BACKUP          /n
+    #define? HOTFIX_SWITCHES_QUIET              /q /z
+    #define? HOTFIX_SWITCHES_VERBOSE            /v
+#elseif
+    ;--- We know the hot fix installer is version 5.3.24.3+ -----------------
+    #define? HOTFIX_SWITCHES_NO_BACKUP          /nobackup
+    #define? HOTFIX_SWITCHES_QUIET              /quiet /norestart
+    #define? HOTFIX_SWITCHES_VERBOSE            /verbose
+#end if
+#if [@@SupportsSwitchesInInstallerVersion6_1_22_0 = 'N']
+    ;--- Either release is too low (<6.1.22.0) or we don't know either way so playing safe by default ---
+    #define? HOTFIX_SWITCHES_LOG
+#elseif
+    ;--- We know the hot fix installer is version 6.1.22.0+ -----------------
+    #define? HOTFIX_SWITCHES_LOG  "/LOG:[HOTFIX_LOGDIR]"
+#endif
+#define? HOTFIX_SWITCHES_HOOK
+<$HOTFIX_SWITCHES_HOOK>                     ;;Let user do their own processing based on versions etc calculated above.
+#define? HOTFIX_SWITCHES_INSTALL            <$HOTFIX_SWITCHES_QUIET> <$HOTFIX_SWITCHES_EXTENDED_REPORTING> <$HOTFIX_SWITCHES_VERBOSE> <$HOTFIX_SWITCHES_LOG>
+#define? HOTFIX_SWITCHES_UNINSTALL          <$HOTFIX_SWITCHES_QUIET> <$HOTFIX_SWITCHES_EXTENDED_REPORTING> <$HOTFIX_SWITCHES_VERBOSE> <$HOTFIX_SWITCHES_LOG> /uninstall
+#info ^INSTALL SWITCHES  : <$HOTFIX_SWITCHES_INSTALL>^
+#info ^UNINSTALL SWITCHES: <$HOTFIX_SWITCHES_UNINSTALL>^
+
+
+;----------------------------------------------------------------------------
+;--- Only install this package if environment correct -----------------------
+;----------------------------------------------------------------------------
+#if ['<$HOTFIX_APPLY_ABORTED_TEXT $$IsBlank>' = 'N']
+    ;--- Text not blank indicating that user does want this launch condition added ---
+    <$AbortIf Condition=^not (<$HOTFIX_APPLY_CONDITION>)^ Message=^<$HOTFIX_APPLY_ABORTED_TEXT><$HOTFIX_APPLY_ABORTED_TEXT_OS_DETAILS>^>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Define file, log dirs --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? HOTFIX_ROOT_INSTALL_DIR   C:\Program Files\MmHotFixes
+<$DirectoryTree Key="HOTFIX_INSTALLDIR" Dir="<$HOTFIX_ROOT_INSTALL_DIR>\<??RxHotFixId>" CHANGE="\" PrimaryFolder="Y">
+<$Component "HOTFIX_LOGDIR" Create="Y" Directory_="<$AnyDir>">
+    <$DirectoryTree Key="HOTFIX_LOGDIR" Dir="[HOTFIX_INSTALLDIR]\logs" MAKE="Y">
+<$/Component>
+
+
+;----------------------------------------------------------------------------
+;--- Add the hot fix file ---------------------------------------------------
+;----------------------------------------------------------------------------
+<$Files "<??RxHotFixExe>" DestDir="HOTFIX_INSTALLDIR">
+
+
+;----------------------------------------------------------------------------
+;--- User want "QFECHECK" logs? ---------------------------------------------
+;----------------------------------------------------------------------------
+#ifndef HOTFIX_QFECHECK.EXE
+    ;--- User didn't configure name and location, look for it ---------------
+    #DefineRexx ''
+          @@Look4 = "<$HOTFIX_QFECHECK.EXE_BASENAME>"
+          call info 'Looking for "' || @@Look4 || '"'
+          @@QfeCheckExe = FindFile(@@Look4)
+          call MacroSet "HOTFIX_QFECHECK.EXE", @@QfeCheckExe
+    #DefineRexx
+#endif
+#if ['<$HOTFIX_QFECHECK.EXE $$IsBlank>' = 'Y']         ;;A blank value means don't add "QFECHECK" support...
+    #info "No QFECHECK logging support"
+    #define ScheduleQfeQuery                           ;;Not doing query so don't schedule...
+#elseif
+    ;--- Add the tool to the package ----------------------------------------
+    #info "Adding QFECHECK logging support"
+    <$File Destination="[HOTFIX_INSTALLDIR]\<$HOTFIX_QFECHECK.EXE_BASENAME>" Source="<$HOTFIX_QFECHECK.EXE>">
+
+    ;--- Create Custom action to create logs before/after install & uninstall ---
+    #data "CaDataQfeQuery"
+       "HOTFIX_LOGDIR" "[HOTFIX_LOGDIR]"
+       "QFECHECK.EXE"  "[HOTFIX_INSTALLDIR]<$HOTFIX_QFECHECK.EXE_BASENAME>"
+    #data
+    <$VbsCa Binary="QfeQuery.vbs" DATA="CaDataQfeQuery">
+        CaDebug 0, "initializing..."
+        #(  '<?NewLine>'
+            #define WhenVbsCaEntry
+            <$VbsCaEntry "{$#1}">
+                QfeCheck "QfeCheck.{$#1}.txt"
+            <$/VbsCaEntry>
+        #)
+        <$WhenVbsCaEntry "BeforeInstall">
+        <$WhenVbsCaEntry "AfterInstall">
+        <$WhenVbsCaEntry "BeforeUninstall">
+        <$WhenVbsCaEntry "AfterUninstall">
+
+        <?NewLine><?NewLine>
+        '============================================
+        sub QfeCheck(LogName)
+        '============================================
+           ;--- Non critical (nice to have) code --------------------------------
+           on error resume next
+
+           ;--- Log entry -------------------------------------------------------
+           CaDebug 2, "QfeCheck(" & LogName & ")"
+           VbsCaLogInc 1
+
+           ;--- If we have "QFECHECK" support then execute it to log results ----
+           #if ['<$HOTFIX_QFECHECK.EXE $$IsBlank>' = 'Y']
+               CaDebug 2, "Support not enabled..."
+           #elseif
+                ;--- Just dump the info into a log file (also to Windows Installer and MAKEMSI logs) ---
+                dim Log : Log = VbsCaCadGetValidate("HOTFIX_LOGDIR", "DIR") & LogName
+                dim Exe : Exe = VbsCaCadGetValidate("QFECHECK.EXE",  "FILE")
+                dim Cmd : Cmd  = """" & Exe & """ /v > """ & Log & """ 2>&1"
+                Cmd  = "cmd.exe /c """ & Cmd & """"
+                dim Rc  : Rc   = VbsCaRunSync(Cmd, 0, Log)
+           #endif
+           VbsCaLogInc -1
+        end sub
+    <$/VbsCa>
+
+    ;--- Create a macro to schedule logging ---------------------------------
+    #(
+        #define ScheduleQfeQuery            ;;Non-critical logging operation
+        <$VbsCaSetup
+                Binary="QfeQuery.vbs"
+                 Entry="{$Execute}"
+                   SEQ="{$When}"
+                  Type="deferred system AnyRc"
+             Condition="{$Condition}"
+                  DATA="CaDataQfeQuery"
+                   Key="QfeCheck.{$Execute}"
+        >
+    #)
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Need code to see if fix installed --------------------------------------
+;----------------------------------------------------------------------------
+<$VbsCa Binary="QueryHotfixInstallState.vbs">
+    <$VbsCaEntry "HotFixShouldBeInstalled">
+        CaDebug 1, "Checking that the hotfix installed successfully..."
+        if  not HotFixInstalled("<??RxHotFixId>") then
+            VbsCaRaiseError "HotFixShouldBeInstalled", "The hotfix ""<??RxHotFixId>"" doesn't appear to be installed although we performed the installation action..."
+        end if
+    <$/VbsCaEntry>
+    <$VbsCaEntry "HotFixShouldNotBeInstalled">
+        CaDebug 1, "Checking that the hotfix has been removed successfully..."
+        if  HotFixInstalled("<??RxHotFixId>") then
+            VbsCaRaiseError "HotFixShouldNotBeInstalled", "The hotfix ""<??RxHotFixId>"" is still installed after the uninstall action was performed..."
+        end if
+    <$/VbsCaEntry>
+
+    <?NewLine><?NewLine>
+    '============================================
+    function HotFixInstalled(HotFixId)
+    '============================================
+       ;--- Log entry ---------------------------------------------------
+       CaDebug 2, "IsHotFixInstalled(" & HotFixId & ")"
+       VbsCaLogInc 1
+
+       ;--- Run the query -----------------------------------------------
+       dim oWMI    : set oWMI = GetObject("winmgmts:")
+       dim Query   : Query    = "select * from Win32_QuickFixEngineering where HotFixId='" & HotFixId & "'"
+       CaDebug 0, "Executing QUERY: " & Query
+       dim oResult : set oResult = oWmi.ExecQuery(Query)
+       if  oResult.Count = 0 then
+           HotFixInstalled = false
+           CaDebug 2, "The hotfix is not installed."
+       else
+           HotFixInstalled = true
+           CaDebug 2, "The hotfix is installed."
+       end if
+       set oResult = Nothing
+       set oWMI    = Nothing
+       VbsCaLogInc -1
+    end function
+<$/VbsCa>
+
+
+;----------------------------------------------------------------------------
+;--- Hot fix install --------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+    ;--- Perform the install ------------------------------------------------
+    <$ScheduleQfeQuery Execute="BeforeInstall" WHEN="DuplicateFiles-" Condition="<$CONDITION_INSTALL_ONLY>">
+    <$ExeCa
+             EXE="[HOTFIX_INSTALLDIR]<??RxHotFixExe>"
+             Args=^<$HOTFIX_SWITCHES_INSTALL>^
+         WorkDir="HOTFIX_INSTALLDIR"
+             SEQ="DuplicateFiles-"
+            Type="deferred system AnyRc"
+       Condition="<$HOTFIX_APPLY_CONDITION> and <$CONDITION_INSTALL_ONLY>"
+             Key="HotFixInstallCustomAction"
+    >
+    <$ScheduleQfeQuery Execute="AfterInstall" WHEN="DuplicateFiles-" Condition=^<$HOTFIX_APPLY_CONDITION> and <$CONDITION_INSTALL_ONLY>^>
+
+    ;--- Validate that the install of the hotfix worked ---------------------
+    <$VbsCaSetup
+            Binary="QueryHotfixInstallState.vbs"
+             Entry="HotFixShouldBeInstalled"
+               SEQ="DuplicateFiles-"
+              Type="deferred system"
+         Condition="<$HOTFIX_APPLY_CONDITION> and <$CONDITION_INSTALL_ONLY>"
+               Key="HotFixInstallCustomAction.Validation"
+    >
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Hot fix uninstall (as RC ignored, doesn't matter if not installed) -----
+;----------------------------------------------------------------------------
+#(
+    <$ScheduleQfeQuery Execute="BeforeUninstall" WHEN="StopServices-" Condition="<$CONDITION_UNINSTALL_ONLY>">
+    <$ExeCa
+             EXE="[HOTFIX_INSTALLDIR]<??RxHotFixExe>"
+             Args=^<$HOTFIX_SWITCHES_UNINSTALL>^
+         WorkDir="HOTFIX_INSTALLDIR"
+             SEQ="StopServices-"
+            Type="deferred system AnyRc"
+       Condition="<$HOTFIX_APPLY_CONDITION> and <$CONDITION_UNINSTALL_ONLY>"
+             Key="HotFixUnInstallCustomAction"
+    >
+    <$ScheduleQfeQuery Execute="AfterUninstall" WHEN="StopServices-" Condition="<$HOTFIX_APPLY_CONDITION> and <$CONDITION_UNINSTALL_ONLY>">
+
+    ;--- Validate that the uninstall of the hotfix worked ---------------------
+    <$VbsCaSetup
+            Binary="QueryHotfixInstallState.vbs"
+             Entry="HotFixShouldNotBeInstalled"
+               SEQ="StopServices-"
+              Type="deferred system"
+         Condition="<$HOTFIX_APPLY_CONDITION> and <$CONDITION_UNINSTALL_ONLY>"
+               Key="HotFixShouldNotBeInstalled.Validation"
+    >
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Record details about this header ---------------------------------------
+;----------------------------------------------------------------------------
+<$SourceFile VERSION=^<$HOTFIX_VERSION>^>
+

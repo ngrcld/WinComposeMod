@@ -1,0 +1,308 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ONEXIT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.30  $
+;          $Date:   16 Nov 2017 11:28:36  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/OnExit.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "ONEXIT.MMH"
+
+;----------------------------------------------------------------------------
+;--- MAIN Options -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? ONEXIT_GENERATE_HTML       Y
+#define? ONEXIT_VBS_OUTPUT_COLOR    {BCYAN}
+
+#(
+    ;--- Only used if there is a second pass --------------------------------
+    #define @@SecondPass
+
+    ;--- Append pass 2 processing to the VBS! -------------------------------
+    #output "<$MSI_NAME_OF_GENERATED_VBS>" APPEND ASIS
+    #( '<?NewLine>'
+       <?NewLine><?NewLine><?NewLine><?NewLine>
+       '=========================================================================
+       sub SecondPassProcessing()
+       '=========================================================================
+           ;--- PASS #2: Open the database for Read/write -------------------
+           Say "Opening the MSI ""<$MSI_MSINAME>"""
+           MsiOpen "<$MSI_MSINAME>", msiOpenDatabaseModeDirect, true  ;;Need to fix this (consistant with pass 1 options for parm 2+3)
+           <?NewLine>
+
+           ;--- Do the required processing ----------------------------------
+           #info "Inserting second pass processing..."
+           <$MAKEMSI_HOOK_SECOND_PASS_PROCESSING>
+
+           ;--- Compile at end of pass 2 (basically the documentation) ------
+           <$Vbs4CompileAtEndOfPass "2">
+
+           ;--- Close MSI and exit ------------------------------------------
+           MsiClose(false)
+           say ""
+       end sub
+
+       <$TableRowVbFunction-SetupRowValidationExclusionList PASS="2">
+
+       <?NewLine><?NewLine>
+       '=========================================================================
+       sub SimpleTestToDetectInCompleteVbscriptForPass2()
+       '=========================================================================
+            '--- Doesn't need to do anything -------------------------------
+       end sub
+    #)
+    #output
+
+
+    ;--- Execute PASS2 ------------------------------------------------------
+    #define? ONEXIT_MSG_BEFORE_RUNNING_VBS_PASS2 \
+              #info ^Executing the VBS to build the MSI^
+    #define? ONEXIT_MSG_AFTER_RUNNING_VBS_PASS2
+    <$ONEXIT_MSG_BEFORE_RUNNING_VBS_PASS2>
+    #evaluate ^^ ^<$Rexx4ExecutingVbsPass2>^
+    <$ONEXIT_MSG_AFTER_RUNNING_VBS_PASS2>
+
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- ON EXIT ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define ONEXIT_SLOT#_TO_CLOSE_VBS_VALIDATE_ETC    90  ;;Really Expected to be last thing but users can add stuff after (slots #91-100)
+#OnExit #ONEXIT_SLOT#_TO_CLOSE_VBS_VALIDATE_ETC   <$_OnExitProcessing>
+#( ''
+   #define _OnExitProcessing
+
+   ;--- Hack: Perhaps move all/most of this code into "/MSI" macro ----------
+   <$MSI_CHECK_USE_OF_MSI_AND_/MSI_COMMANDS>
+
+   ;--- User HOOK -----------------------------------------------------------
+   #define? ONEXIT_BEFORE_CLOSING_VBS
+   <$ONEXIT_BEFORE_CLOSING_VBS>
+
+   ;--- Close the VBS (opened by "MSI" macro) -------------------------------
+   #define? ONEXIT_MSG_VALIDATING_VBSCRIPT \
+            #info ^SYNTAX checking the generated VBSCRIPT^
+   <$ONEXIT_MSG_VALIDATING_VBSCRIPT>
+   #output
+
+   ;--- User HOOK -----------------------------------------------------------
+   #define? ONEXIT_BEFORE_RUNNING_VBS_PASS1
+   <$ONEXIT_BEFORE_RUNNING_VBS_PASS1>
+
+   ;--- Now run the VBS -----------------------------------------------------
+   #define? ONEXIT_MSG_BEFORE_RUNNING_VBS_PASS1 \
+            #info ^Executing the VBS to generate the MSI^
+   #define? ONEXIT_MSG_AFTER_RUNNING_VBS_PASS1
+   <$ONEXIT_MSG_BEFORE_RUNNING_VBS_PASS1>
+   #evaluate ^^ ^<$Rexx4ExecutingVbsPass1>^
+   <$ONEXIT_MSG_AFTER_RUNNING_VBS_PASS1>
+
+   ;--- Don't do any more for read-only databases! --------------------------
+   #if ['<$MSI_MSI_IS_READONLY>' = 'Y']
+       #info ^Finished processing the READ-ONLY MSI...^
+   #elseif
+       ;--- Now include the file that the VBS generated ---------------------
+       #if FileQueryExists("<$MSI_NAME_OF_GENERATED_PASS1_RETURNED_FILE>") = ''
+           #error ^The generated VBSCRIPT did not generate "<$MSI_NAME_OF_GENERATED_PASS1_RETURNED_FILE>"{NL}This is unexpected as it should always do so!^
+       #endif
+       #include "<$MSI_NAME_OF_GENERATED_PASS1_RETURNED_FILE>"
+
+       ;--- We can't trust windows to provide non-zero RC on errors! --------
+       #ifndef VBSRET.FINISHED
+           #error ^The generated VBSCRIPT probably trapped.{NL}Windows returned a return code of zero!^
+       #endif
+
+       ;--- User HOOK -------------------------------------------------------
+       #define? ONEXIT_BEFORE_GENERATING_HTML
+       <$ONEXIT_BEFORE_GENERATING_HTML>
+
+       ;--- Generate HTML ---------------------------------------------------
+       #if ['<$ONEXIT_GENERATE_HTML>' <> 'N']
+           ;--- About to generate HTML, so include related headers ----------
+           #info ^Generating the HTML report^
+           #include "HtmlRpt.MMH"   ;;This header includes any others it requires
+
+           ;--- Generate HTML -----------------------------------------------
+           #define? ONEXIT_MSG_BEFORE_GENERATING_HTML
+           <$ONEXIT_MSG_BEFORE_GENERATING_HTML>
+           <$_GenerateHtmlReport>
+           #define? ONEXIT_MSG_AFTER_GENERATING_HTML
+           <$ONEXIT_MSG_AFTER_GENERATING_HTML>
+
+           ;--- User HOOK ---------------------------------------------------
+           #define? ONEXIT_AFTER_GENERATING_HTML
+           <$ONEXIT_AFTER_GENERATING_HTML>
+       #endif
+
+       ;--- User HOOK -------------------------------------------------------
+       #define? ONEXIT_BEFORE_COMPILE
+       <$ONEXIT_BEFORE_COMPILE>
+
+       ;--- COMPILE! --------------------------------------------------------
+       #if ['<$MAKEMSI_HOOK_SECOND_PASS_PROCESSING $$IsBlank>' = 'N']
+           <$@@SecondPass>
+       #endif
+
+       ;--- So far so good now copy any "extra files" -----------------------
+       #define? ONEXIT_HOOK_BEFORE_COPYING_MSIEXTRA_FILES
+       <$ONEXIT_HOOK_BEFORE_COPYING_MSIEXTRA_FILES>
+       #evaluate ^^ ^<$Rexx2CopyMsiExtraFiles MsiDirExp=^MacroGet('MSIEXTRA_MSILOCATION')^ CopyMsg="Y">^
+
+       ;--- Now validate the MSI --------------------------------------------
+       #define? ONEXIT_MSG_BEFORE_VALIDATING_MSI
+       <$ONEXIT_MSG_BEFORE_VALIDATING_MSI>
+       <$VALID_ValidateTheGeneratedMsi>
+
+       ;--- HOOK ------------------------------------------------------------
+       #define? ONEXIT_MSG_AFTER_VALIDATING_MSI
+       <$ONEXIT_MSG_AFTER_VALIDATING_MSI>
+   #endif
+
+   ;--- Hook for after validation -------------------------------------------
+   #define? ONEXIT_AFTER_MSI_BUILT_AND_VALIDATED
+   <$ONEXIT_AFTER_MSI_BUILT_AND_VALIDATED>
+
+   ;--- User HOOK -------------------------------------------------------
+   #define? ONEXIT_BEFORE_COPYING_SAMPLES
+   <$ONEXIT_BEFORE_COPYING_SAMPLES>
+
+   ;--- Update "samples" directory ------------------------------------------
+   <$SAMPLE_COPY_SAMPLES_TO_SAMPLE_DIR>
+
+   ;--- User HOOK -------------------------------------------------------
+   #define? ONEXIT_BEFORE_COPYING_TO_PLATFORM_DIRECTORIES
+   <$ONEXIT_BEFORE_COPYING_TO_PLATFORM_DIRECTORIES>
+
+   ;--- Update any platform dirs --------------------------------------------
+   <$PLATFORM_COPY_OUTPUT_TO_PLATFORM_DIR>
+
+   ;--- User HOOK -------------------------------------------------------
+   #define? ONEXIT_FINISHED_ALL_NORMAL_PROCESSING
+   <$ONEXIT_FINISHED_ALL_NORMAL_PROCESSING>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- EXECUTE VBS (generates the MSI) ----------------------------------------
+;----------------------------------------------------------------------------
+#define @@ScriptFailedSeeAbove \
+        'It is likely that there are more details ABOVE this error message.'
+#DefineRexx '@@Rexx2ExecBuildMsiVbs' NoPack
+    ;--- Record starting time -------------------------------------------
+    @@StartTime = GetAmPmTime()
+
+    ;--- Change to VBS color ------------------------------------------------
+    call ColorCfg '?VBS', '<$ONEXIT_VBS_OUTPUT_COLOR>';
+    call ColorSet '?VBS';
+
+    ;--- Make sure we delete any RC file ------------------------------------
+    @@VbsRcFile = '<$MSI_NAME_OF_VBSCRIPT_RETURN_CODE_FILE>';
+    call FileDelete @@VbsRcFile;
+
+    ;--- Set up the command -------------------------------------------------
+    @@Cmd = '<$MAKEMSI_CSCRIPT.EXE> "<$MSI_NAME_OF_GENERATED_VBS>" {$VbsParms}'
+
+    ;--- Execute the command ------------------------------------------------
+    #ifdef IsDos
+        call AddressCmd @@Cmd;
+    #elseif
+        ;--- Get name of non existant temporary file ------------------------
+        @@TempFile  = RexGetTmpFileName('V{$Pass}_?????.TMP')
+
+        ;--- Update the command to generate the file ------------------------
+        @@Cmd = @@Cmd || " 2>&1 | <$NAME_REGINA.EXE> <$NAME_TEE.REX> '" || @@TempFile || "' 2>&1"
+;**    [CommentBlockStart     (April 28, 2005 5:24:11 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|        @@Cmd = @@Cmd || " 2>&1 | <$NAME_REGINA.EXE> <$NAME_TEE.REX>  '" || @@TempFile || "'"
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (April 28, 2005 5:24:11 PM EST, Dennis)
+
+        ;--- Needed for regina 3.1+????????????????????? --------------------
+        @@Cmd = 'cmd.exe /c "' || @@Cmd || '"';
+
+        ;--- Execute the VBS ------------------------------------------------
+        address cmd @@Cmd;
+
+        ;--- Sanity check (and have seen 0 length files) --------------------
+        ;@@TempFile = "out\ZeroLength.txt"
+        @@WhatThe = "";
+        if  FileQueryExists(@@TempFile) = '' then
+        do
+            @@WhatThe = "doesn't exist!"
+            @@Maybe   = "Is there a permissions issue?"
+        end;
+        else
+        do
+            ;--- File exists, make sure not 0 length! -----------------------
+            if  FileQuerySize(@@TempFile) = "0" then
+            do
+                @@WhatThe = "is zero characters long!"
+                @@Maybe =            "I have seen Norton's AntiVirus cause this.  Some AntiVirus and AntiSpyWare" || d2c(10)
+                @@Maybe = @@Maybe || 'can be configured to terminate scripts without informing you!'            || d2c(10)
+                @@Maybe = @@Maybe || 'You may wish to try the "Diagnostic Shortcuts" MAKEMSI installed.'
+            end;
+        end;
+        if  @@WhatThe <> '' then
+        #(
+            error('We expected the temporary file "' || @@TempFile || '" to contain the output from the pass {$Pass} processing, but the output file ' || @@WhatThe,, 'The command was:','   ' || @@Cmd,,'Have you rebooted since the MAKEMSI install? If not please try this!',,@@Maybe);
+        #)
+
+        ;--- User already seen (TEE output) so just add to log --------------
+        @@VbsCons = charin(@@TempFile, 1, 9999999)
+        call FileClose  @@TempFile;
+        call FileDelete @@TempFile, 'N';        ;;Don't die if we can't delete!
+        @@VbsCons = ReplaceString(@@VbsCons, '0D'x, '');   ;;Has CR+LF, need LF, CR gets re-added
+        call Say2Logs ''
+        call Say2Logs '#### START: VBSCRIPT PASS {$Pass} (' || @@StartTime || ') ' || copies('#', 30)
+        call Say2Logs @@VbsCons;
+        call Say2Logs '#### END:   VBSCRIPT PASS {$Pass} (' || GetAmPmTime() || ') ' || copies('#', 30)
+        call Say2Logs ''
+    #endif
+
+    ;--- Did the VBS abort? -------------------------------------------------
+    if  FileQueryExists(@@VbsRcFile) = '' then
+        error('The generated VBSCRIPT (pass #{$Pass}) failed to complete',, <$@@ScriptFailedSeeAbove>)
+
+    ;--- Well it didn't abort so read in the return code and check it -------
+    @@VbsRc = linein(@@VbsRcFile);
+    if  @@VbsRc <> <$MSI_VBS_OK_RC> then
+        error('The generated VBSCRIPT (pass #{$Pass}) failed with RC = "' || @@VbsRc || '"',, <$@@ScriptFailedSeeAbove>)
+    call FileClose @@VbsRcFile;
+
+    ;--- Reset the color ----------------------------------------------------
+    call ColorSet 'DEFAULT';
+#DefineRexx
+#ifndef Rexx4ExecutingVbsPass1
+   ;--- User has not overriden ----------------------------------------------
+   #DefineRexx 'Rexx4ExecutingVbsPass1' NOPACK
+        ;--- Delete the first file sequence number file ---------------------
+        call FileDelete "<$MSI_NAME_OF_FILE_FIRST_SEQUENCE_FILE>";
+
+        ;--- Delete the forced DiskId File ----------------------------------
+        call FileDelete "<$MSI_NAME_OF_FILE_FORCED_MEDIA_DISKID_RANGE>";
+
+        ;--- Start PASS 1 ---------------------------------------------------
+        <$@@Rexx2ExecBuildMsiVbs Pass="1" VbsParms=^^>
+   #DefineRexx
+#endif
+#ifndef Rexx4ExecutingVbsPass2
+   ;--- User has not overriden ----------------------------------------------
+   #DefineRexx 'Rexx4ExecutingVbsPass2' NOPACK
+        <$@@Rexx2ExecBuildMsiVbs Pass="2" VbsParms=^ADD_DOCO^>
+   #DefineRexx
+#endif
+
+
+
+#NextId UNLOCK "ONEXIT.MMH"

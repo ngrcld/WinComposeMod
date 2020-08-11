@@ -1,0 +1,532 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   REGIMPORT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.13  $
+;          $Date:   19 Nov 2011 13:59:02  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/RegImport.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;--- Handles MSI formatting chars like "[" ----------------------------------
+#include "NotMsiFmt.MMH"
+
+;--- Create namespace -------------------------------------------------------
+#NextId
+#NextId LOCK "REGIMPORT.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[Options4Doco]---
+#define? REGIMPORT_DIE_ON_UNKNOWN_HIVES                Y
+#define? DEFAULT_REGIMPORT_SPECIALFOLDER_TRANSLATIONS  Y
+#define? REGIMPORT_DEFAULT_COMPONENT_EXP               'REGIMPORT_' || {$HiveVar}
+
+;--- These should contain rexx code, they are passed the NAMES of variables containing the data ---
+#define? REGIMPORT_REXXCODE_HOOK_FILELINE_MANIPULATION        ;;Gets passed "LINEVAR", called very soon afrer line from file read.
+#define? REGIMPORT_REXXCODE_HOOK_STRING                       ;;Gets passed a STRING's "NAMEVAR" & "VALUEVAR"
+;---[Options4Doco]---
+
+;--- We handle these Hives --------------------------------------------------
+#RexxVar @@HIVE_CLASSES_ROOT  = ""
+#RexxVar @@HIVE_CURRENT_USER  = ""
+#RexxVar @@HIVE_LOCAL_MACHINE = ""
+
+
+;----------------------------------------------------------------------------
+;--- IMPORT REGISTRY --------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define RegistryImport
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Perform initialization of folder translations -----------------------
+   <$IMPORTTRANS_INITIALIZATION>
+
+   ;--- Do the work ---------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4RegistryImport {$?}>^
+   #{  FOR @@I = 1 to @@VbsCnt
+       <??@@Vbs.@@I><?RestartLine>
+   #}
+#)
+
+
+#DefineRexx '@@Rexx4RegistryImport'
+    ;--- Start Debug --------------------------------------------------------
+    #if  ['<$DBG_RegistryImport>' <> 'N']
+        <$DBG_SAY> 'RegistryImport command starting';
+        <$DBG_INC>
+    #endif
+
+    ;--- Want SpecialFolderTranslations? ------------------------------------
+    @@SfTranslations = translate('{$SpecialFolderTranslations=^<$DEFAULT_REGIMPORT_SPECIALFOLDER_TRANSLATIONS>^}');
+
+   ;--- File exists? --------------------------------------------------------
+   @@Re4File = '{$#1}';
+   if  FileQueryExists(@@Re4File) = '' then
+       error('The REGEDIT4 file "' || @@Re4File || '" could not be found!')
+   call AddInputFileToDependancyList @@Re4File;
+   call Reading @@Re4File;
+
+   ;--- Must be of "REGEDIT4" format! ---------------------------------------
+   @@FirstLine = linein(@@Re4File);
+   @@LookFor   = 'REGEDIT4';
+   #if  ['<$DBG_RegistryImport>' <> 'N']
+        <$DBG_SAY> 'Line #1: ' || @@FirstLine;
+   #endif
+   if  @@FirstLine <> @@LookFor then
+       error('The registry file "' || @@Re4File || '" is not in "' || @@LookFor || '" format!');
+
+   ;--- How do we wish to generate the output -------------------------------
+   @@ApplyDefinitions = translate('{$ApplyDefinitions="Y"}');
+   if  @@ApplyDefinitions <> 'N' then
+   do
+       ;--- Direct import into MAKEMSI (user will not "see" output ----------
+       @@MR = '<' || '$';              ;;(M)acro (R)replace chars
+       @@NL = d2c(10);                 ;;(N)ew (L)ine codes
+       @@Hash = '#';
+       @@Ind1 = ' '
+       @@Ind2 = ' '
+   end;
+   else
+   do
+       ;--- Output will be generated in viewable form (not used by MAKEMSI) -
+       @@MR = '<?x3C>' || '$';         ;;Human wants to view/taylor
+       @@NL = '<?NewLine>';
+       @@Hash = '<?Hash>';
+       @@Ind1 = copies(' ', 4)
+       @@Ind2 = @@Ind1 || @@Ind1
+   end;
+
+   ;--- User will see the output? -------------------------------------------
+   @@VbsCnt = 0
+   if  @@ApplyDefinitions = 'N' then
+   do
+       ;--- Yes, output comments --------------------------------------------
+       @@V = ''
+       @@V = @@V || ';###<?NewLine>'
+       @@V = @@V || ';### Imported: "' || @@Re4File || '"<?NewLine>'
+       @@V = @@V || ';###     Time: <?CompileTime><?NewLine>'
+       @@V = @@V || ';###<?NewLine><?NewLine>'
+       @@VbsCnt       = @@VbsCnt + 1
+       @@Vbs.@@VbsCnt = @@V;
+   end;
+
+   ;--- Does user want all entries ------------------------------------------
+   @@WantHive_Current_User   = '{$CURRENT_USER=^^  $$IsPassed}';
+   @@WantHive_Local_Machine  = '{$LOCAL_MACHINE=^^ $$IsPassed}';
+   @@WantHive_Classes_Root   = '{$CLASSES_ROOT=^^  $$IsPassed}';
+   @@Component_Current_User  = '{$CURRENT_USER=^^}';
+   @@Component_Local_Machine = '{$LOCAL_MACHINE=^^}';
+   @@Component_Classes_Root  = '{$CLASSES_ROOT=^^}';
+
+   ;--- Now import the rest of the file -------------------------------------
+   @@CurrHive  = '';
+   @@CurrKey   = '';
+   @@MsiFmtKey = ''
+   @@CurrKeyCnt = 0;                       ;;Number of entries written under it...
+   @@CompLine = '';                        ;;Lines can be continued!
+   @@LineCnt  = 1;
+   @@DropEntries   = 'Y';                  ;;Drop non-key lines?
+   @@CurrComponent = '';                   ;;Name of the component for the HIVE
+   do  while lines(@@Re4File) <> 0
+       ;--- Read the next line ----------------------------------------------
+       @@ThisLine = strip(linein(@@Re4File));
+       @@LineCnt  = @@LineCnt + 1;
+
+       ;--- Don't care about blank or comment lines -------------------------
+       if  @@ThisLine = '' then
+           iterate;
+       if  left(@@ThisLine, 1) = ';' then
+           iterate;
+       #if  ['<$DBG_RegistryImport>' <> 'N']
+            <$DBG_SAY> 'Line #' || @@LineCnt || ': ' || @@ThisLine;
+       #endif
+       <$REGIMPORT_REXXCODE_HOOK_FILELINE_MANIPULATION LINEVAR='@@ThisLine'>;   ;;Allow user to handle tabs etc if they wish
+       if  pos('09'x, @@ThisLine) then
+           error("The following line contains tabs (not supported): ", "   " || @@ThisLine);
+
+       ;--- Take care of any EOF char in the file ---------------------------
+       if  pos('1A'x, @@ThisLine) <> 0 then
+           leave;
+
+       ;--- Build the complete line (the current line may be a continuation) ---
+       @@CompLine = @@CompLine || @@ThisLine;
+
+       ;--- Does this line continue onto the next? --------------------------
+       if  right(@@CompLine, 1) = '\' then
+       do
+           ;--- YES so remove the slash and get the rest of the line --------
+           @@CompLine = left(@@CompLine, length(@@CompLine)-1);
+           iterate;
+       end;
+
+       ;--- Is this a key ("[key]") line? -----------------------------------
+       if  left(@@CompLine, 1) = '[' then
+       do
+           ;--- The line must end with "]"! ---------------------------------
+           if  right(@@CompLine, 1) <> ']' then
+               error('The following registry "[key]" line should end with "]":', @@CompLine);
+
+           ;--- Separate the hive from the rest of the key ------------------
+           @@PrevHive      = @@CurrHive
+           @@PrevKey       = @@CurrKey;
+           @@PrevMsiFmtKey = @@MsiFmtKey;
+           @@FullKey  = substr(@@CompLine, 2, length(@@CompLine)-2);  ;;Remove "[" & "]"
+           parse var @@FullKey @@CurrHive '\' @@CurrKey;
+           @@CurrHive = translate(@@CurrHive);
+           if  @@CurrHive = '' | @@CurrKey = '' then
+               error('Hive or key part missing from "[]" line:', @@CompLine);
+           if  left(@@CurrHive, 5) <> 'HKEY_' then
+               error('Expected the hive to start with "HKEY_" in:', @@CompLine);
+           @@CurrHive   = substr(@@CurrHive, 6);   ;;Remove "HKEY_"
+
+           ;--- Key might contain '[' or ']' etc ----------------------------
+           @@Before = @@CurrKey;
+           <$NotMsiFmt InVar="@@CurrKey">
+           if   @@SfTranslations <> 'N' then
+           do
+                <$ImportTranslationMake VAR="@@CurrKey">
+           end;
+           if   @@Before = @@CurrKey then
+                @@MsiFmtKey = ""
+           else
+                @@MsiFmtKey = "KEY"
+
+           ;--- Need to create any previous key? ----------------------------
+           if   @@PrevKey <> '' & @@CurrKeyCnt = 0 then
+           do
+               ;--- This is not the first key and no values were found for it (a valid but unusual situation) ---
+               if   (translate(@@CurrHive) <> translate(@@PrevHive)) | (translate(left(@@CurrKey, length(@@PrevKey)) <> translate(@@PrevKey))) then
+               do
+                    ;--- Need to make this key ------------------------------
+                    <$@@Rexx2CreateRegistryKeyThatDoesNotContainSubkeysOrValues HIVEVAR='@@PrevHive' KeyVar="@@PrevKey" KeyFmtVar="@@PrevMsiFmtKey">;
+               end;
+           end;
+           @@CurrKeyCnt = 0;
+
+           ;--- Does the user want this set of keys? ------------------------
+           if  symbol('@@HIVE_' || @@CurrHive) <> 'VAR' then
+           do
+               ;--- We don't know this hive, user wish to die in this case? ---
+               if  'Y' = translate('{$DieOnUnknownHive=^<$REGIMPORT_DIE_ON_UNKNOWN_HIVES>^}') then
+                   error('The hive "' || @@CurrHive || '" is unsupported and you have indicated you do not wish to ignore it.')
+               else
+               do
+                   ;--- OK, we will just ignore it --------------------------
+                   @@DropEntries = 'Y';
+                   @@CompLine    = '';
+                   iterate;
+               end;
+           end;
+
+           ;--- We have a supported hive, does the user wish to handle it? ---
+           if  value('@@WANTHIVE_' || @@CurrHive) = 'Y' then
+               @@DropEntries = 'N';
+           else
+           do
+               ;--- User wants to ignore ------------------------------------
+               @@DropEntries = 'Y';
+               @@CompLine    = '';
+               iterate;
+           end;
+       end;
+       else
+       do
+           ;--- We must know the hive and key! ------------------------------
+           if  @@CurrHive = '' then
+               Error('Expected to find a key before this line:', @@CompLine);
+
+           ;--- Are we ignoring everything until the next key? --------------
+           @@CurrKeyCnt = @@CurrKeyCnt + 1;
+           if  @@DropEntries = 'Y' then
+           do
+               @@CompLine = '';
+               iterate;
+           end;
+
+           ;--- We want this entry, do we need to create a component? -------
+           <$@@CreateCurrentComponentIfRequired HiveVar="@@CurrHive">;
+
+           ;--- Separate the value name from the value ----------------------
+           parse var @@CompLine @@ValueName '=' @@Value
+           @@ValueName = strip(@@ValueName);
+           @@Value     = strip(@@Value);
+
+           ;--- The value name could be double quoted -----------------------
+           if  left(@@ValueName, 1) = '"' then
+               @@ValueName = substr(@@ValueName, 2, length(@@ValueName)-2);
+
+           ;--- Translate the default value name ----------------------------
+           if  @@ValueName = '@' then
+               @@ValueName = '';
+
+           ;--- String values are quoted ------------------------------------
+           @@ValueCmt = '';
+           @@MsiFmtValue = ''
+           if  left(@@Value, 1) = '"' then
+           do
+               ;--- Its a string --------------------------------------------
+               @@Type = 'STRING';
+
+               ;--- See if a multiple line value type -----------------------
+               if  right(@@Value,1) <> '"' then
+                   error("Don't yet handle strings spanning multiple lines:", @@CompLine);
+
+               ;--- The value will have been quoted (remove these) ----------
+               @@Value = substr(@@Value, 2, length(@@Value)-2);
+
+               ;--- Allow User to insert logic here -------------------------
+               <$REGIMPORT_REXXCODE_HOOK_STRING NAMEVAR='@@ValueName' VALUEVAR='@@Value'>
+
+               ;--- Take care of REGEDIT4 type escaping ---------------------
+               @@Value = ReplaceString(@@Value, '\"', '"');
+               @@Value = ReplaceString(@@Value, '\\', '\');
+
+               ;--- Now escape chars as per MSI rules -----------------------
+               @@Before = @@Value;
+               <$NotMsiFmt InVar="@@Value">
+               if  @@SfTranslations <> 'N' then
+               do
+                   <$ImportTranslationMake VAR="@@Value">
+               end;
+               if   @@Before <> @@Value then
+                    @@MsiFmtValue = 'VALUE'
+           end;
+           else
+           do
+               ;--- Not a string, see if a specific type was specified ------
+               @@OrigValue = @@Value;
+               parse var @@Value @@RegType ':' @@Value
+               @@RegType = translate(@@RegType);
+               select
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   when @@RegType = 'HEX' | @@RegType = 'HEX(1)' then
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                        @@Type = 'BINARY';
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   when @@RegType = 'HEX(2)' then
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   do
+                       ;--- Should be "00" (but can be "00,") terminated ----
+                       @@Type  = 'EXPSTRING';
+                       @@Ascii = ''
+                       if   right(@@Value, 1) == ',' then
+                            @@Value = left(@@Value, length(@@Value)-1);         ;;2007/07/16: Handle terminating "00," (comma)
+                       do  while    @@Value <> '00'
+                           ;--- Get next hex byte ---------------------------
+                           parse var @@Value @@Hex ',' @@Value;
+
+                           ;--- Report incorrectly formatted values ---------
+                           if   @@Value = '' then
+                                error('Did not find the end of the expandable string "' || @@ValueName || '"',, 'It should end with ",00".');
+
+                           ;--- Add to ASCII string -------------------------
+                           @@Ascii = @@Ascii || x2c(@@Hex);
+                       end;
+                       @@Value = @@Ascii;
+
+                       ;--- Now escape chars as per MSI rules ---------------
+                       @@Before = @@Value;
+                       <$NotMsiFmt InVar="@@Value">     ;;Added 30July2005
+                       if  @@SfTranslations <> 'N' then
+                       do
+                           <$ImportTranslationMake VAR="@@Value">
+                       end;
+                       @@Value = ReplaceString(@@Value, '00'x, '[~]');   ;;Added 14July2007: Only expect terminating "00", handle intermediate even though probably invalid as "hex(7)" probably should have been used
+                       if   @@Before <> @@Value then
+                            @@MsiFmtValue = 'VALUE'
+                   end;
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   when @@RegType = 'HEX(7)' then
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   do
+                       ;--- Allow comma at end ------------------------------
+                       if   right(@@Value, 1) == ',' then
+                            @@Value = left(@@Value, length(@@Value)-1);         ;;2007/07/16: Handle terminating "00," (comma)
+
+                       ;--- Remove all spaces -------------------------------
+                       @@Type  = 'STRING';           ;;MULTI_SZ
+                       @@Value = space(@@Value, 0);
+
+                       ;--- Is this an "empty value" (00) -------------------
+                       if   @@Value = "00" then
+                       do
+                            @@Value = "[~]"
+                            @@MsiFmtValue = 'VALUE'     ;;Added 14July2007: [~] is Msi Formatting!
+                       end;
+                       else
+                       do
+                           ;--- ASCII chars with imbedded nulls -----------------
+                           @@Str = '[~]'                 ;;Indicate its MULTI_SZ
+                           do  while    @@Value <> ''
+                               ;--- Get next ASCII string -----------------------
+                               parse var @@Value @@StringBit ',00' @@Value;
+
+                               ;--- Convert to ASCII chars ----------------------
+                               @@StringBit = translate(@@StringBit, ' ', ",");
+                               @@Ascii     = x2c(@@StringBit);   ;;Make readable
+
+                               ;--- Now escape chars as per MSI rules -----------
+                               @@Before = @@Ascii;
+                               <$NotMsiFmt InVar="@@Ascii">
+                               if  @@SfTranslations <> 'N' then
+                               do
+                                   <$ImportTranslationMake VAR="@@Ascii">
+                               end;
+                               if   @@Before <> @@Ascii then
+                                    @@MsiFmtValue = 'VALUE'
+
+                               ;--- Add the string plus the NULL byte -----------
+                               @@Str = @@Str || @@Ascii || '[~]';
+
+                               ;--- Prepare for the next loop (ignore last null)
+                               if  @@Value = ',00' then
+                                   @@Value = '';
+                               else
+                                   @@Value = substr(@@Value, 2);  ;;Drop leading comma
+                           end;
+                           @@Value = @@Str;
+                       end;
+                   end;
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   when @@RegType = 'DWORD' then
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   do
+                       ;--- Extract the value (provided in HEX) -------------
+                       @@Type = 'DWORD';
+                       if left(translate(@@Value), 2) = '0X' then
+                          @@Value = substr(@@Value, 3);
+
+                       ;--- Drop leading zeros ------------------------------
+                       @@Value = strip(@@Value, 'L', '0');
+                       if @@Value = '' then @@Value = '0';    ;;Oops took all!
+
+                       ;--- If generating commands for user, add a comment --
+                       if  @@ApplyDefinitions = 'N' then
+                           @@ValueCmt = copies(' ', 25) || '<?SemiColon>;Decimal ' || x2d(@@Value);
+
+                       ;--- Provide the value to the macro in HEX -----------
+                       @@Value    = '&H' || @@Value;
+                   end;
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                   otherwise
+                   /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+                       call Warning 'REGIMPORT', "We don't currently handle values in format:", @@OrigValue;
+               end
+           end;
+
+           ;--- Format the name ---------------------------------------------
+           @@Before = @@ValueName
+           <$NotMsiFmt InVar="@@ValueName">
+           if  @@SfTranslations <> 'N' then
+           do
+               <$ImportTranslationMake VAR="@@ValueName">
+           end;
+           if   @@Before = @@ValueName then
+                @@MsiFmtNAME = ""
+           else
+                @@MsiFmtNAME = "NAME"
+
+           ;--- Work out the "MSIFORMATTED VALUE" ---------------------------
+           @@MsiFormatted = @@MsiFmtKey;            ;;Take care of "KEY"
+           if   @@MsiFmtNAME <> '' then
+           do
+                ;--- Take care of "NAME" ------------------------------------
+                if  @@MsiFormatted <> '' then @@MsiFormatted = @@MsiFormatted || ',';
+                @@MsiFormatted = @@MsiFormatted || @@MsiFmtNAME;
+           end;
+           if   @@MsiFmtVALUE <> '' then
+           do
+                ;--- Take care of "VALUE" -----------------------------------
+                if  @@MsiFormatted <> '' then @@MsiFormatted = @@MsiFormatted || ',';
+                @@MsiFormatted = @@MsiFormatted || @@MsiFmtVALUE;
+           end;
+
+           ;--- Now create the "REGISTRY" command ---------------------------
+           @@V = ''
+           @@V = @@V || @@Hash || '(' || @@NL;
+           @@V = @@V ||      @@Ind1 || @@Mr || 'Registry' || @@NL;
+           @@V = @@V ||      @@Ind2 || '       HKEY="' || @@CurrHive        || '"' || @@NL;
+           @@V = @@V ||      @@Ind2 || '        KEY="' || @@CurrKey         || '"' || @@NL;
+           @@V = @@V ||      @@Ind2 || '       NAME="' || @@ValueName       || '"' || @@NL;
+           @@V = @@V ||      @@Ind2 || '      VALUE='  || Quoted(@@Value)          || @@NL;
+           if  @@TYPE <> '<$DEFAULT_REGISTRY_TYPE>' then
+               @@V = @@V ||  @@Ind2 || '        TYPE="' || @@Type           || '"' || @@NL;
+           @@V = @@V ||      @@Ind2 || '     KEYPATH="Y"'                          || @@NL;
+           @@V = @@V ||      @@Ind2 || '   Component="' || @@CurrComponent  || '"' || @@NL;
+           if   @@MsiFormatted <> '' then
+                @@V = @@V || @@Ind2 || 'MsiFormatted="' || @@MsiFormatted   || '"'  || @@NL;
+           @@V = @@V ||     @@Ind1 || '>' || @@NL;
+           @@V = @@V || @@Hash || ')' || @@NL || @@NL;
+           @@VbsCnt       = @@VbsCnt + 1;
+           @@Vbs.@@VbsCnt = @@V;
+           #if  ['<$DBG_RegistryImport>' <> 'N']
+                <$DBG_SAY> 'GENERATING: ' || ReplaceString(@@V, @@NL, ' ')
+           #endif
+       end
+
+       ;--- We have processed this line! ------------------------------------
+       @@CompLine = '';
+   end;
+   call FileClose @@Re4File;
+   call Reading
+
+   ;--- Do we need to create the last seen key? -----------------------------
+   if   @@CurrKey <> '' & @@CurrKeyCnt = 0 then
+   do
+       ;--- We have seen at least one key and the last have no values -------
+       <$@@Rexx2CreateRegistryKeyThatDoesNotContainSubkeysOrValues HIVEVAR='@@CurrHive' KeyVar="@@CurrKey" KeyFmtVar="@@MsiFmtKey">;
+   end;
+
+   ;--- End Debug -----------------------------------------------------------
+   #if  ['<$DBG_RegistryImport>' <> 'N']
+        <$DBG_SAY> 'RegistryImport command completed (generated commands expanded below)';
+        <$DBG_DEC>
+   #endif
+#DefineRexx
+#DefineRexx '@@CreateCurrentComponentIfRequired'
+   @@CompVar       = '@@Component_' || {$HiveVar};
+   @@CurrComponent = value(@@CompVar);
+   if  @@CurrComponent = '' then
+   do
+       ;--- Need to make a component --------------------------------
+       @@CurrComponent = <$REGIMPORT_DEFAULT_COMPONENT_EXP HIVEVAR=^{$HiveVar}^>;
+       @@VbsCnt        = @@VbsCnt + 1
+       @@Vbs.@@VbsCnt  = @@Mr || 'Component "' || @@CurrComponent || '" Create="Y" Directory_="' || @@MR || 'AnyDir>">' || @@Mr || '/Component>' || @@NL || @@NL
+
+       ;--- We only wish to make it once! ---------------------------
+       call value @@CompVar, @@CurrComponent
+   end;
+#DefineRexx
+#DefineRexx '@@Rexx2CreateRegistryKeyThatDoesNotContainSubkeysOrValues'
+    if  value('@@WANTHIVE_' || {$HiveVar}) = 'Y' then
+    do
+        ;--- User wants this hive -------------------------------------------
+        <$@@CreateCurrentComponentIfRequired HIVEVAR='{$HiveVar}'>;
+        @@V = ''
+        @@V = @@V || @@Hash || '(' || @@NL;
+        @@V = @@V ||     @@Ind1 || @@Mr || 'Registry'                           || @@NL;  ;;Creating an "empty key
+        @@V = @@V ||     @@Ind2 || '        HKEY="' || {$HiveVar}        || '"' || @@NL;
+        @@V = @@V ||     @@Ind2 || '         KEY="' || {$KeyVar}         || '"' || @@NL;
+        @@V = @@V ||     @@Ind2 || '     KEYPATH="Y"'                           || @@NL;
+        @@V = @@V ||     @@Ind2 || '   Component="' || @@CurrComponent   || '"' || @@NL;
+        if  {$KeyFmtVar} <> '' then
+            @@V = @@V || @@Ind2 || 'MsiFormatted="KEY"'                  || @@NL;
+        @@V = @@V ||     @@Ind1 || '>' || @@NL;
+        @@V = @@V || @@Hash || ')' || @@NL || @@NL;
+        @@VbsCnt       = @@VbsCnt + 1;
+        @@Vbs.@@VbsCnt = @@V;
+    end;
+#DefineRexx
+
+
+#NextId UNLOCK "REGIMPORT.MMH"

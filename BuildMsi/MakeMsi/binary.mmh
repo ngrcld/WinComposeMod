@@ -1,0 +1,289 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   BINARY.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.16  $
+;          $Date:   20 Oct 2006 19:04:06  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/binary.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "Binary"
+
+;----------------------------------------------------------------------------
+;--- Some Options -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_BINARY_DOCO                Y         ;;"N" = Don't add to doco (by default)
+#define? BINARY_VALIDATION_EXTERNAL_TABLE   NEW
+#define? BINARY_VALIDATION_INTERNAL_TABLE   NEW -MISSINGDATA
+#define? BINARY_WANT_FILEHASH               Y                   ;;MD5 for report
+#define? BINARY_HTMLRPT_HR                  <$SUNDRY_HTMLRPT_HR>
+#( '<?NewLine>'
+   #define? BINARY_STYLES
+
+   .BinaryCmtPlus             {font-size:9pt;}
+   .BinaryCmtName             {<$HTMLRPT_STYLE_VALUES_KEY>}
+   .BinaryCmtValue            {<$HTMLRPT_STYLE_VALUES_VALUE>}
+#)
+
+;----------------------------------------------------------------------------
+;--- ADD BINARY -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Binary
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1,KEY,DOCO,TABLE,@VALIDATE,COMMENT}
+
+   ;--- Do some basic processing (checks that file exists) ------------------
+   #evaluate ^^ ^<$Rexx4Binary {$?}>^
+
+   ;--- Add the Binary into the appropriate table ---------------------------
+   #if  [@@InternalTable = 'N']
+        ;--- Binary or other external table table ---------------------------
+        <$Table "<??@@Table>">
+            <$Row Data="<??@@BinaryFile>" Name=^<??@@RowKey>^ @Validate="{$@Validate=^<$BINARY_VALIDATION_EXTERNAL_TABLE>^}">
+        <$/Table>
+   #else
+        ;--- Internal Table -------------------------------------------------
+        <$Table "<??@@Table>" CREATE="N">
+            <$Row Data="<??@@BinaryFile>" Name=^<??@@RowKey>^ @Validate="{$@Validate=^<$BINARY_VALIDATION_INTERNAL_TABLE>^}">
+        <$/Table>
+   #endif
+
+   ;--- Get an MD5 hash for the doco ----------------------------------------
+   <??@@VbsMd5><?RestartLine>
+#)
+#RexxVar @@HtmlItemCnt = 0                   ;;#items for the HTML report
+#DefineRexx 'Rexx4Binary'
+   ;--- Get the full filename -----------------------------------------------
+   @@File     = '{$#1}';
+   {$Comment='' $$RxVar:@@Comment};
+   if   @@Comment = '' then
+        @@Comment = RxFileComment.RxFileCommentCnt;   ;;Any block comment?
+   @@Table    = '{$Table=^Binary^}';
+   if   left(@@Table,1) = '_' then
+        @@InternalTable = 'Y';
+   else
+        @@InternalTable = 'N';
+   @@BinaryFile = FindFile(@@File);
+   if  @@BinaryFile = '' then
+       error('The binary file "' || @@File || '" does not exist!');
+   call AddInputFileToDependancyList @@BinaryFile;
+
+   ;--- Work out a key ------------------------------------------------------
+   @@RowKey = '{$Key=^^}';
+   if  @@RowKey = '' then
+       @@RowKey = FilePart('n', @@File);  ;;Used supplied case!
+
+   ;--- Validate the row's key ----------------------------------------------
+   <$Rexx2CheckMsiId IdVar="@@RowKey" What="binary rowkey">
+
+   ;--- Add to Binary report ------------------------------------------------
+   @@VbsMd5 = '';
+   if  '{$Doco='<$DEFAULT_BINARY_DOCO>'}' <> 'N' then
+   do
+       <$BINARY_Rexx2AddToBinaryReport VBS='@@VBSMD5' TABLE='@@Table' ROWKEY='@@RowKey' FILENAME='@@BinaryFile' COMMENT='@@Comment'>
+   end;
+#DefineRexx
+#DefineRexx 'BINARY_Rexx2AddToBinaryReport'        ;;All parameters contain names of rexx variables
+   ;--- Create VBS to calculate MD5 and return it -----------------------
+   @@BinId = @@HtmlItemCnt;                ;;Any unique value will do (no spaces!)
+   #ifndef FILE_DISABLE_MD5_GENERATION_ALTOGETHER
+       #if ['<$BINARY_WANT_FILEHASH>' <> 'N']
+           {$VBS} = 'BinaryMd5ForReport "' || @@BinId || '", "' || {$FILENAME} || '"<?NewLine>'
+       #endif
+   #endif
+
+   ;--- User wants this in the doco -------------------------------------
+   @@SortKey = {$TABLE}   || 'FF'x || {$ROWKEY} || 'FF'x || {$FILENAME};
+   @@All     = @@SortKey || '00'x || {$TABLE} || '00'x || {$ROWKEY} || '00'x || {$FILENAME} || '00'x || @@BinId || '00'x || {$COMMENT} || '00'x ||  RxMmLocation;
+   @@HtmlItemCnt            = @@HtmlItemCnt + 1;
+   @@HtmlItem.@@HtmlItemCnt = @@All;
+   @@HtmlItem.0             = @@HtmlItemCnt;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- VB functions -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define BinaryVbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   function BinaryMd5ForReport(BinId, BinaryFile)
+   '=========================================================================
+       on error resume next
+       dim oHash : set oHash = FileHash(BinaryFile)
+       if  err.number = 0 then
+           ;--- We managed to obtain an MD5 value ---------------------------
+           VbsReturnMacro "Binary." & BinId & ".MD5", PrettyHash(oHash)
+       end if
+   end function
+#)
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? BINARY_BEFORE_BUTTON
+#define? BINARY_AFTER_BUTTON
+#(
+   #define? BINARY_BUTTON
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$BINARY_BEFORE_BUTTON>
+   <$BUTTON2 "BINARIES" Text="Binaries" CNT="@@HtmlItemCnt">
+   <$BINARY_AFTER_BUTTON>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? BINARY_BEFORE_REPORT
+#define? BINARY_AFTER_REPORT
+#( ''
+   #define? BINARY_REPORT
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$BINARY_BEFORE_REPORT>
+
+   ;--- Generate Binary report ----------------------------------------------
+   <A NAME="BINARIES"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$BINARY_HTML_NO_ENTRIES>
+   #elseif
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="BINARY FILES">
+      <$BINARY_HTML_REPORT_START>
+
+      ;--- Sort binary table entries ----------------------------------------
+      #evaluate ^^ ^call SortArray '@@HtmlItem'^
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Index = 1 to @@HtmlItemCnt
+          ;--- Split off components -----------------------------------------
+          #evaluate ^^ ^<$@@Rexx2PrepareInformation>^
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$BINARY_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$BINARY_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$BINARY_AFTER_REPORT>
+#)
+#DefineRexx '@@Rexx2PrepareInformation'
+   parse var @@HtmlItem.@@Index . '00'x @@Table '00'x @@RowKey '00'x @@File '00'x @@BinId '00'x @@Comment '00'x @@MmLocation;
+   @@ShortName = FilePart('n', @@File);
+   @@Directory = FilePart('l', @@File);
+   @@Directory = Wbr(@@Directory);
+
+   ;--- Get date/time info --------------------------------------------------
+   @@FileSize  = AddCommasToDecimalNumber(FileQuerySize(@@File));
+   @@FileTime  = FileQueryDateTime(@@File, '<$HTMLRPT_DATETIME_FORMAT>');
+
+   ;--- Get some other info -------------------------------------------------
+   @@Key = 'VBSRET.Binary.' || @@BinId || '.MD5'
+   if  Defined(@@Key) = 'N' then
+       @@Md5 = "?"
+   else
+       @@Md5 = ReplaceString( MacroGet(@@Key), "-", "-<wbr>" );
+
+   ;--- Allow user to combine some of the details for the report ------------
+   <$BINARY_COMBINE_SOME_DETAILS>;
+#DefineRexx
+
+
+#ifndef     BINARY_COMBINE_SOME_DETAILS
+   #define? BINARY_COMBINE_SOME_DETAILS_USER_HOOK_START
+   #define? BINARY_COMBINE_SOME_DETAILS_USER_HOOK_END
+   #define  BINARY_PREFIX @@
+   #DefineRexx 'BINARY_COMBINE_SOME_DETAILS'
+       ;--- Set up the division ---------------------------------------------
+       @@CommentCol = '<div class="BinaryCmtPlus">';
+
+       ;--- User Hook -------------------------------------------------------
+       <$BINARY_COMBINE_SOME_DETAILS_USER_HOOK_START>
+
+       ;--- Start with MD5 --------------------------------------------------
+       @@CommentCol = @@CommentCol || '<span class="BinaryCmtName">MD5</span> <span class="BinaryCmtValue">' || @@MD5 || '</span>';
+
+       ;--- Get any STRFINFO ----------------------------------------------------
+       <$FileInfoRexx2ExtractDocumentProperties FileVar="@@File" SfiVar="@@SFI">
+       @@Hr    = '<$BINARY_HTMLRPT_HR>'
+       if  @@SFI <> '' then
+           @@CommentCol = @@CommentCol || @@Hr || '<span class="FileCmtSFI" title="Document properties">' || @@SFI || '</span>'
+
+       ;--- Add any Comment -------------------------------------------------
+       if   @@Comment <> "" then
+            @@CommentCol = @@CommentCol || @@Hr || @@Comment
+
+        ;--- User Hook -------------------------------------------------------
+       <$BINARY_COMBINE_SOME_DETAILS_USER_HOOK_END>
+
+       ;--- End the division ------------------------------------------------
+       @@CommentCol = @@CommentCol || '</div>'
+   #DefineRexx
+#endif
+
+
+#( '<?NewLine>'
+   #define? BINARY_HTML_NO_ENTRIES
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="BINARY FILES">
+       <P><B>
+       <CENTER>There are no binaries.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? BINARY_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="3" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>Table</TH>
+       <TH>Key</TH>
+       <TH>Source<br>Directory</TH>
+       <TH>File<br>Name</TH>
+       <TH title="Files time" SortType="Date">Time</TH>
+       <TH title="Files size" SortType="NumberComma">Size</TH>
+       <TH>Comment</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? BINARY_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+       <TD><??@@Table></TD>
+       <TD><??@@RowKey></TD>
+       <TD><??@@Directory></TD>
+       <TD><??@@ShortName></TD>
+       <TD><??@@FileTime></TD>
+       <TD><??@@FileSize></TD>
+       <TD><??@@CommentCol></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? BINARY_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><CENTER><??@@HtmlItemCnt> binaries.</CENTER>
+   </CENTER>
+#)
+
+
+
+#NextId UNLOCK "Binary"
+

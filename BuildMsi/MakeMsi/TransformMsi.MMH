@@ -1,0 +1,131 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   TransformMsi.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.3  $
+;          $Date:   16 Aug 2006 19:35:20  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/TransformMsi.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "TransformMsi.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Some Options -----------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainTransformRelatedOptions]---
+#define?  TRANSFORM_VBEXP_IGNORE_ERRORS         msiTransformErrorNone           ;;Suppress what errors when applying created transform?
+#define?  TRANSFORM_VBEXP_VALIDATE_PROPERTIES   msiTransformValidationNone      ;;Validate what MSI properties when applying created transform?
+;---[4DocoMainTransformRelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Define VBSCRIPT variables/init code ------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define TransformingMsiVbsVariables
+   <?NewLine>
+   dim TransformingFile : TransformingFile = ""     'MSI being updated by user (not updated by time transform is created!)
+   dim WantedMstFile    : WantedMstFile    = ""     'If non-blank then user wants an MST created
+
+   ;--- Want to suppress these merge errors when applying transform... ------
+   const msiTransformErrorNone                   = 0    'None of the following conditions.
+   const msiTransformErrorAddExistingRow         = 1    'Adding a row that already exists.
+   const msiTransformErrorDeleteNonExistingRow   = 2    'Deleting a row that doesn't exist.
+   const msiTransformErrorAddExistingTable       = 4    'Adding a table that already exists.
+   const msiTransformErrorDeleteNonExistingTable = 8    'Deleting a table that doesn't exist.
+   const msiTransformErrorUpdateNonExistingRow   = 16   'Updating a row that doesn't exist.
+   const msiTransformErrorChangeCodepage         = 32   'Transform and database code pages do not match and neither code page is neutral.
+
+    ;--- Validate which properties when transform applied? ------------------
+   const msiTransformValidationNone           =    0  'No validation done.
+   const msiTransformValidationLanguage       =    1  'Default language must match base database.
+   const msiTransformValidationProduct        =    2  'Product must match base database.
+   const msiTransformValidationMajorVer       =    8  'Check major version only.
+   const msiTransformValidationMinorVer       =   16  'Check major and minor version only.
+   const msiTransformValidationUpdateVer      =   32  'Check major, minor, and update versions.
+   const msiTransformValidationLess           =   64  'Applied version < base version
+   const msiTransformValidationLessOrEqual    =  128  'Applied version <= base version
+   const msiTransformValidationEqual          =  256  'Applied version = base version
+   const msiTransformValidationGreaterOrEqual =  512  'Applied version >= base version
+   const msiTransformValidationGreater        = 1024  'Applied version > base version
+   const msiTransformValidationUpgradeCode    = 2048  'Validates that the transform is the appropriate UpgradeCode.
+#)
+#(
+    #define _TransformMsiDefineFile
+    TransformingFile = {$VbExp}
+#)
+
+
+;----------------------------------------------------------------------------
+;--- User needs to define how we want to create the transform ---------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+    #define Transform
+
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}
+    {$!:#1}
+
+    ;--- We can only use this command once! ---------------------------------
+    #ifdef @@TransformCommandUsed
+        #error ^The transform command has already been used!^
+    #endif
+    #define @@TransformCommandUsed
+
+    ;--- Record the fact that we wish to create a transform -----------------
+    if  TransformingFile = "" then
+        error "A transform can't be created unless updating an MSI..."
+    end if
+    WantedMstFile = "{$#1}"
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Called just before closing MSI in PASS 1 -------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+    #define _TransformMsiCreateMstIfRequired
+    if   TransformingFile <> ""  and WantedMstFile <> "" then
+        ;--- Init -----------------------------------------------------------
+        on error resume next
+        'oMSI.commit
+        say ""
+        say "Creating Transform: " & WantedMstFile
+
+
+        ;--- Open the "starting point" --------------------------------------
+        dim oMsiBefore : set oMsiBefore = oInstaller.OpenDatabase(TransformingFile, msiOpenDatabaseModeReadOnly)
+        VbsCheck "Opening original MSI: " & TransformingFile
+
+        ;--- Create the transform -------------------------------------------
+        dim MstChanges : MstChanges = oMsi.GenerateTransform(oMsiBefore, WantedMstFile)
+        VbsCheck "Creating Transform: " & WantedMstFile
+        if  MstChanges then
+            say "    * Changes Detected"
+        else
+            say "    * No changes found!"
+        end if
+
+        ;--- Add summary information ----------------------------------------
+        say "    * Adding Summary Information (ignore=" & <$TRANSFORM_VBEXP_IGNORE_ERRORS> & ", validate=" & <$TRANSFORM_VBEXP_VALIDATE_PROPERTIES> & ")"
+        dim UndocumentedRc : UndocumentedRc = oMsi.CreateTransformSummaryInfo(oMsiBefore, WantedMstFile, <$TRANSFORM_VBEXP_IGNORE_ERRORS>, <$TRANSFORM_VBEXP_VALIDATE_PROPERTIES>)
+        VbsCheck "Creating transform summary information"
+
+        ;--- Done -----------------------------------------------------------
+        say "    * Transform Completed."
+        set oMsiBefore = Nothing
+        on error goto 0
+    end if
+#)
+
+
+#NextId UNLOCK "TransformMsi.MMH"
+

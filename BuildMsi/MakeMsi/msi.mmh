@@ -1,0 +1,1726 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MSI.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.86  $
+;          $Date:   09 Jun 2018 11:11:10  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/msi.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "MSI.MMH"
+
+
+;--- Options ----------------------------------------------------------------
+#define? DEFAULT_MSI_TABLE_EXPORT_DIRECTORY         Exported IDT     ;;Generated into VBSCRIPT
+#define? MSI_NAME_OF_GENERATED_VBS                  <$MAKEMSI_OUT_LOG_DIR>Pass1+2.vbs
+#define? MSI_NAME_OF_GENERATED_PASS1_RETURNED_FILE  <$MAKEMSI_OUT_LOG_DIR>FromPass1.TXT
+#define? MSI_NAME_OF_VBSCRIPT_RETURN_CODE_FILE      <$MAKEMSI_OUT_LOG_DIR>VbsRc.TXT
+#define? MSI_NAME_OF_FILE_FIRST_SEQUENCE_FILE       <$MAKEMSI_OUT_LOG_DIR>FirstSeq.TXT
+#define? MSI_NAME_OF_FILE_FORCED_MEDIA_DISKID_RANGE <$MAKEMSI_OUT_LOG_DIR>Pass2CompileDiskId.TXT
+#define? MSI_ERROR_LIBRARIES                        <??*MAKEMSI_DIR>ErrorTemplates.TXT     ;;Contents of "MAKEMSI_DIR" ends with a slash!
+#define+ MSI_ON_FAILURE_RENAME_TO_VBEXP             ;;(doesn't work)oFS.GetParentFolderName({$MsiNameVar}) & "\FAILED-" & oFS.GetFileName({$MsiNameVar})
+#define? MSI_SUMMARY_MSI_NAME_TITLE                 MSI Name                               ;;If non-blank then added to PPWIZARD summary
+#define? MSI_SUMMARY_MSI_VERSION_TITLE              MSI Version                            ;;If non-blank then added to PPWIZARD summary
+#define? MSI_SUMMARY_MSI_NAME_FORMAT                FileNameRelative('<??@@MsiName>')      ;;FilePart('name', '<??@@MsiName>')
+#define? MSI_OPEN_MODE_READONLY                                msiOpenDatabaseModeReadOnly
+#define? MSI_OPEN_MODE_NEW_EMPTY_DATABASE                      msiOpenDatabaseModeCreateDirect
+#define? MSI_OPEN_MODE_EXISTING_VIA_TEMPLATE                   msiOpenDatabaseModeDirect
+#define? MSI_OPEN_MODE_EXISTING_NO_TEMPLATE                    msiOpenDatabaseModeTransact    ;;Play safe as we are modifying the MSI in place
+#define? MSI_OPEN_MODE_READONLY_COMMIT_ON_FAILURE              true
+#define? MSI_OPEN_MODE_NEW_EMPTY_DATABASE_COMMIT_ON_FAILURE    true
+#define? MSI_OPEN_MODE_EXISTING_VIA_TEMPLATE_COMMIT_ON_FAILURE true
+#define? MSI_OPEN_MODE_EXISTING_NO_TEMPLATE_COMMIT_ON_FAILURE  false
+#define? MSI_COMPLETE_AT_END_OF_PASS                           2                              ;;Must be either 1 or 2!
+#(
+    ;--- Blank means don't mark MSI build in progress -----------------------
+    #define? MSI_NOT_COMPLETE_TEXT
+    This MSI can't be installed as a MAKEMSI build or update
+    did not successfully complete.
+    <$CRLF><$CRLF>The failing build script ("<$MAKEMSI_MM_BASENAME>")
+    was executed at <?CompileTime>.
+#)
+
+
+;--- This code available for MAKEMSI as well as VBSCRIPTS it creates --------
+#( '<?NewLine>'
+   #define? MSI_CODE_ErrDetails()
+
+   <?NewLine><?NewLine>
+   '=========================================================================
+   function AddErr(Prefix)
+   '=========================================================================
+       if err.number = 0 then
+          AddErr = ""
+       else
+          dim ErrNumb : ErrNumb = err.number
+          dim ErrDesc : ErrDesc = err.description
+          if  ErrDesc <> "" then ErrDesc = " - " & ErrDesc
+          AddErr = Prefix & "REASON: 0x" & hex(ErrNumb) & ErrDesc
+       end if
+   end function
+   '=========================================================================
+   function ErrDetails()
+   '=========================================================================
+          ErrDetails = AddErr(", ")
+   end function
+   <?NewLine><?NewLine>
+#)
+
+
+;--- PICK up User error (undeclared variables etc) --------------------------
+#define? MSI_RESTORE_MAINLINE_ERROR_HANDLING on error goto 0
+
+;--- HTML2TEXT() OPTIONS ----------------------------------------------------
+#define? MSI_HTML2TEXT_FUNCTION_USES_IE_AUTOMATION                    N     ;;IE automation too fragile (even with all checking - for example can hang)
+#define? MSI_HTML2TEXT_IE_AUTOMATION_MAX_RETRIES                      20
+#define? MSI_HTML2TEXT_IE_AUTOMATION_MAX_RETRY_DELAY_IN_MILLISECONDS  500
+#define? MSI_HTML2TEXT_IE_AUTOMATION_MAX_SECONDS_WAIT_FOR_BLANK_PAGE  2
+#define? MSI_HTML2TEXT_IE_AUTOMATION_SEE_WINDOW_FOR_DEBUGGING         false
+#Rexxvar @@Html2TextCnt = 0
+#( ''
+    ;--- HTML2TEXT() uses IE automation, if this fails... -------------------
+    #define? HTML2TEXT_ADD
+    #RexxVar @@Html2TextCnt + 1
+    #RexxVar @@Html2TextFrom.@@Html2TextCnt = "{$From}"
+    #RexxVar @@Html2TextTo.@@Html2TextCnt   = "{$To}"
+#)
+#define? MSI_HTML2TEXT_POOR_MANS_CONVERSIONS_DEFINED_BEFORE
+#( ''
+    #define? MSI_HTML2TEXT_POOR_MANS_CONVERSIONS_DEFINED_STANDARD
+    <$HTML2TEXT_ADD FROM=^<p>^   TO=^vbCRLF & vbCRLF^>
+    <$HTML2TEXT_ADD FROM=^</p>^  TO=^""^>
+    <$HTML2TEXT_ADD FROM=^<br>^  TO=^vbCRLF^>
+    <$HTML2TEXT_ADD FROM=^<ol>^  TO=^" "^>
+    <$HTML2TEXT_ADD FROM=^</ol>^ TO=^" "^>
+    <$HTML2TEXT_ADD FROM=^<ul>^  TO=^" "^>
+    <$HTML2TEXT_ADD FROM=^</ul>^ TO=^" "^>
+    <$HTML2TEXT_ADD FROM=^<li>^  TO=^vbCRLF & " *"^>
+    <$HTML2TEXT_ADD FROM=^</li>^ TO=^""^>
+    <$HTML2TEXT_ADD FROM=^<b>^   TO=^""^>
+    <$HTML2TEXT_ADD FROM=^</b>^  TO=^""^>
+    <$HTML2TEXT_ADD FROM=^<i>^   TO=^""^>
+    <$HTML2TEXT_ADD FROM=^</i>^  TO=^""^>
+#)
+#define? MSI_HTML2TEXT_POOR_MANS_CONVERSIONS_DEFINED_AFTER
+#( '<?NewLine>'
+    #define? MSI_HTML2TEXT_DEFINE_ALL_POOR_MANS_CONVERSIONS
+
+    ;--- Define the simple text changes we'd like to make -------------------
+    <$MSI_HTML2TEXT_POOR_MANS_CONVERSIONS_DEFINED_BEFORE>
+    <$MSI_HTML2TEXT_POOR_MANS_CONVERSIONS_DEFINED_STANDARD>
+    <$MSI_HTML2TEXT_POOR_MANS_CONVERSIONS_DEFINED_AFTER>
+#)
+#( '<?NewLine>'
+    #define? MSI_HTML2TEXT_ACTUAL_POOR_MANS_CONVERSION_CODE
+    <$MSI_HTML2TEXT_DEFINE_ALL_POOR_MANS_CONVERSIONS>
+    #{  for @@i = 1 to @@Html2TextCnt
+        ;--- generate a line for each defined change ------------------------
+        Html2Text = replace(Html2Text, "<??@@Html2TextFrom.@@i>", <??@@Html2TextTo.@@i>)
+    #}
+#)
+#( '<?NewLine>'
+    #define? MSI_HTML2TEXT_FUNCTION_VIA_POOR_MANS_CHANGES
+
+    '==========================================
+    function Html2TextUsingPoorMans(ByVal Html2Text)
+    '==========================================
+        '--- MSI_HTML2TEXT_FUNCTION_VIA_POOR_MANS_CHANGES -------------------
+        on error resume next
+        <$MSI_HTML2TEXT_ACTUAL_POOR_MANS_CONVERSION_CODE>
+        Html2TextUsingPoorMans = Html2Text
+    end function
+#)
+#define? MSI_HTML2TEXT_FUNCTION_VIA_IE_AUTOMATION_EXTRA_DELAY_IN_MS 50
+#( '<?NewLine>'
+    #define? MSI_HTML2TEXT_FUNCTION_VIA_IE_AUTOMATION
+
+    '=========================================================================
+    function IeWorkedTruelyAmazing(ByVal Html, ByRef Text)
+    ' Windows is a crock isn't it? Simply navigating to a blank page can fail
+    ' and invalidate the IE object (which was originally successfully created).
+    ' I have seen every single step fail on perfectly working boxes, however
+    ' I have only seen the need for a single retry, using 20 just in case.
+    ' I have seen evidence that IE sometimes gets confused about
+    ' which object its refering to (scary).
+    '=========================================================================
+        ;--- Create new "clean" IE object -----------------------------------
+        on error resume next
+        IeWorkedTruelyAmazing = false
+        Text                  = ""
+        dim oStart : oStart  = Now()
+        dim IeObj  : IeObj   = "InternetExplorer.Application"
+        dim oIE    : set oIE = CreateObject(IeObj)
+        if  err.number <> 0 then
+            say "Html2Text(): Couldn't create IE object """ & IeObj & """" & ErrDetails()
+        else
+            ;--- Set up some attributes -------------------------------------
+            oIE.visible = <$MSI_HTML2TEXT_IE_AUTOMATION_SEE_WINDOW_FOR_DEBUGGING>
+            oIE.Silent  = true
+            oIE.offline = true
+
+            ;--- Now navigate to a blank page -------------------------------
+            oIE.Navigate("about:blank")     'Can fail
+            if  err.number <> 0 then
+                say "Html2Text(): Failed navigating IE to a blank page" & ErrDetails()
+            else
+                ;--- Wait for us to get to the blank page -------------------
+                do  while oIE.Busy
+                    if  err.number <> 0 then
+                        ;--- Failed navigating to blank page (what crap) ----
+                        say "Html2Text(): Failed waiting for a blank page in IE" & ErrDetails()
+                        set oIE = Nothing
+                        exit function
+                    end if
+
+                    ;--- Taken too long? ------------------------------------
+                    dim Ss : Ss = DateDiff("s", oStart, Now())
+                    if  Ss >= <$MSI_HTML2TEXT_IE_AUTOMATION_MAX_SECONDS_WAIT_FOR_BLANK_PAGE> then
+                        ;--- Waited too long --------------------------------
+                        say "Html2Text(): Waited too long (<$MSI_HTML2TEXT_IE_AUTOMATION_MAX_SECONDS_WAIT_FOR_BLANK_PAGE> seconds) for a blank page in IE!"
+                        set oIE = Nothing
+                        exit function
+                    end if
+
+                    ;--- Wait a bit -----------------------------------------
+                    wscript.sleep(50)
+                loop
+                if  err.number <> 0 then
+                    say "Html2Text(): IE object invalidated while waiting..." & ErrDetails()
+                else
+                    ;--- 2018-04-04: Worked for 10+ years now need a delay (assume bug in "oIE.Busy"), MS hotfixes just applied... ---
+                    wscript.sleep(<$MSI_HTML2TEXT_FUNCTION_VIA_IE_AUTOMATION_EXTRA_DELAY_IN_MS>)   ;;50 seems fine for now...
+
+                    ;--- Now convert the HTML -------------------------------
+                    dim oIeDoc : set oIeDoc = oIE.Document
+                    if  err.number <> 0 then
+                        say "Html2Text(): Failed getting IE object's document property" & ErrDetails()
+                    else
+                        ;--- Put the HTML into the document ------------------------
+                        oIeDoc.Body.innerHtml = Html
+                        if  err.number <> 0 then
+                            say "Html2Text(): Failed adding the HTML (.innerHtml) to convert to the html document" & ErrDetails()
+                        else
+                            ;--- Retrieve the TEXT -------------------------------------
+                            Text = oIeDoc.Body.innerText
+                            if  err.number <> 0 then
+                                say "Html2Text(): Failed retrieving the TEXT (.innerText), that is getting the 'converted' html" & ErrDetails()
+                            else
+                                ;--- Holy Moley it worked (you think I'm joking...) ---
+                                IeWorkedTruelyAmazing = true
+                            end if
+                        end if
+                   end if
+                   set oIeDoc = Nothing
+                end if
+            end if
+            oIE.Quit()
+        end if
+        set oIE = Nothing
+   end function
+
+
+
+   <?NewLine><?NewLine>
+   '=========================================================================
+   function Html2TextUsingIe(ByVal Html)
+   '=========================================================================
+       '--- MSI_HTML2TEXT_FUNCTION_VIA_IE_AUTOMATION ------------------------
+       on error resume next
+
+       ;--- Create blank page -----------------------------------------------
+       dim Try
+       dim OK : OK = false
+       for Try = 1 to <$MSI_HTML2TEXT_IE_AUTOMATION_MAX_RETRIES>
+           ;--- Delay between retries ---------------------------------------
+           if   Try <> 1 then
+                wscript.sleep(<$MSI_HTML2TEXT_IE_AUTOMATION_MAX_RETRY_DELAY_IN_MILLISECONDS>)
+           end if
+
+           ;--- Load and exit if OK -----------------------------------------
+           OK = IeWorkedTruelyAmazing(Html, Html2TextUsingIe)
+           if OK then
+              exit for
+           end if
+       next
+       if   OK then
+            ;--- It worked,  Tell user if we recovered ----------------------
+            if  Try <> 1 then
+                say "Html2TextUsingIe(): Recovered from the IE problem..."
+            end if
+       else
+            ;--- handle the error -------------------------------------------
+            Html2TextUsingIe = Html    ;;Perhaps use the original value...
+            <$MSI_HTML2TEXT_IE_AUTOMATION_FALLBACK_CODE>
+       end if
+  end function
+#)
+#( '<?NewLine>'
+    ;--- HTML2TEXT() uses IE automation, if this fails... -------------------
+    #define? MSI_HTML2TEXT_IE_AUTOMATION_FALLBACK_CODE
+
+    ;--- Take action, error message or do some hack conversion --------------
+    error("Html2Text(): Tried to use IE automation to convert HTML to text but this failed!")
+
+    ;--- If we weren't dying above... ---------------------------------------
+    ;<$MSI_HTML2TEXT_ACTUAL_POOR_MANS_CONVERSION_CODE>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Start MSI package ------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? MSI_STANDARD_APPNAME MakeMsi version <$MAKEMSI_VERSION>, a free tool by <?PpwizardAuthor> (<$MAKEMSI_HOMEPAGE>)
+#( '<?NewLine>'
+   ;--- Define Macro --------------------------------------------------------
+   #define MSI
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Only support its use once! ------------------------------------------
+   #ifdef   @@MSI_MACRO_ALREADY_USED
+            #error ^The "MSI" command can only be used once per script!^
+   #endif
+   #define  @@MSI_MACRO_ALREADY_USED START
+
+   ;--- Get the MSI/HTML filename -------------------------------------------
+   #(
+   #DefineRexx ''
+       ;--- Get MSI name ----------------------------------------------------
+       @@MsiName = '{$#1}';
+
+       ;--- If not readonly and no path specified assume normal location ----
+       if '{$READONLY="N" $$UPPER}' <> 'Y' then;
+       do;
+           if  pos('\', @@MsiName) = 0 then;
+           do;
+               ;--- Put in default location -------------------------------------
+               @@MsiName = '<$MAKEMSI_OUT_MSI_DIR>' || @@MsiName;
+
+               ;--- Create the default directory --------------------------------
+               call MakeDirectoryTree "<$MAKEMSI_OUT_MSI_DIR>";
+           end;
+       end;
+
+       ;--- Set some macros which we will refer to elsewhere ----------------
+       call MacroSet "MSI_MSINAME",                    @@MsiName;
+       call MacroSet "MSI_MSIBASENAME",  FilePart('N', @@MsiName);
+       call MacroSet "MSI_MSILOCATION",  FilePart('L', @@MsiName);
+       call MacroSet "MSI_HTMLNAME",     FilePart('WithoutExtn', @@MsiName) || '.<$MAKEMSI_HTML_EXTENSION>', '?';
+   #DefineRexx
+   #)
+
+   ;--- Generate the start of the VBSCRIPT ----------------------------------
+   #output "<$MSI_NAME_OF_GENERATED_VBS>"  ASIS      ;;Start VBS, runs until #onExit processing
+   <$VbsStart>
+   <$UpdateMmLocation>
+
+   ;--- How do we wish to open the MSI? -------------------------------------
+   #define @@DELETE_EXISTING_MSI N
+   #if ['{$READONLY="N" $$UPPER}' = 'Y']
+       ;--- Open the database as READ ONLY ----------------------------------
+       if  not oFS.FileExists("<??@@MsiName>") then
+           Error("The MSI ""<??@@MsiName>"" does not exist!")
+       end if
+       MsiOpen "<??@@MsiName>", <$MSI_OPEN_MODE_READONLY>, <$MSI_OPEN_MODE_READONLY_COMMIT_ON_FAILURE>
+   #elseif
+       ;--- Create/open the database for update -----------------------------
+       CreateDir( oFS.GetParentFolderName("<??@@MsiName>") )
+       #if ['{$CREATE="N" $$UPPER}' = 'Y']
+           ;--- Create the database from scratch ----------------------------
+           say "Creating a new empty MSI."
+           say "Creating ""<??@@MsiName>"""
+           MsiOpen "<??@@MsiName>", <$MSI_OPEN_MODE_NEW_EMPTY_DATABASE>, <$MSI_OPEN_MODE_NEW_EMPTY_DATABASE_COMMIT_ON_FAILURE>
+           #define+ @@DELETE_EXISTING_MSI Y
+       #elseif
+           ;--- User want to use a template? --------------------------------
+           dim oMsiFile
+           #if ['{$TEMPLATE=""}' = '']
+               ;--- No need to do anything ----------------------------------
+               say "Updating an existing MSI"
+               say "Updating ""<??@@MsiName>"""
+               #RexxVar @@OpenMode    = '<$MSI_OPEN_MODE_EXISTING_NO_TEMPLATE>'
+               #RexxVar @@CommitOnErr = '<$MSI_OPEN_MODE_EXISTING_NO_TEMPLATE_COMMIT_ON_FAILURE>'
+
+               ;--- Just check if write protected ---------------------------
+               set oMsiFile = oFS.GetFile("<??@@MsiName>")
+               if oMsiFile.Attributes and AttributeReadOnly then
+                  ;--- The template was write protected ---------------------
+                  error("The existing MSI (""<??@@MsiName>"") is write protected!")
+               end if
+           #else
+               ;--- Copy from the template (Make sure it exists) ------------
+               say "Creating a new MSI (template based)"
+               say "Creating ""<??@@MsiName>"""
+               say "From ""{$Template}"""
+               <$_TransformMsiDefineFile VBEXP=^"{$Template}"^>
+               #RexxVar @@OpenMode    = "<$MSI_OPEN_MODE_EXISTING_VIA_TEMPLATE>"
+               #RexxVar @@CommitOnErr = '<$MSI_OPEN_MODE_EXISTING_VIA_TEMPLATE_COMMIT_ON_FAILURE>'
+               if  not oFS.FileExists("{$Template}") then
+                   Error("The template MSI ""{$Template}"" does not exist!")
+               end if
+               on error resume next
+               oFS.CopyFile "{$Template}", "<??@@MsiName>", true
+               VbsCheck "Copying the template MSI file"
+
+               ;--- If readonly reset the attribute -------------------------
+               set oMsiFile = oFS.GetFile("<??@@MsiName>")
+               if oMsiFile.Attributes and AttributeReadOnly then
+                  ;--- The template was write protected ---------------------
+                  oMsiFile.Attributes = oMsiFile.Attributes - AttributeReadOnly
+               end if
+
+               <$MSI_RESTORE_MAINLINE_ERROR_HANDLING>
+               #define+ @@DELETE_EXISTING_MSI Y
+           #endif
+           set oMsiFile = Nothing
+
+           ;--- Want to open existing database so should exist! -------------
+           if  not oFS.FileExists("<??@@MsiName>") then
+               Error("The MSI file ""<??@@MsiName>"" does not exist!")
+           end if
+
+           ;--- Now open the MSI --------------------------------------------
+           MsiOpen "<??@@MsiName>", <??@@OpenMode>, <??@@CommitOnErr>
+       #endif
+
+       ;--- Tag the MSI as having changes -----------------------------------
+       #if  ['<$MSI_NOT_COMPLETE_TEXT $$IsBlank>' = 'N']
+            <$##MsiMarkChangesInProgress>
+       #endif
+
+       ;--- Set up some standard default "properties" (user can replace values) -
+       #define? MSI_STANDARD_COMMENT MSI generated by <$MSI_STANDARD_APPNAME>
+       #ifndef MSI_ONOPEN_LEAVE_SUMMARY_ALONE
+           #( ''
+               ;--- Don't need extra newlines in generated VB! --------------
+               <$Summary "AUTHOR"       VALUE="<?PpwizardAuthor>">
+               <$Summary "COMMENTS"     VALUE="<$MSI_STANDARD_COMMENT>">
+               <$Summary "AppName"      VALUE="<$MSI_STANDARD_APPNAME>">
+               <$Summary "LASTSAVE_DTM" VALUE="now()">
+           #)
+       #endif
+       #ifndef MSI_ONOPEN_LEAVE_PROPERTIES_ALONE
+           if  TableExists("Property") then
+               <$Property "ARPCOMMENTS" VALUE="<$MSI_STANDARD_COMMENT>">
+           end if
+       #endif
+   #endif
+
+   ;--- Want to delete any existing MSI -------------------------------------
+   #if ['<$@@DELETE_EXISTING_MSI>' = 'Y']
+       ;--- Delete any MSI or HTML ------------------------------------------
+       #(
+           #DefineRexx ''
+               call FileDelete Macroget("MSI_HTMLNAME");   ;;The HTML
+               call FileDelete @@MsiName;                  ;;The MSI
+               #if ['<$CABINET_TYPE>' = '<$CABINET_CAB_EXTERNAL_WITH_MSI>']
+                   ;--- Delete the CAB file ---------------------------------
+                   ;call FileDelete MacroGet('MSI_MSILOCATION') || '<$COMPILE_CAB_TABLE_KEY>';
+               #endif
+           #DefineRexx
+       #)
+   #endif
+
+   ;--- Remember some MSI details -------------------------------------------
+   #define  MSI_MSI_IS_READONLY {$READONLY="N" $$UPPER}
+
+   ;--- Want to see name of MSI in the PPWIZARD summary? --------------------
+   #if ['<$MSI_SUMMARY_MSI_NAME_TITLE>' <> '']
+       ;--- User wants it displayed in summary ------------------------------
+       #evaluate ^^ ^call Summary "<$MSI_SUMMARY_MSI_NAME_TITLE>", <$MSI_SUMMARY_MSI_NAME_FORMAT>^
+   #endif
+
+   ;--- Want to see MSI Version in the PPWIZARD summary? --------------------
+   #if ['<$MSI_SUMMARY_MSI_VERSION_TITLE>' <> '']
+       ;--- User wants it displayed in summary ---------------------------------
+       #evaluate ^^ ^call Summary "<$MSI_SUMMARY_MSI_VERSION_TITLE>", '<$ProductVersion>'^
+   #endif
+#)
+#(
+    #define MSI_CHECK_USE_OF_MSI_AND_/MSI_COMMANDS
+
+    ;--- Bit of a hack as the "ONEXIT" code should perhaps be processed by "/MSI" ---
+    #ifndef @@MSI_MACRO_ALREADY_USED
+        ;--- Didn't use "MSI" -----------------------------------------------
+        #error ^You must use the "MSI" command in your script!^
+    #elseif
+        #if ['<$@@MSI_MACRO_ALREADY_USED>' <> 'END']
+            ;--- Didn't use "/MSI" ------------------------------------------
+            #error ^You must use the "/MSI" command in your script (to match the "MSI" command)!^
+        #end if
+    #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- End MSI package --------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Define Macro --------------------------------------------------------
+   #define /MSI
+   <$UpdateMmLocation>
+
+   ;--- Ensure correct usage ------------------------------------------------
+   #ifndef  @@MSI_MACRO_ALREADY_USED
+            #error ^The "/MSI" command can only be used after the "MSI" command!^
+   #endif
+   #if      ['<$@@MSI_MACRO_ALREADY_USED>' = 'END']
+            #error ^The "/MSI" command can has already been used (only expected once)!^
+   #endif
+   #define+ @@MSI_MACRO_ALREADY_USED END
+
+   ;--- Any last minute work to be done -------------------------------------
+   #if ['<$MSI_MSI_IS_READONLY>' = 'N']
+       ;--- Add header properties that were specified -----------------------
+       <$_StampSourceDetailsIntoProperty>
+
+       ;--- Some queued up last minute stuff... -----------------------------
+       <$SELFREG_GENERATED_ORDERED_SELF_REGISTRATION_CODE>
+       <$SCHEDULE_GENERATE_IF_REQUIRED>
+       <$ADSI_GENERATE_IF_REQUIRED>
+       <$MSIEXTRA_CHECKING_GENERATE_IF_REQUIRED>
+
+       ;--- Get list of component GUIDs -------------------------------------
+       #if  ['<$ONEXIT_GENERATE_HTML>' <> 'N']
+            ;--- Only needed if HTML being generated ------------------------
+            <$Table "Component">
+               <$Row @Where="" @Code="Y" @VALIDATE="">     ;;Some stupid merge modules have component names which are too long - let later validation explain to user (don't die here)
+               #( '<?NewLine>'
+                   ;--- Return the info so it can be used in HTML report etc ---
+                   dim CName : CName = <$COLSTR.Component.Component>
+                   dim CGuid : CGuid = <$COLSTR.Component.ComponentId>
+                   VbsReturnMacro "CompGuid." & CName, CGuid
+               #)
+               <$/Row>
+           <$/Table>
+       #endif
+   #endif
+
+   ;--- Compile at end of pass 1 --------------------------------------------
+   <$Vbs4CompileAtEndOfPass "1">
+
+   ;--- Are we allowed to transform the MSI? --------------------------------
+   <$_TransformMsiCreateMstIfRequired>
+
+   ;--- Need for merge of merge modules... (MSI must be open to do this) ----
+   dim LastSeqNumber : LastSeqNumber = GetNextFileSequence() - 1
+
+   ;--- Close the MSI -------------------------------------------------------
+   dim Closing : Closing = MsiFileName
+   MsiClose(false)
+   say "Closing the Windows Installer Database (updates completed)."
+
+   ;--- For now put in a hook here (probably remove later) ------------------
+   #define? MSI_HOOK_MSI_CLOSED
+   <$MSI_HOOK_MSI_CLOSED>
+
+   ;--- Add merge modules ---------------------------------------------------
+   MergeModMergeModulesNow false, LastSeqNumber
+
+   ;--- Can't trust windows to return a non-zero return code (stupid...) ----
+   VbsReturnMacro "FINISHED", "YES"
+
+   ;--- Output ending VBS ---------------------------------------------------
+   say "Successfully processed """ & Closing & """."
+   say GetAmPmTime() & ": Took " & ElapsedSince(StartTime) & " seconds."
+   say ""
+   <$VbsEnd>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Inline VBS macros ------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define VBS
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1,CHECK}
+
+   ;--- Start User code -----------------------------------------------------
+   <$UpdateMmLocation>
+   #push "User VBSCRIPT"
+
+   ;--- Remember Details ---------------------------------------------------
+   #DefineRexx ''
+        @@UserVbsLocn = ReplaceString(RxMmLocation, '"', '""');
+        {$#1=^^ $$RxVar:@@UserVbsDesc};
+        if  @@UserVbsDesc = '' then;
+            @@UserVbsDesc = @@UserVbsLocn;
+        else;
+            @@UserVbsDesc = @@UserVbsLocn || ' - ' || ReplaceString(@@UserVbsDesc, '"', '""');
+        @@UserVbsCheck = translate('{$Check=^Y^}');
+   #DefineRexx
+
+   ;--- Allow resume by default (clears "err") ------------------------------
+   on error resume next<?NewLine>
+   <?NewLine><?NewLine>
+#)
+#( ''
+   #define /VBS
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!}
+
+   ;--- End user code -------------------------------------------------------
+   <?NewLine><?NewLine>
+   <$UpdateMmLocation>
+   #pop "User VBSCRIPT"
+
+   ;--- Detect any user failures --------------------------------------------
+   #if  ['<??@@UserVbsCheck>' = 'N']
+        ;--- We are not interested in the err object ------------------------
+        err.clear()
+   #elseif
+        ;--- We normally want to check for errors ---------------------------
+        VbsCheck "/VBS Command detected failure!" & vbCRLF & vbCRLF & "VBS command: <??@@UserVbsDesc>"<?NewLine>
+   #endif
+
+   ;--- Restore normal error handling ---------------------------------------
+   on error goto 0<?NewLine>
+   <$UpdateMmLocation>
+   <?NewLine>
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--[ Define the start and END of the VBS code ]------------------------------
+;----------------------------------------------------------------------------
+#define MSI_VBS_OK_RC           0
+#( '<?NewLine>'
+   ;--- Define Macro --------------------------------------------------------
+   #define VbsStart
+
+   ;--- Initialization ------------------------------------------------------
+   option explicit         'All variables must be defined
+   <?NewLine>
+   'NOTE: WHEN TESTING VIA CSCRIPT USE 32 BIT VERSION (c:\windows\syswow64\cscript.exe) or "MAKEMSI.Tools" will not load
+   <?NewLine><?NewLine>
+
+   ;--- Can only check syntax in NT -----------------------------------------
+   #ifdef  IsNT
+       <?SyntaxCheck>
+   #endif
+
+   ;--- Should only be invoked via CSCRIPT! ---------------------------------
+   if ucase(mid(wscript.FullName, len(wscript.Path) + 2, 1)) = "W" Then
+      wscript.echo "You can't use WSCRIPT on this VB script, use CSCRIPT instead!"
+      wscript.quit 987
+   end if
+
+   ;--- Start time of this script -------------------------------------------
+   public StartTime : StartTime = timer()
+
+   ;--- Need set as early as possible for best error messages! --------------
+   <$LocationVbsVariables>
+
+   ;--- Pass 1 or 2 (compile) -----------------------------------------------
+   public Pass
+   if  wscript.arguments.count = 0 then
+       Pass = "1"
+   else
+       Pass = "2"
+       if  wscript.arguments.count > 1 then
+           ;--- Not expected but regina bugs/features may and have got us here ---
+           error "Too many arguments found, expected at most one, got " & wscript.arguments.count
+       end if
+   end if
+
+   ;--- Sanity check to test for incomplete VBS -----------------------------
+   <$TestForCompletePass PASS="1">
+
+   ;--- Other global objects ------------------------------------------------
+   #define ObjectFileSystem oFS
+   #define ObjectShell      oShell
+   #(
+   dim MsgWsh :
+       MsgWsh     = "It is possible that you have an anti-virus or anti-spyware program that is"
+                  & vbCRLF
+                  & "causing this but its more likely that your computer's Windows Scripting"
+                  & vbCRLF
+                  & "Host (WSH) installation has been corrupted."
+                  & vbCRLF
+                  & vbCRLF
+                  & "Try downloading and reinstalling from Microsoft's site:"
+                  & vbCRLF
+                  & "    http://www.microsoft.com/downloads/"
+   #)
+   dim oShell : set oShell = MkObjectWithHelp("Wscript.Shell",              MsgWsh)
+   dim oFs    : set oFs    = MkObjectWithHelp("Scripting.FileSystemObject", MsgWsh)
+
+   ;--- Some constants ------------------------------------------------------
+   <?NewLine>
+   const ForReading   = 1
+   const ForWriting   = 2
+   const ForAppending = 8
+   const TemporaryFolder = 2
+   const AttributeReadOnly = 1
+   const RegNtfs83NamesTurnedOff = "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\NtfsDisable8dot3NameCreation"
+
+   ;--- Definitions for ReplaceCurlies() ------------------------------------
+   dim Curlies4Text : Curlies4Text = array(vbCRLF, vbCRLF & vbCRLF)
+   dim Curlies4Html : Curlies4Html = array("<br>", "<p>")
+
+   ;--- Work out where the temporary directory is ---------------------------
+   dim TmpDir : TmpDir = "<?TmpDir>"        'oFS.GetSpecialFolder(TemporaryFolder)
+
+   ;--- Opening modes for the databases (affects "debuggability") -----------
+   <?NewLine>
+   const msiOpenDatabaseModeReadOnly     = 0      ;;Read only (NO UPDATES ALLOWED)
+   const msiOpenDatabaseModeTransact     = 1      ;;Read/write in transaction mode
+   const msiOpenDatabaseModeDirect       = 2      ;;Read/write not in transaction
+   const msiOpenDatabaseModeCreate       = 3      ;;Create new in transaction mode
+   const msiOpenDatabaseModeCreateDirect = 4      ;;Create the MSI from scratch (not in transaction)
+
+
+   ;--- Some "Control" attributes -------------------------------------------
+   <?NewLine>
+   const msidbControlAttributesVisible      = &H00000001
+   const msidbControlAttributesEnabled      = &H00000002
+   const msidbControlAttributesSunken       = &H00000004
+   const msidbControlAttributesInteger      = &H00000010
+   const msidbControlAttributesRightAligned = &H00000040
+   const msidbControlAttributesTransparent  = &H00010000
+   const msidbControlAttributesSorted       = &H00010000
+   const msidbControlAttributesNoPrefix     = &H00020000
+   const msidbControlAttributesComboList    = &H00020000
+   const msidbControlAttributesNoWrap       = &H00040000
+   const msidbControlAttributesFixedSize    = &H00100000
+   const msidbControlAttributesPasswordInput= &H00200000
+
+   ;--- Some "Custom Action" TYPE constants ---------------------------------
+   <?NewLine>
+   const CATYPE_MSI_IN_STORAGES_TABLE             = 7        ;;Nested MSI
+   const CATYPE_MSI_IN_MSI_SOURCE_TREE            = 23       ;;Nested MSI
+
+   ;--- Some "Custom Action" constants --------------------------------------
+   <?NewLine>
+   const msidbCustomActionTypeContinue      = &H0040   ;;Ignore return code
+   const msidbCustomActionTypeAsync         = &H0080   ;;Don't wait
+   const msidbCustomActionTypeRollback      = &H0100   ;;Execute only upon an installation rollback (rollback custom action)
+   const msidbCustomActionTypeCommit        = &H0200   ;;Execute only upon install commit (commit custom action)
+   const msidbCustomActionTypeInScript      = &H0400   ;;Deferred
+   const msidbCustomActionTypeNoImpersonate = &H0800   ;;No user impersonation. Run in system context.
+
+   ;--- More constants (defined/used elsewhere) -----------------------------
+   <?NewLine>
+   #define? MSI_USER_VBS_CONSTANTS
+   <$MSI_USER_VBS_CONSTANTS>
+   <$Dir1VbVariables>
+   <$SeqNumberVbsVariables>
+   <$TabledefVbsVariables>
+   <$RegistryVbsConstants>
+   <$FindVbsConstants>
+   <$VbScriptVariablesEtc>
+   <$SummaryVbsConstants>
+   <$FeatureVbsConstants>
+   <$ComponentVbsVariables>
+   <$FileVbsVariables>
+   <$ShortCutVbsVariables>
+   <$RemFileVbsVariables>
+   <$MergemodVbsVariables>
+   <$CompileVbsVariables>
+   <$ServiceVbsVariables>
+   <$IniVbsVariables>
+   <$TransformingMsiVbsVariables>
+   <$PropertyVbsVariables>
+   <$FileFindVbsVariables>
+   <$PropertyFindVbsInit>
+   <$TableRowVbsVariables>
+   <$DialogVbsVariables>
+   <$SelfRegVbInitialization>
+   <$CompileMsiFunctions_VARIABLES>
+   <?NewLine>
+
+   ;--- Used By "TABLE" macros ----------------------------------------------
+   public CurrentTable       : CurrentTable       = ""
+   public CurrentTableFields : CurrentTableFields = ""
+
+   ;--- Used By "ROW" macros ------------------------------------------------
+   public oView : set oView = Nothing
+   public oRec  : set oRec  = Nothing
+   public RecCnt: RecCnt= 0
+
+   ;--- Set up error Handling -----------------------------------------------
+   dim MsiErrorIgnore : MsiErrorIgnore = false
+   dim Dying     : Dying     = false
+   <$MSI_RESTORE_MAINLINE_ERROR_HANDLING>
+
+   ;--- Open Windows Installer object ---------------------------------------
+   public MsiFileName    : MsiFileName   = ""            ;;"" means no MSI opened!
+   public CommitOnError  : CommitOnError = false
+   public oMsi           : set oMsi      = Nothing
+   public oInstaller     : set oInstaller = MkObject("WindowsInstaller.Installer")
+
+
+   ;--- Used by the "SUMMARY" macro -----------------------------------------
+   public oSummary : set oSummary = Nothing
+
+   ;--- Now create the VBS return file --------------------------------------
+   if  Pass = "1" then
+       public oRetStream
+       set oRetStream = oFS.CreateTextFile("<$MSI_NAME_OF_GENERATED_PASS1_RETURNED_FILE>", true)
+       oRetStream.WriteLine ";==="
+       oRetStream.WriteLine ";=== Generated by PASS1 of : <$MSI_NAME_OF_GENERATED_VBS>"
+       oRetStream.WriteLine ";==="
+       oRetStream.WriteLine ""
+   end if
+
+   ;--- Say some basic information ------------------------------------------
+   say ""
+   say Title(GetAmPmTime() & ": MAKEMSI version <$MAKEMSI_VERSION> - PASS " & Pass)
+   OutputEnvironmentalVersionInformation()
+
+   ;--- Separator -----------------------------------------------------------
+   <?NewLine><?NewLine>
+
+   ;--- Do we just want to compile? -----------------------------------------
+   if  Pass = "2" then
+       MmLL = "Pass 2 (Merge Modules & Compile)"
+       MmLT = "Initializing..."
+       #ifdef MSI_NO_PASS2_PROCESSING
+           error("Pass 2 processing has been disabled!")
+       #elseif
+           <$TestForCompletePass PASS="2">
+           SecondPassProcessing()           'Won't exist unless we plan on doing Pass 2 (and won't exist until after pass 1 executed!)
+           VbsQuit <$MSI_VBS_OK_RC>
+       #endif
+   end if
+
+   ;--- This is start of pass #1, so do some initialization -----------------
+   CompileInitializationAtStartOfPass1()
+
+   ;--- Separator -----------------------------------------------------------
+   <?NewLine><?NewLine>
+#)
+
+#( '<?NewLine>'
+   ;--- Define Macro --------------------------------------------------------
+   #define VbsEnd
+
+   ;--- Thats All Folks -----------------------------------------------------
+   <?NewLine><?NewLine>
+   oRetStream.close()
+   set oRetStream = Nothing
+   set oInstaller = Nothing
+   VbsQuit <$MSI_VBS_OK_RC>
+   <?NewLine>
+   <?NewLine>
+
+   ;--- Functions from other modules ----------------------------------------
+   <$FileVbsFunctions>
+   <$ComponentVbsFunctions>
+   <$Dir1VbFunctions>
+   <$FileVbFunctions>
+   <$BinaryVbFunctions>
+   <$CodePageVbFunctions>
+   <$GuidVbFunctions>
+   <$DialogVbFunctions>
+   <$TableIeVbFunctions>
+   <$TableRowVbFunctions>
+   <$MergeModVbsFunctions>
+   <$TableDefVbFunctions>
+   <$SeqNumberVbsFunctions>
+   <$SelfRegVbFunctions>
+   <$RegistryVbsFunctions>
+   #if ['<$MSI_MSI_IS_READONLY>' = 'N']
+       <$CompileMsiFunctions>
+   #endif
+
+   ;--- Set up the "default" function (in a way that still lets user define their own mechanism) ---
+   <?NewLine><?NewLine>
+   #if  ['<$MSI_HTML2TEXT_FUNCTION_USES_IE_AUTOMATION $$UPPER>' = 'Y']
+        ;--- Want to use IE automation --------------------------------------
+        #define? MSI_HTML2TEXT_FUNCTION_MAPS_TO Html2TextUsingIe
+   #elseif
+        ;--- Don't trust MS crap... This is the default as MS stuff to fragile ---
+        #define? MSI_HTML2TEXT_FUNCTION_MAPS_TO Html2TextUsingPoorMans
+   #endif
+   '==========================================
+    function Html2Text(ByVal Html)
+   '==========================================
+        ;--- Set the "default" mechanism used by this code ------------------
+        Html2Text = <$MSI_HTML2TEXT_FUNCTION_MAPS_TO>(Html)
+   end function
+
+   <?NewLine><?NewLine>
+   '---- Actual IE automation code to convert HTML to Text -------------
+   <$MSI_HTML2TEXT_FUNCTION_VIA_IE_AUTOMATION>
+   <?NewLine><?NewLine>
+   <$MSI_HTML2TEXT_FUNCTION_VIA_POOR_MANS_CHANGES>
+   <?NewLine><?NewLine>
+
+
+   ;--- Include other VB code -----------------------------------------------
+   #include "PrettyMd5.VH"
+
+   <?NewLine>
+   '=========================================================================
+   sub OutputEnvironmentalVersionInformation()
+   '=========================================================================
+       ;--- Ignore errors in this non-critical code -------------------------
+       on error resume next
+
+       ;--- Get the Windows Version Information -----------------------------
+       dim WinVer      : WinVer = ""
+       dim Base        : Base = "HKLM\Software\Microsoft\Windows NT\CurrentVersion\"
+       dim ProductName : ProductName = oShell.RegRead(Base & "ProductName")
+       if  Err.Number <> 0 then
+           ;--- Probably Windows 95-ME --------------------------------------
+           WinVer = "<?OpSysSpecific>"     ;;Best fallback
+       else
+           ;--- WINNT+ ------------------------------------------------------
+           dim CurrentVersion     : CurrentVersion     = oShell.RegRead(Base & "CurrentVersion")
+           dim CurrentBuildNumber : CurrentBuildNumber = oShell.RegRead(Base & "CurrentBuildNumber")
+           dim CSDVersion         : CSDVersion         = oShell.RegRead(Base & "CSDVersion")
+           WinVer = ProductName & " (" & CurrentVersion & "." & CurrentBuildNumber & " " & CSDVersion & ")"
+       end if
+       say "Windows   Version: " & WinVer
+       VbsReturnMacro "Windows.Version", WinVer
+
+       ;--- Get WSH information ---------------------------------------------
+       dim WshVersion : WshVersion = wscript.version
+       say "WSH       Version: " & WshVersion
+       VbsReturnMacro "WSH.Version", WshVersion
+
+       ;--- Make the Windows Installer version available to the HTML report ---
+       say "Installer Version: " & oInstaller.Version
+       VbsReturnMacro "WindowsInstaller.Version", oInstaller.Version
+
+       ;--- Blank Line after ------------------------------------------------
+       say ""
+   end sub
+
+
+
+   <?NewLine>
+   '=========================================================================
+   sub VbsReturnMacro(ByVal Name, ByVal Value)
+   '=========================================================================
+       if  Pass = "1" then
+           oRetStream.WriteLine "#define VBSRET." & Name & " " & Value
+       end if
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   function MsiGetOpenedFileName()       ;;Returns "" if not open or the name of the filename
+   '=========================================================================
+       MsiGetOpenedFileName = MsiFileName
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   sub MsiOpen(ByVal MsiName, ByVal OpenMode, ByVal Want2CommitOnError)
+   '=========================================================================
+       ;--- Check that the MSI file exists ----------------------------------
+
+       ;--- Open an MSI database (file) in READ/WRITE mode ------------------
+       on error resume next
+       set oMsi = oInstaller.OpenDatabase(MsiName, OpenMode)  ;;Open Read/Write No Transactions
+       VbsCheck "Opening the MSI : " & MsiName
+
+       ;--- Remember the filename & flag that an MSI file is opened ---------
+       MsiFileName = MsiName
+
+       ;--- On error do we wish to commit (aids debugging if so) ------------
+       CommitOnError = Want2CommitOnError
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub MsiClose(ByVal Failed)
+   '=========================================================================
+       ;--- Is an MSI open? -------------------------------------------------
+       on error resume next
+       if  MsiFileName <> "" then
+           ;--- Need to call "commit" to write data -------------------------
+           err.clear()
+           if   not Failed then
+                ;--- We successfully built the MSI (so always commit) -------
+                oMsi.commit()
+                VbsCheck "Commiting the MSI prior to close : " & MsiFileName
+           else
+                ;--- Something is wrong, want to commit? --------------------
+                if  CommitOnError then
+                    ;--- User allows/wants (can then use ORCA to diagnose "stuff") ---
+                    oMsi.commit()
+                    VbsCheck "Commiting the failed MSI for debugging : " & MsiFileName
+                end if
+           end if
+
+           ;--- Its now closed ----------------------------------------------
+           set oMsi = Nothing
+
+           ;--- On failure rename the MSI? ----------------------------------
+           #if ['<$MSI_ON_FAILURE_RENAME_TO_VBEXP MsiNameVar=^^ $$IsBlank>' = 'N']
+               ;--- Did the build fail? -------------------------------------
+               if  Failed then
+                   dim NewName : NewName = <$MSI_ON_FAILURE_RENAME_TO_VBEXP MsiNameVar=^MsiFileName^>
+                   oFs.DeleteFile(NewName)
+                   err.clear()
+                   oFs.MoveFile MsiFileName, NewName
+                   if  err.number <> 0 then
+                       say "Renaming to: """ & NewName & """ failed, Reason: " & err.description
+                   end if
+               end if
+           #endif
+
+           ;--- Flag the fact that the file is closed -----------------------
+           MsiFileName = ""
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub SqlOpenExec(ByVal Sql)      ;;Exec SQL, leave view open
+   '=========================================================================
+       ;--- Open a view -----------------------------------------------------
+       on error resume next
+       set oView = oMsi.OpenView(Sql)
+       VbsCheck "Opening View - " & Sql
+
+       ;--- Execute the view ------------------------------------------------
+       oView.Execute
+       VbsCheck "Executing View - " & Sql
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   function SqlViewFetch()
+   '=========================================================================
+       on error resume next
+       set SqlViewFetch = oView.Fetch()
+       VbsCheck "Fetching a record"
+   end function
+
+
+   <?NewLine>
+   '=========================================================================
+   sub SqlViewClose()
+   '=========================================================================
+       ;--- Close the view --------------------------------------------------
+       on error resume next
+       oView.close
+       VbsCheck "Closing a view"
+       set oView = Nothing
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub SqlExec(ByVal Sql)      ;;Just EXEC - closes view when completed
+   '=========================================================================
+       ;--- Open view and execute SQL ---------------------------------------
+       on error resume next
+       SqlOpenExec(Sql)
+
+       ;--- Close the view --------------------------------------------------
+       SqlViewClose()
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   function TableExists(ByVal TableName)
+   ;
+   ;  Call to see if a table exists
+   '=========================================================================
+       on error resume next
+       dim SQL, oRecord
+       SQL = "SELECT * FROM `_Tables` WHERE Name= '" & TableName & "'"
+       SqlOpenExec(Sql)
+       set oRecord = SqlViewFetch()
+       if  oRecord is Nothing then
+           TableExists = false
+       else
+           TableExists = true
+       end if
+       set oRecord = Nothing
+       SqlViewClose()
+   end function
+
+
+
+   <?NewLine>
+   '=========================================================================
+   function ErrorTemplate(ByVal ErrorNumber)
+   ;
+   ;  Retrieves error template or "".
+   ;
+   ;  Note that you can set up one or more "developer" error files which
+   ;  will be searched for error templates before the MSI is.
+   ;  This allows you to add comments etc to particular messages as well as
+   ;  not requiring you to "load up" the MSI "Error" table for error messages
+   ;  that may only occur during development.
+   ;
+   ;  The format of a library file is quite simple, each line is examined and
+   ;  if the first word is the error number we are looking for then the rest
+   ;  of the line is used as the error message.
+   ;  Any "\n" sequences are converted into line breaks.
+   ;  An exported ".IDT" is a suitable file (the first 3 lines are processed
+   ;  but will never match).
+   ;
+   ;  Can't use my internal routines as this is only called when we are
+   ;  already "dying".
+   '=========================================================================
+       ;--- We start by looking into any "developer supplied" error "libaries" ---
+       on error resume next
+       ErrorTemplate = ""
+       #if ['<$MSI_ERROR_LIBRARIES>' <> '']
+           dim Libraries, LibNum, Library, LibStream, Line, LineBits
+           Libraries = split("<$MSI_ERROR_LIBRARIES>", ";")
+           for LibNum = 0 to ubound(Libraries)
+               ;--- Get next item, ignore blank ones ------------------------
+               Library = trim( Libraries(LibNum) )
+               if  Library <> "" then
+                   ;--- Its not an error for the file not to exist ----------
+                   if  oFS.FileExists(Library) then
+                       ;--- Look through this file --------------------------
+                       set LibStream = oFS.OpenTextFile(Library, ForReading)
+                       do  while LibStream.AtEndOfStream <> true
+                           ;--- Read the next line --------------------------
+                           Line = trim(LibStream.ReadLine())
+
+                           ;--- Convert tabs to spaces ----------------------
+                           Line = replace(Line, chr(9), " ")
+
+                           ;--- See if this is the one we want --------------
+                           LineBits = split(Line, " ", 2)
+                           if  ubound(LineBits) = 1 then
+                               ;--- Enough info on the line -----------------
+                               if  LineBits(0) = ErrorNumber then
+                                   ;--- We found it! ------------------------
+                                   ErrorTemplate = LineBits(1)
+                                   ErrorTemplate = replace(ErrorTemplate, "\n", vbCRLF)
+                                   LibStream.close
+                                   exit function
+                               end if
+                           end if
+                       loop
+                       LibStream.close
+                   end if
+               end if
+           next
+           <?NewLine>
+       #endif
+
+       ;--- Open view into error table --------------------------------------
+       err.clear()
+       dim SQL, oErrView, oErrRecord
+       SQL = "SELECT * FROM `Error` WHERE `Error` = " & ErrorNumber
+       set oErrView = oMsi.OpenView(Sql)
+       oErrView.Execute
+
+       ;--- Assuming OK so far get the matching (wanted) record -------------
+       if  err.number = 0 then
+           ;--- Get the wanted record ---------------------------------------
+           set oErrRecord = oErrView.Fetch()
+           if not (oErrRecord is Nothing) then
+              ErrorTemplate = oErrRecord.StringData(2)
+           end if
+       end if
+       oErrView.close
+       set oErrRecord = Nothing
+       set oErrView   = Nothing
+   end function
+
+
+
+;**    [CommentBlockStart     (June 14, 2004 2:49:59 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|   '=========================================================================
+;**|   sub CreateDir(ByVal DirName)
+;**|   '=========================================================================
+;**|       on error resume next
+;**|       if  DirName = "" then exit sub
+;**|       if  not oFS.FolderExists(DirName) then
+;**|           oFS.CreateFolder(DirName)
+;**|           VbsCheck("Could not create the directory """ & DirName & """!")
+;**|       end if
+;**|   end sub
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (June 14, 2004 2:49:59 PM EST, Dennis)
+
+   <?NewLine>
+   '=====================================================================
+   sub CreateDir(byVal DirName)
+   ;
+   ; Overcomes the FSO restriction (it can not create a whole tree)
+   ;
+   ; Also note FSO does not handle UNC names very well...
+   ; I will probably improve code to work around the "features".
+   '=====================================================================
+       ;--- Make sure we don't have problems ----------------------------
+       if  DirName = "" then exit sub
+       on error resume next
+
+       ;--- Make sure the parent exists ---------------------------------
+       dim ParentDir : ParentDir = oFS.GetParentFolderName(DirName)
+       if  not oFS.FolderExists(ParentDir) then
+           CreateDir ParentDir
+       end if
+
+       ;--- Now create this directory -----------------------------------
+       if  not oFS.FolderExists(DirName) then
+           oFS.CreateFolder DirName
+           VbsCheck("Could not create the directory """ & DirName & """!")
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub DeleteDir(ByVal DirName)
+   '=========================================================================
+       on error resume next
+       if  DirName = "" then exit sub
+       if  oFS.FolderExists(DirName) then
+           oFS.DeleteFolder(DirName)
+           VbsCheck("Could not delete the directory """ & DirName & """!")
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub DeleteFile(ByVal FileName)
+   '=========================================================================
+       on error resume next
+       if oFs.FileExists(FileName) then
+           oFs.DeleteFile(FileName)
+           VbsCheck("Could not delete the file """ & FileName & """!")
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub SummaryOpen()
+   '=========================================================================
+       ;--- Execute the command ---------------------------------------------
+       on error resume next
+       set oSummary = oMsi.SummaryInformation(99)
+       VbsCheck "Opening summary information"
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub SummaryItem(ByVal SummaryNumber, ByVal SummaryValue)
+   ;
+   ;   Note that testing has shown there is no impact on the size of the
+   ;   generated MSI database after repeated open/update/close steps on the
+   ;   summary information.
+   '=========================================================================
+       ;--- Open the summary ------------------------------------------------
+       on error resume next
+       SummaryOpen()
+
+       ;--- Execute the command ---------------------------------------------
+       oSummary.Property(SummaryNumber) = SummaryValue
+       if   err.number <> 0 and not IsEmpty(SummaryValue) then
+            ;--- We ignore errors trying to clear summary items (Windows bug) ---
+            VbsCheck "Setting summary item #" & SummaryNumber & " = " & SummaryValue
+       end if
+
+       ;--- Close the summary -----------------------------------------------
+       SummaryClose()
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub SummaryClose()
+   '=========================================================================
+       ;--- Execute the command ---------------------------------------------
+       on error resume next
+       oSummary.persist()
+       VbsCheck "Writing summary changes"
+       set oSummary = Nothing
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   function MkObjectWithHelp(ByVal AutomationClass, ByVal Help)   ;;Create object, die on error
+   '=========================================================================
+       on error resume next
+       set MkObjectWithHelp = wscript.CreateObject(AutomationClass)
+       dim Msg : Msg = "Loading the automation class """ & AutomationClass & """"
+       if   Help <> "" then
+            Msg = Msg & vbCRLF & vbCRLF & help
+       end if
+       VbsCheck Msg
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   function MkObject(ByVal AutomationClass)   ;;Create object, die on error
+   '=========================================================================
+       set MkObject = MkObjectWithHelp(AutomationClass, "")
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   function ReplaceCurlies(ByVal T, CurlyReplacements)       ;;{NL} etc
+   '=========================================================================
+       on error resume next
+       T = replace(T, "{NL}", CurlyReplacements(0))
+       T = replace(T, "{nl}", CurlyReplacements(0))
+       T = replace(T, "{NP}", CurlyReplacements(1))
+       T = replace(T, "{np}", CurlyReplacements(1))
+       ReplaceCurlies = T
+   end function
+   '=========================================================================
+   function ReplaceCurliesText(ByVal T)       ;;{NL} etc
+   '=========================================================================
+       on error resume next
+       ReplaceCurliesText = T
+       ReplaceCurliesText = ReplaceCurlies(T, Curlies4Text)
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   function Title(Line1)
+   '=========================================================================
+       Title = Line1 & vbCRLF & string(len(Line1), "~")
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   function ElapsedSince(SinceTimer)
+   '=========================================================================
+       ElapsedSince = timer() - SinceTimer
+       if  ElapsedSince < 0 then
+           ElapsedSince = ElapsedSince + (60*60*24)
+       end if
+       ElapsedSince = round(ElapsedSince, 1)
+   end function
+
+
+   <?NewLine>
+   '=========================================================================
+   sub ViewFile(TheFile)
+   '=========================================================================
+       on error resume next
+       oShell.Run "notepad.exe """ &  TheFile & """", 1, false
+   end sub
+
+   <?NewLine>
+   '============================================================================
+   function ShortName(oFileOrFolder, AbortOnError)
+   ; This function takes a file or folder object and returns the "ShortName"
+   ; property, this function does the work as I know of at least one instance
+   ; where windows was reporting the wrong values!
+   ; This code tries to detect the Windows Bug.
+   '============================================================================
+        ;--- It should be this simple, but then again this is on Windows... ---
+        ShortName = oFileOrFolder.ShortName
+
+        ;--- Look for Windows Bug (err.number is NOT set) -------------------
+        dim Bits83, WinBug
+        WinBug = ""
+        Bits83 = split(ShortName, ".")
+        if  ubound(Bits83) > 1 then
+            WinBug = "More than 1 dot"
+        else
+            ;--- Check the "8" part of the "8.3" filename -------------------
+            if  len(Bits83(0)) > 8 then
+                WinBug = "Base more than 8 characters long"
+            else
+                ;--- Check the "3" part (if any) of the "8.3" filename ------
+                if  ubound(Bits83) = 1 then
+                    ;--- There is an extension ------------------------------
+                    if  len(Bits83(1)) > 3 then
+                        WinBug = "Extension more than 3 characters long"
+                    end if
+                end if
+            end if
+        end if
+
+        ;--- Bug detected ---------------------------------------------------
+        if  WinBug <> "" then
+            if  not AbortOnError then
+                ;--- Just return an indication of the error (RC) ------------
+                ShortName = ""
+            else
+                ;--- See if possibly caused by 8.3 names being turned off ---
+                dim ExtraText : ExtraText = ""
+                say ""
+                say string(78, "=")
+                say "We have detected a problem with getting 8.3 formatted filenames..."
+                say "Checking registry to see if NTFS 8.3 names are currently turned off..."
+                say "Reading: " & RegNtfs83NamesTurnedOff
+                on error resume next
+                dim TurnedOff : TurnedOff = oShell.RegRead(RegNtfs83NamesTurnedOff)
+                if  err.number <> 0 then
+                    say ""
+                    Say "Can't determine whether or not NTFS 8.3 names are turned off. Reason: 0x" & hex(err.number) & " - " & err.description
+                else
+                    ;--- We read something ----------------------------------
+                    say "  Value: " & TurnedOff
+                    say ""
+                    say ""
+                    if  cint(TurnedOff) <> 0 then
+                        ExtraText = "ERROR: NTFS shortnames ARE turned off in the Windows Registry..."
+                        Say ExtraText
+                        ExtraText = vbCRLF & vbCRLF & ExtraText
+                    else
+                        Say "NTFS shortnames are not turned off." & vbCRLF
+                        Say "FYI: This setting only affects files created after any change was made..."
+                    end if
+                end if
+                say string(78, "=")
+                say ""
+
+                ;--- Display an error message -------------------------------
+                #(
+                  error("Detected a Windows bug in the handling of the "".ShortName""
+                        attribute" & vbCRLF &
+                        "of a file/folder object.  It doesn't contain a valid 8.3 formatted filename!" & vbCRLF &
+                        vbCRLF &
+                        "GOT 8.3  : """ & ShortName & """" & vbCRLF &
+                        "The Issue: "   & WinBug & vbCRLF &
+                        "4 File   : """ & oFileOrFolder.Path & """" &
+                        ExtraText)
+                #)
+            end if
+        end if
+   end function
+
+   <?NewLine>
+   '============================================================================
+   function AddComma2Long(ByVal TheInteger)
+   '============================================================================
+       'AddComma2Long = FormatNumber(clng(TheInteger), 0, True, False, True)
+        AddComma2Long = FormatNumber(cdbl(TheInteger), 0, True, False, True)
+   end function
+
+   <?NewLine>
+   '============================================================================
+    function Pad(ByVal Unpadded, ByVal ItsLength, byVal PadChar)        ;;Never truncates
+   '============================================================================
+       dim Lng: Lng = len(Unpadded)
+       if  Lng >= ItsLength then
+           Pad = Unpadded
+       else
+           Pad = string(ItsLength-Lng, PadChar) & Unpadded
+       end if
+    end function
+
+
+   <?NewLine>
+   '=========================================================================
+   sub Say(What)
+   '=========================================================================
+       wscript.echo What
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub MmDebug(What)
+   '=========================================================================
+       wscript.echo "DEBUG: " & What        ;;Bit doggy for now, need to improve...
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   function GetAmPmTime()
+   '=========================================================================
+        GetAmPmTime = FormatDateTime(Now(), vbLongTime)     'doesn't guarantee am/pm, fix later
+   end function
+
+
+   <?NewLine>
+   '=========================================================================
+   sub VbsQuit(Rc)
+   ' 1. Return code processing under 95/98/ME completely flakely
+   ' 2. Return code still can't be trusted under NT/2000/XP (for example if
+   '    VBSCRIPT traps.
+   ' 3. Return code lost with "TEE" type programs in any case
+   '=========================================================================
+       on error resume next
+
+       ;--- Termination code ------------------------------------------------
+       Need83NameEnd()
+
+       ;--- Now create return code file and exit ----------------------------
+       dim oRcStream
+       set oRcStream = oFS.CreateTextFile("<$MSI_NAME_OF_VBSCRIPT_RETURN_CODE_FILE>", true)
+       oRcStream.WriteLine Rc               ;;First line is the return code
+       oRcStream.close
+       wscript.quit Rc
+   end sub
+
+   <$MSI_CODE_ErrDetails()>
+
+
+   <?NewLine>
+   '=========================================================================
+   sub Error(What)
+   '=========================================================================
+       Dying = true
+       ErrorPrefix()
+       say ""
+       say Title("REASON")
+       say What & chr(7) & chr(7)
+
+       ;--- Close the MSI on error (helps debugging problems) ---------------
+       MsiClose(true)
+
+       ;--- Exit program ----------------------------------------------------
+       VbsQuit 219
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   sub ErrorPrefix()
+   '=========================================================================
+       ;--- Report the error ----------------------------------------
+       say ""
+       say ""
+       say string(78, "#")
+       say string(28, "#") & "[ FATAL PASS " & Pass & " ERROR ]" & string(28, "#")
+       say string(78, "#")
+       say "Built from: <?InputFile>"
+       say ".MM Locn  : " & MmLL
+       say ".MM Cmd   : " & MmLT
+       if  MmID <> "" then
+           #evaluate ^@@RelativeName^ ^FileNameRelative("<$MSI_NAME_OF_GENERATED_VBS>",,1)^
+           say ".MM ID    : " & MmID & "  (location in ""<$@@RelativeName>"")"
+       end if
+       if  CurrentTable <> "" then
+           say "In TABLE  : " & CurrentTable
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub VbsCheck(ByVal Message)     ;;Dies if err.number <> 0
+   '=========================================================================
+       ;--- Did an error occur? ---------------------------------------------
+       if  err.number <> 0 then
+           ;--- Does the user wish to see it? -------------------------------
+           if  not MsiErrorIgnore then
+               ;--- Capture the information ---------------------------------
+               dim ErrNumb, ErrDesc, ErrSrc
+               ErrNumb = err.number
+               ErrDesc = err.description
+               ErrSrc  = err.source
+
+               ;--- Report the error ----------------------------------------
+               dim DumpRec : DumpRec = false
+               if  left(Message, 1) = "~" then
+                   DumpRec = true
+                   Message = mid(Message, 2)
+               end if
+               if  Dying then
+                   say "Already Dying..."
+                   say "  -> " & Message
+                   exit sub
+               end if
+               Dying =  true
+               ErrorPrefix()
+               say "Doing     : " & Message
+               say ""
+
+               ;--- Output VBS trap info ------------------------------------
+               say Title("VBS RETURNS")
+               say "Error #   : 0x" & hex(ErrNumb) & " (" & ErrNumb & ")"
+               if  ErrSrc = "" then
+                   say "Error Src : No source available (VB bug?)..."
+               else
+                   say "Error Src : " & ErrSrc
+               end if
+               if  ErrDesc = "" then
+                   say "Error Desc: No description available (VB bug?)..."
+               else
+                   say "Error Desc: " & ErrDesc
+               end if
+
+               ;--- Try to get some MSI error specific details --------------
+               on error resume next    ;;Don't need VB TRAP info any more
+               dim oMsiErrRec
+               err.clear()
+               set oMsiErrRec = oInstaller.LastErrorRecord   ;;Field(0) never seems to hold template so FormatText() can't do much!
+               if  err.number = 0 then
+                   ;--- Didn't trap -----------------------------------------
+                   if  not oMsiErrRec is nothing then
+                       ;--- Information is available , generate title -------
+                       dim MsiErrCode : MsiErrCode = oMsiErrRec.StringData(1)
+                       say ""
+                       say Title("MSI ERROR #" & MsiErrCode & " (see the Windows Installer documentation)")
+
+                       ;--- Now get a suitable error template (LastErrorRecord bug?) ---
+                       dim TemplateText : TemplateText = ErrorTemplate(MsiErrCode)
+                       if  TemplateText = "" then
+                           dim Pn, T
+                           T = "The ""Error"" table does not contain a template for this message!" & vbCRLF & "Error parameters (non-blank) are:" & vbCRLF & vbCRLF
+                           for Pn = 1 to 20            ;;Think 8 is the largest but doesn't hurt to get carried away...
+                               if  oMsiErrRec.StringData(Pn) <> "" then
+                                   ;--- This parameter exists ---------------
+                                   T = T & "  #" & Pn & " = [" & Pn & "]" & vbCRLF
+                               end if
+                           next
+                           TemplateText = T
+                       end if
+
+                       ;--- Use the template to format the text -------------
+                       oMsiErrRec.StringData(0) = TemplateText
+                       say oMsiErrRec.FormatText()
+                   end if
+               end if
+
+               ;--- If we want to dump then get info now (TableExists() closes oView) ---
+               dim DumpedRecord
+               if  DumpRec then
+                   DumpedRecord = DumpRecord()
+               end if
+
+               ;--- A common problem will be a table not having been created ---
+               if  CurrentTable <> "" then
+                   if  not TableExists(CurrentTable) then
+                       say ""
+                       say "Note that the """ & CurrentTable & """ table does not currently exist!"
+                   end if
+               end if
+
+               ;--- Dump the record? ----------------------------------------
+               if  DumpRec then
+                   say ""
+                   say DumpedRecord         'Info captured above!
+               end if
+
+               ;--- Close the MSI on error (helps debugging problems) -------
+               MsiClose(true)
+
+               ;--- Exit ----------------------------------------------------
+               say  chr(7) & chr(7)
+               VbsQuit 999
+           end if
+       end if
+   end sub
+
+   ;--- Separate from anything user might follow with -----------------------
+   <?NewLine><?NewLine><?NewLine>
+
+
+   <$TableRowVbFunction-SetupRowValidationExclusionList PASS="1">
+
+   <?NewLine>
+   '=========================================================================
+   sub SimpleTestToDetectInCompleteVbscriptForPass1()
+   '=========================================================================
+        '--- Doesn't need to do anything -------------------------------
+   end sub
+
+#)
+
+
+
+;--- May need if we validate records ----------------------------------------
+;**      CommentBlock  /* (Friday 17/01/2003, 22:45:43, by USER "Dennis") */
+;**+--------------------------------------------------------------------------
+;**|                   ;--- "oView" may not be valid at this time ---------------
+;**|                   on error resume next
+;**|                   for x = 1 to 10
+;**|                       ;--- Try to get information about any MSI error ------
+;**|                       err.clear()
+;**|                       MsiErrText = oView.GetError()
+;**|                       if  err.number <> 0 or MsiErrText = "00" then
+;**|                           exit for
+;**|                       end if
+;**|                       say "GetError  : " & MsiErrText
+;**|                   next
+;**+--------------------------------------------------------------------------
+;**                    /* (Friday 17/01/2003, 22:45:43, by USER "Dennis") */
+
+
+#define @@MsiMarkChangesInProgressCondition  NoSuchProperty.so.always.false
+#DefineRexx '@@NotAlreadyMsiFormatted'
+    <$MSI_NOT_COMPLETE_TEXT $$RxVar:@@FailureMsg>
+    <$NotMsiFmt InVar="@@FailureMsg">
+#DefineRexx
+#(
+    ;--- Mark MSI as "changes in progress" ----------------------------------
+    #define ##MsiMarkChangesInProgress
+
+    #define @@ChangesMarked         ;;Flag that changes have been marked...
+    <$Table "LaunchCondition">
+        #evaluate ^^ ^<$@@NotAlreadyMsiFormatted>^
+        <$Row Condition="<$@@MsiMarkChangesInProgressCondition>" Description="<??@@FailureMsg>" @Validate="NEW -MISSINGDATA">
+    <$/Table>
+#)
+#(
+    ;--- Mark MSI as "changes complete" -------------------------------------
+    #define /##MsiMarkChangesInProgress
+    #ifdef @@ChangesMarked
+        ;--- We marked changes, so now unmark -------------------------------
+        Say "Marking this MSI BUILD as complete..."
+        <$Table "LaunchCondition">
+            ;--- Delete the marker ------------------------------------------
+            <$RowsDelete WHERE=^`Condition` = '<$@@MsiMarkChangesInProgressCondition>'^>
+
+            ;--- If the table is now empty then delete it -------------------
+            #ifndef ChangesMarked_Leave_LaunchCondition_Table
+                dim @@RowCnt : @@RowCnt = 0
+                <$Row @Where="" @Code="Y">
+                    @@RowCnt = @@RowCnt + 1
+                <$/Row>
+                if  @@RowCnt = 0 then
+                    <$TableDelete>
+                end if
+            #endif
+        <$/Table>
+        #undef @@ChangesMarked
+    #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Used to add validation code to ensure code complete --------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define TestForCompletePass
+
+   on error resume next
+   SimpleTestToDetectInCompleteVbscriptForPass{$Pass}()       'Will only fail if the subroutine for pass #{$Pass} is missing!
+   if err.number <> 0 then
+      ;--- Don't use say()", keep it simple ---------------------------------
+      wscript.echo ""
+      wscript.echo "The generated VBSCRIPT for pass {$Pass} appears incomplete:"
+      wscript.echo ""
+      wscript.echo "   * " & wscript.ScriptFullName
+      wscript.echo ""
+      wscript.echo "This can happen if you don't have correct nesting of some macros,"
+      wscript.echo "for example, if a ""<" & "$VbsCa...>"" command doesn't have a"
+      wscript.echo "matching ""<" & "$/VbsCa>"" command."
+      wscript.echo ""
+      wscript.echo "If you look at the end of the vbscript you should be able to"
+      wscript.echo "easily identify the problem area."
+      wscript.quit 876
+   end if
+   on error goto 0
+#)
+
+
+
+#NextId UNLOCK "MSI.MMH"
+

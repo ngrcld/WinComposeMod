@@ -1,0 +1,365 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MakeMsm.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   11 Sep 2006 17:18:30  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MakeMsm.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   This is the main ("ENTRY POINT") header that can be
+;                   used to Create MSM (merge module) files.
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- Flag the fact that this is a merge module we are creating --------------
+;----------------------------------------------------------------------------
+#define MAKEMSI_CREATING_MERGE_MODULE
+
+#define HTMLSUMM_INSTALLED_STATE_BUTTON_CODE_GENERATE_BUTTON
+
+
+;----------------------------------------------------------------------------
+;--- Needs more work --------------------------------------------------------
+;----------------------------------------------------------------------------
+#define  MAKEMSI_PROPERTY_PREFIX  _MAKEMSI_MMMore_Work_here
+#define   VBSRET.GUID.ProductCode
+#define   VBSRET.GUID.PackageCode <$ProdInfo.ModuleGuid>
+#define   UpgradeCodeValue
+#define? DEFAULT_ROW_VALIDATE_NO_WHERE
+#define? DEFAULT_ROW_VALIDATE_WHERE
+#define? DEFAULT_FILE_WANT_FILEHASH     Y    ;;Bug with "T"????????????????? NEED TO CHECK
+#define  ProdInfo.MsiName  <$ProdInfo.MsmName>
+
+
+;----------------------------------------------------------------------------
+;--- Handy Macros -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId
+#define MsmSuffix    <$MAKEMSM_KEY_SUFFIX>
+#define MsmFeature   {00000000-0000-0000-0000-000000000000}
+#RexxVar '@@CreatedTargetDirectory' = 'N'
+#RexxVar '@@MsmSystemDirectoryCnt' = 0
+#(
+    #define MsmCreateTargetDirectory
+
+    #if [@@CreatedTargetDirectory = 'N']
+        <$Directory Key="TARGETDIR" Parent="" Dir="{SourceDir}">
+        #RexxVar @@CreatedTargetDirectory = 'Y'
+    #endif
+#)
+
+#(
+    #define MsmSystemDirectory
+
+    ;--- Define a macro that the user can use to refer to this key ----------
+    #define {$KEYMAC} {$#1}<$MAKEMSM_KEY_SUFFIX>
+
+    ;--- Need "TARGETDIR" ---------------------------------------------------
+    <$MsmCreateTargetDirectory>
+
+    ;--- Create the entry (only "KEY" value really matters) -----------------
+    #RexxVar '@@MsmSystemDirectoryCnt' + 1
+    #Option push DefineMacroreplace=yes
+    #define+ @@DIR Any.<??@@MsmSystemDirectoryCnt>
+    #Option pop
+    <$Directory Key="<${$KEYMAC}>" Parent="TARGETDIR" Dir="{<$@@Dir>}">
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Modify product info keywords for .VER  file ----------------------------
+;----------------------------------------------------------------------------
+#( ','
+   #define? VER_PRODINFO_VALID_KEYWORD_LIST
+            ProductName   ;;The name of the product
+            Description   ;;A description of the product (NON-HTML)
+            MsmName       ;;Short name of MSM (no extension)
+            ModuleGuid    ;;Merge module's ID (GUID)
+            Language
+            Note          ;;Extra details for the HTML summary
+            <$VER_PRODINFO_VALID_KEYWORD_LIST_EXTRA>   ;;Allow easy addition
+#)
+#define? ProdInfo.Default.Language  1033
+
+
+;--- If not readonly these also need disabling ------------------------------
+;**    [CommentBlockStart     (April 2, 2004 8:52:50 AM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|#define ONEXIT_MSG_BEFORE_RUNNING_VBS_PASS2
+;**|#define Rexx4ExecutingVbsPass2
+;**|#define ONEXIT_GENERATE_HTML                N
+;**|#define MSI_NO_PASS2_PROCESSING
+;**|#define MSI_ONOPEN_LEAVE_SUMMARY_ALONE
+;**|#define MSI_ONOPEN_LEAVE_PROPERTIES_ALONE
+;**|
+;**|;--- There is no ".VER" file (user can override these values) ---------------
+;**|#define? ProdInfo.ProductName    <?InputFile $$FilePart:N>
+;**|#define? ProductVersion          NoVersion
+;**|
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (April 2, 2004 8:52:50 AM EST, Dennis)
+;--- Include the common header (at some stage improve this) -----------------
+
+#define?  MAKEMSI_UPDATING_WHAT_TEXT    merge module
+#define?  MAKEMSI_UPDATING_WHAT_EXTN    MSM
+#define   MSI_NOT_COMPLETE_TEXT         ;;Can't mark changes in progress
+#include "MakeMSI.MMH"
+
+;--- Work out the MS recommended Key Suffix ---------------------------------
+#DefineRexx ''
+    ;--- Remove curley brackets ---------------------------------------------
+    @@ModuleGuid = '<$ProdInfo.ModuleGuid>';
+    @@MmKeySuffix = substr(@@ModuleGuid, 2, length(@@ModuleGuid)-2);
+
+    ;--- Start with a dot ---------------------------------------------------
+    @@MmKeySuffix = '.' || @@MmKeySuffix;
+
+    ;--- Replace minus signs ------------------------------------------------
+    @@MmKeySuffix = translate(@@MmKeySuffix, '_', '-');
+
+    ;--- Save in macro ------------------------------------------------------
+    call MacroSet "MAKEMSM_KEY_SUFFIX", @@MmKeySuffix
+#DefineRexx
+#define? MAKEMSM_MODULEID  <$ProdInfo.ProductName><$MAKEMSM_KEY_SUFFIX>
+#RexxVar  RxGeneratedKeySuffix = '<$MAKEMSM_KEY_SUFFIX>'
+
+
+
+;----------------------------------------------------------------------------
+;--- Start the Package (use template) ---------------------------------------
+;----------------------------------------------------------------------------
+#define? MAKEMSM_MSM_TEMPLATE_FILENAME <??*MAKEMSI_DIR>MsmTemplate-Schema-120.MSM  ;;Contents of "MAKEMSI_DIR" ends with a slash!
+#(
+   ;--- Allow user to use another method for getting template data ----------
+   #define? MAKEMSM_GET_TEMPLATE_AND_OPEN_MSM
+   <$Msi "<$ProdInfo.MsmName>.msm" Template="<$MAKEMSM_MSM_TEMPLATE_FILENAME>">
+   ;<$TableExportToIdt>
+#)
+<$MAKEMSM_GET_TEMPLATE_AND_OPEN_MSM>
+
+;----------------------------------------------------------------------------
+;--- Remove these tables from the template ----------------------------------
+;----------------------------------------------------------------------------
+<$TableDelete "ModuleInstallExecuteSequence">
+<$TableDelete "ModuleInstallUISequence">
+<$TableDelete "ModuleAdvtExecuteSequence">
+<$TableDelete "ModuleAdvtUISequence">
+<$TableDelete "ModuleAdminExecuteSequence">
+<$TableDelete "ModuleAdminUISequence">
+<$TableDelete "ModuleExclusion">
+<$TableDelete "ModuleDependency">
+<$TableDelete "ModuleIgnoreTable">
+
+;----------------------------------------------------------------------------
+;--- Some required tables ---------------------------------------------------
+;----------------------------------------------------------------------------
+<$TableCreate "CustomAction">       ;;Required for "Directory" table processing
+<$TableCreate "Component">
+<$TableCreate "File">
+
+
+;----------------------------------------------------------------------------
+;--- Set up required SUMMARY items ------------------------------------------
+;----------------------------------------------------------------------------
+#define? MAKEMSM_PACKAGE_REQUIRES_ELEVATED_PRIVLEDGES  Y
+#if ['<$MAKEMSM_PACKAGE_REQUIRES_ELEVATED_PRIVLEDGES $$UPPER>' <> 'N']
+    ;--- Elevated privledges are (or may be) required -----------------------
+    #define? MAKEMSM_SUMMARY_SourceType  msidbSumInfoSourceTypeCompressed
+#elseif
+    ;--- Elevated privledges are not required -------------------------------
+    #define? MAKEMSM_SUMMARY_SourceType  msidbSumInfoSourceTypeCompressed or msidbSumInfoSourceTypeLUAPackage
+#endif
+#define? MAKEMSM_SUMMARY_TEMPLATE    Intel;<$ProdInfo.Language>
+#define? MAKEMSM_SUMMARY_SCHEMA      110           ;;Minimum v1.1 Installer
+#define? MAKEMSM_SUMMARY_TITLE       <$ProdInfo.ProductName>
+#define? MAKEMSM_SUMMARY_SUBJECT     <$ProductVersion> (created <?CompileTime>)
+#define? MAKEMSM_SUMMARY_COMMENTS    <$ProdInfo.Description>
+#define? MAKEMSM_SUMMARY_AUTHOR      <$MAKEMSI_USERNAME> on <$MAKEMSI_COMPUTERNAME>
+#define? MAKEMSM_SUMMARY_LASTAUTHOR  <$MAKEMSM_SUMMARY_AUTHOR>
+#define? MAKEMSM_SUMMARY_KEYWORDS    Merge Module,MSI
+
+<$Summary "TEMPLATE"      Value="<$MAKEMSM_SUMMARY_TEMPLATE>">
+<$Summary "PackageCode"   Value='<$ProdInfo.ModuleGuid>'>
+<$Summary "MsiSchema"     Value="<$MAKEMSM_SUMMARY_SCHEMA>">
+<$Summary "SourceType"    Value="<$MAKEMSM_SUMMARY_SourceType>">
+<$Summary "TITLE"         VALUE="<$MAKEMSM_SUMMARY_TITLE>">
+<$Summary "Subject"       VALUE="<$MAKEMSM_SUMMARY_SUBJECT>">
+<$Summary "COMMENTS"      VALUE="<$MAKEMSM_SUMMARY_COMMENTS>">
+<$Summary "AUTHOR"        VALUE="<$MAKEMSM_SUMMARY_AUTHOR>">
+<$Summary "LastAuthor"    VALUE="<$MAKEMSM_SUMMARY_LASTAUTHOR>">
+<$Summary "KeyWords"      VALUE="<$MAKEMSM_SUMMARY_KEYWORDS>">
+<$Summary "CREATE_DTM"    VALUE="now()">
+<$Summary "EDITTIME"      VALUE="now()">
+<$Summary "LASTSAVE_DTM" *VALUE="Empty">   ;;Don't want
+
+
+;----------------------------------------------------------------------------
+;--- Set up the modules signature information -------------------------------
+;----------------------------------------------------------------------------
+<$Table "ModuleSignature">
+#(
+    <$Row
+        ModuleID="<$MAKEMSM_MODULEID>"
+        Language="<$ProdInfo.Language>"
+         Version="<$ProductVersion>"
+    >
+#)
+<$/Table>
+
+
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Create a feature to make life easier (will be removed at end) ----------
+;----------------------------------------------------------------------------
+<$Feature "MergeModuleRoot" CREATE="Y">
+
+
+
+
+
+
+
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Set up some MAKEMSI tables (move eventually?) --------------------------
+;----------------------------------------------------------------------------
+<$TableCreate "<$MAKEMSI_TABLENAME_FILESOURCE>">
+<$Table "_Validation">
+#(
+   <$Row
+            Table="<$MAKEMSI_TABLENAME_FILESOURCE>"
+           Column="File_"
+         Nullable="N"
+         KeyTable="File"
+        KeyColumn="1"
+         Category="Identifier"
+      Description="Foreign key into the File table."
+   >
+#)
+#(
+   <$Row
+            Table="<$MAKEMSI_TABLENAME_FILESOURCE>"
+           Column="SourceFile"
+         Nullable="N"
+         Category="Text"
+      Description="Full name of source file."
+   >
+#)
+<$/Table>
+#ifndef FILE_DISABLE_MD5_GENERATION_ALTOGETHER
+   <$TableCreate "MsiFileHash">
+   <$Table "_Validation">
+   #(
+       <$Row
+               Table="MsiFileHash"
+               Column="File_"
+           Nullable="N"
+           KeyTable="File"
+           KeyColumn="1"
+           Category="Identifier"
+       Description="Foreign key into the File table."
+       >
+   #)
+   #(
+       <$Row
+               Table="MsiFileHash"
+               Column="Options"
+           Nullable="N"
+           Category="Integer"
+           MinValue="0"
+           MaxValue="0"
+       Description="Reserved option (must be 0)."
+       >
+   #)
+   #(
+       #Define HashRow
+       <$Row
+               Table="MsiFileHash"
+               Column="HashPart{$#1}"
+           Nullable="N"
+           Category="DoubleInteger"
+       Description="MD5 part {$#1}/4."
+       >
+   #)
+   <$HashRow "1">
+   <$HashRow "2">
+   <$HashRow "3">
+   <$HashRow "4">
+   <$/Table>
+#endif
+
+
+
+
+
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Set up end of package --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? MAKEMSM_ONEXIT_HOOK_STILL_IN_COMPLETE_FEATURE
+#define? MAKEMSM_VBSCRIPT_FUNCTIONS
+#define? MAKEMSM_COPY_COMPONENTS_INTO_MODULECOMPONENTS_TABLE Y
+#( ''
+   #define MAKEMSM_ONEXIT
+
+   ;--- A HOOK --------------------------------------------------------------
+   <$MAKEMSM_ONEXIT_HOOK_STILL_IN_COMPLETE_FEATURE>
+
+   ;--- Add generated DOCO to the MSI ---------------------------------------
+   ;<$COMPANY_ADD_GENERATED_DOCO>
+
+   ;--- Get list of all components in this merge module ------------------------
+   #if  ['<$MAKEMSM_COPY_COMPONENTS_INTO_MODULECOMPONENTS_TABLE>' = 'Y']
+   #( '<?NewLine>'
+        dim MmComponents()
+        dim MmComponentCnt : MmComponentCnt = 0
+        <$Table "Component">
+            <$Row @where=^^ @Code=Y>
+                ;--- Store component name -------------------------------------------
+                redim preserve MmComponents(MmComponentCnt)
+                MmComponents(MmComponentCnt) = <$COLSTR.Component.Component>
+                MmComponentCnt               = MmComponentCnt + 1
+            <$/Row>
+        <$/Table>
+        dim CompIndex
+        <$Table "ModuleComponents">
+            for CompIndex = 0 to MmComponentCnt-1
+            #(
+                <$Row
+                     *Component=^MmComponents(CompIndex)^
+                       ModuleID="<$MAKEMSM_MODULEID>"
+                       Language="<$ProdInfo.Language>"
+                >
+           #)
+           next
+        <$/Table>
+   #)
+   #endif
+
+   ;--- Now finished with the "COMPLETE" feature ----------------------------
+   <$/Feature>
+   <$TableDelete "Feature">
+   <$TableCreate "FeatureComponents" DropExisting="Y">  ;;Windows Installer doco lists this as required table!
+
+   ;--- End the package -----------------------------------------------------
+   <$/Msi>
+
+   ;--- TMP Test ------------------------------------------------------------
+   <$MsiValFilter "Missing specifications">
+
+   ;--- Include any user defined VBSCRIPT functions -------------------------
+   <$MAKEMSM_VBSCRIPT_FUNCTIONS>
+#)
+#OnExit #69 <$MAKEMSM_ONEXIT>

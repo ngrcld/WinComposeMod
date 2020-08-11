@@ -1,0 +1,267 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   GUID.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.10  $
+;          $Date:   28 Feb 2016 15:41:18  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Guid.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "GUID.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;--- [UsedInDoco-Options-GUID] ---
+#define? GUID_FILENAME                   <?InputFile $$FilePart:w>.GUIDS   ;;Put in same dir as .MM file by default (EMPTY = disable use of GUID file)
+#define? GUID_FILENAME_READONLY          N                                 ;;Can read file but not create new GUIDS (a safety feature).
+#define? GUID_FILENAME_TEXT_DO_NOT_EDIT  AUTOMATICALLY GENERATED FILE - DO NOT EDIT
+#define? GUID_FILENAME_TEXT_CONTAINS     Holds generated GUIDs, the values of which we MUST maintain.
+;--- [UsedInDoco-Options-GUID] ---
+
+
+
+;----------------------------------------------------------------------------
+;--- Gets GUID from VER file or from persistant storage ---------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Guid
+   <$UpdateMmLocation>
+   #evaluate ^^ ^<$Rexx4Guid {$?}>^
+   <??@@VbExp>
+#)
+#DefineRexx 'Rexx4Guid'
+   ;--- Did user specify the Value in the VER file? -------------------------
+   @@Name    = '{$#1}';
+   @@MacName = '<$VER_PRODINFO_GUID_PREFIX>' || @@Name
+   if  Defined(@@MacName) = 'N' then
+       ;--- Generate GUID with VB code ---
+       @@VbExp = '{$Vb=^{$#1}^} = GuidGet("' || @@Name || '")';
+   else
+   do
+       ;--- Get value from VER file and set up the return information -------
+       @@VbExp = '{$Vb} = "' || strip(ReplaceMacros(MacroGet(@@MacName))) || '"<?NewLine>';
+       @@VbExp = @@VbExp || 'VbsReturnGuid "{$#1}", {$Vb}';
+   end;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- VBSCRIPT ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define GuidVbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   function GuidMake(GuidName)             ;;Makes a NEW GUID (no memory)
+   '=========================================================================
+       ;--- Access object ---------------------------------------------------
+       on error resume next
+       dim oGuidGen
+       err.clear()
+       set oGuidGen = MkObject("Scriptlet.Typelib")
+
+       ;--- Use the object to create a new GUID -----------------------------
+       GuidMake = oGuidGen.Guid
+       set oGuidGen = Nothing
+       VbsCheck "Generating a GUID"
+
+       ;--- Adjust (returned value has 40 chars - last 2 null) --------------
+       GuidMake = ucase(left(GuidMake, 38))
+
+       ;--- return the value to PPWIZARD? -----------------------------------
+       if  GuidName <> "" then
+           VbsReturnGuid GuidName, GuidMake
+       end if
+   end function
+
+
+   <?NewLine>
+   '=========================================================================
+   function GuidGet(ByVal GuidName)       ;;Makes a new GUID or retrieves old
+   '=========================================================================
+        ;--- See if a GUID FIle is supported --------------------------------
+        #if ['<$GUID_FILENAME>' = '']
+            #(
+                 error "Could not find the GUID called """ & GuidName & """..." &
+                       vbCRLF &
+                       "The GUID was not specified in the version file or supplied via macro." &
+                       vbCRLF &
+                       "You have also configured GuidGet() to prevent reading or writing GUIDs from a" &
+                       vbCRLF &
+                       "file as the ""GUID_FILENAME"" macro is empty (does not identify the filename)!"
+            #)
+        #elseif
+           ;--- Read the values into memory ---------------------------------
+           dim GuidFile : GuidFile = "<$GUID_FILENAME>"
+           dim FileExists, Stream, Fileline, Bits, FoundIt, Left1
+           dim Name, LongestName
+           LongestName = len(GuidName)
+           on error resume next
+           FoundIt = false
+           FileExists = oFS.FileExists(GuidFile)
+           if  FileExists then
+               ;--- File exists so read in the information ------------------
+               set Stream  = oFS.OpenTextFile(GuidFile, ForReading)
+               do  while Stream.AtEndOfStream <> true
+                   ;--- Read the line ---------------------------------------
+                   Fileline = trim(Stream.ReadLine)
+
+                   ;--- Comment line? ---------------------------------------
+                   Left1 = Left(FileLine, 1)
+                   if  Fileline = "" or Left1 = ";" then
+                       nop
+                   else
+                       ;--- Extract info ------------------------------------
+                       Bits  = split(FileLine, "=")
+                       Name  = ucase(trim(Bits(0)))
+                       if  len(Name) > LongestName then
+                           LongestName = len(Name)
+                       end if
+                       if  ucase(GuidName) = Name then
+                           ;--- Found the GUID ------------------------------
+                           GuidGet = trim(Bits(1))
+                           FoundIt = True
+                           exit do
+                       end if
+                   end if
+               loop
+               Stream.close
+           end if
+
+           ;--- If we haven't found it then we need to create it ------------
+           if  not FoundIt then
+               ;--- Create a NEW guid (if allowed to) -----------------------
+               #if  ["<$GUID_FILENAME_READONLY $$UPPER>" = "Y"]
+                    #(
+                         error "Could not create a GUID called """ & GuidName & """..." &
+                               vbCRLF &
+                               "The GUID did not exist in the version file and was not supplied via macro." &
+                               vbCRLF &
+                               "You have also configured GuidGet() to allow reading of existing GUIDs from a" &
+                               vbCRLF &
+                               "file, but are preventing creation of new GUIDS (see ""GUID_FILENAME_READONLY"")!"
+                   #)
+               #elseif
+                    ;--- Create the GUID ------------------------------------
+                    GuidGet = GuidMake("")
+
+                    ;--- Now add the the end of the file -------------------------
+                    err.clear()
+                    set Stream  = oFS.OpenTextFile(GuidFile, ForAppending, True)
+                    VbsCheck("Opening the GUID file """ & GuidFile & """ for appending")
+                    if  not FileExists then
+                       ;--- First GUID ------------------------------------------
+                       Stream.WriteLine ";" & string(78, "+")
+                       Stream.WriteLine "; <$GUID_FILENAME_TEXT_DO_NOT_EDIT>"
+                       Stream.WriteLine ";"
+                       Stream.WriteLine "; <$GUID_FILENAME_TEXT_CONTAINS>"
+                       Stream.WriteLine ";" & string(78, "+")
+                       Stream.WriteLine ""
+                       Stream.WriteLine ""
+                    end if
+                    Stream.WriteLine left(GuidName & string(LongestName, " "), LongestName) & " = " & GuidGet
+                    Stream.close
+                    VbsCheck("Updating the GUID file """ & GuidFile & """")
+               #endif
+           end if
+
+           ;--- Return the GUID to PPWIZARD ---------------------------------
+           VbsReturnGuid GuidName, GuidGet
+        #endif
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   sub VbsReturnGuid(ByVal Name, ByVal Value)
+   '=========================================================================
+       VbsReturnMacro "GUID."         & Name, Value
+       VbsReturnMacro "GUID-Mangled." & Name, GuidMangle(Value)
+   end sub
+
+    ;---[GuidMangleCode]---
+    <?NewLine>
+    '============================================================================
+    function @@ReverseBits(ByVal GuidStr)
+    ' This function mangles an MSI formatted GUID as performed by Windows
+    ' Installer which uses this process in an attempt to hide the information.
+    '============================================================================
+       ;--- Now perform swap magic ----------------------------------------------
+       dim Lengths, i, Length, Fragment
+       @@ReverseBits = ""
+       Lengths       = split("8,4,4,2,2,2,2,2,2,2,2", ",")
+       for i = 0 to ubound(Lengths)
+           ;--- Get number of nibbles to process --------------------------------
+           Length = Lengths(i)
+
+           ;--- Remove the correct number of nibbles ----------------------------
+           Fragment = left(GuidStr, Length)
+           GuidStr  = mid(GuidStr,  Length+1)
+
+           ;--- Reverse the nibbles and add to result ---------------------------
+           @@ReverseBits = @@ReverseBits & StrReverse(Fragment)
+       next
+    end function
+
+    <?NewLine>
+    '============================================================================
+    function GuidMangle(ByVal MsiGuid)
+    ' This function mangles an MSI formatted GUID as performed by Windows
+    ' Installer which uses this process in an attempt to hide the information.
+    '============================================================================
+       ;--- Remove brackets and minus sign ----------------------------------
+       dim Tmp
+       Tmp = replace(MsiGuid, "{", "")
+       Tmp = replace(Tmp,     "}", "")
+       Tmp = replace(Tmp,     "-", "")
+
+       ;--- Perform the magic reverse operation -----------------------------
+       GuidMangle = @@ReverseBits(Tmp)
+    end function
+
+
+    <?NewLine>
+    '============================================================================
+    function GuidMangleReverse(ByVal MangledGuid)
+    '============================================================================
+       ;--- Perform the magic reverse operation -----------------------------
+       dim Tmp : Tmp = @@ReverseBits(MangledGuid)
+
+       ;--- Restore "-" signs -----------------------------------------------
+       dim Lengths, i, Length, Fragment
+       GuidMangleReverse = ""
+       Lengths           = split("8,4,4,4,12", ",")
+       for i = 0 to ubound(Lengths)
+           ;--- Get number of nibbles to process --------------------------------
+           Length = Lengths(i)
+
+           ;--- Remove the correct number of nibbles ----------------------------
+           Fragment = left(Tmp, Length)
+           Tmp      = mid(Tmp,  Length+1)
+
+           ;--- Reverse the nibbles and add to result ---------------------------
+           if   i <> 0 then
+                GuidMangleReverse = GuidMangleReverse & "-"
+           end if
+           GuidMangleReverse = GuidMangleReverse & Fragment
+       next
+
+       ;--- Restore "{}" ----------------------------------------------------
+       GuidMangleReverse = "{" & GuidMangleReverse & "}"
+    end function
+    ;---[GuidMangleCode]---
+#)
+
+
+
+#NextId UNLOCK "GUID.MMH"

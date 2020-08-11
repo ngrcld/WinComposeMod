@@ -1,0 +1,415 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   HTMLMSITABLE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.3  $
+;          $Date:   04 Jun 2009 18:37:08  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/HtmlMsiTable.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "HTMLMSITABLE.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoHtmlMsiTableOptions]---
+;--- General options --------------------------------------------------------
+#define? HTMLMSITABLE_TABLES            ServiceInstall ServiceControl
+#define? HTMLMSITABLE_MSIDIFF_NAME      <??*MSIDIFF_DIR?>MsiDiff.VBS             ;;Empty to disable
+#define? HTMLMSITABLE_MSIDIFF_SWITCHES                                           ;;/NoSort perhaps
+#define? HTMLMSITABLE_FMT               D                                        ;;D=Decimal or H=HEX (DEFAULT - can be overriden for specific columns)
+#define? HTMLMSITABLE_BUTTON_STYLE      background-color:#C8D6F3;                ;;Button look
+#define? HTMLMSITABLE_BUTTON_PREFIX                                              ;;Button text
+#define? HTMLMSITABLE_BUTTON_SUFFIX     <?Space>Table                            ;;Button text
+#define? HTMLMSITABLE_HEADING_PREFIX    MSI Table &quot;                         ;;Heading text
+#define? HTMLMSITABLE_HEADING_SUFFIX    &quot;                                   ;;Heading text
+#define? HTMLMSITABLE_TT_BEFORE_SQLTYPE SQL:<?Space>                             ;;In tooltip
+#(  ''
+    ;--- Defines what we want to do if MSIDIFF.VBS not found ----------------
+    #define? HTMLMSITABLE_MSIDIFF_NOT_FOUND
+
+    ;--- Display a warning for this -----------------------------------------
+    #info ^Could not find: "<$HTMLMSITABLE_MSIDIFF_NAME>"!^
+    ;#warning ^HTMLRPT01^ ^Could not find: "<$HTMLMSITABLE_MSIDIFF_NAME>"!^
+#)
+#( ''
+    ;--- Defines what we want to do if MSIDIFF.VBS reports an error ---------
+    #define?  HTMLMSITABLE_MSIDIFF_REPORTS_ERROR
+
+    ;--- Display a warning for this -----------------------------------------
+    #warning ^HTMLRPT02^  ^{$Text}^
+#)
+
+
+;--- Some fields are relatively meaningless in isolation (Y=SHOW, N=Don't Show) ---
+#define? HTMLMSITABLE_SHOW.ServiceInstall.ServiceInstall  N
+#define? HTMLMSITABLE_SHOW.ServiceControl.ServiceControl  N
+
+
+;--- How to display INTEGER values of specific columns (H=HEX, D=DECIMAL) ---
+#define? HTMLMSITABLE_FMT.ServiceControl.Event            H
+#define? HTMLMSITABLE_FMT.ServiceInstall.ServiceType      H
+#define? HTMLMSITABLE_FMT.ServiceInstall.StartType        H
+#define? HTMLMSITABLE_FMT.ServiceInstall.ErrorControl     H
+
+
+;--- Any MSI table descriptions for specific tables -------------------------
+#(
+    #define? HTMLMSITABLE_HTML_ABOVE_TABLE.ServiceInstall
+    <p>This table is used to install Windows Services.
+#)
+#(
+    #define? HTMLMSITABLE_HTML_ABOVE_TABLE.ServiceControl
+    <p>This table is used to start, stop or delete Windows Services during
+    installation or uninstallation.
+#)
+
+
+;--- Any MSI column descriptions for specific tables/Columns ----------------
+#define? HTMLMSITABLE_TT.*.Component_                This is a reference (foreign key) into the &quot;Component&quot; table.
+#define? HTMLMSITABLE_TT.ServiceControl.Name         The ID of the system service.
+#define? HTMLMSITABLE_TT.ServiceControl.Event        Indicates whether you want to stop, start or delete the service and when.
+#define? HTMLMSITABLE_TT.ServiceControl.Arguments    Any parameters to the service EXE.
+#define? HTMLMSITABLE_TT.ServiceControl.Wait         1=Wait, 0=No Wait (0 can cause problems)
+#define? HTMLMSITABLE_TT.ServiceInstall.Name         The ID of the system service.
+#define? HTMLMSITABLE_TT.ServiceInstall.DisplayName  What the user will see.
+#define? HTMLMSITABLE_TT.ServiceInstall.ServiceType  What type of service?
+#define? HTMLMSITABLE_TT.ServiceInstall.Description  The service description the user will see.
+#define? HTMLMSITABLE_TT.ServiceInstall.Dependencies Services this service relies on.
+#define? HTMLMSITABLE_TT.ServiceInstall.StartName    User name.
+;---[4DocoHtmlMsiTableOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Some HOOKS -------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoHtmlMsiTableHooks]---
+#define? HTMLMSITABLE_BEFORE_MSITABLE_BUTTONS
+#define? HTMLMSITABLE_AFTER_MSITABLE_BUTTONS
+#define? HTMLMSITABLE_BEFORE_MSITABLE_REPORT
+#define? HTMLMSITABLE_AFTER_MSITABLE_REPORT
+;---[4DocoHtmlMsiTableHooks]---
+
+
+;----------------------------------------------------------------------------
+;--- The Code ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#(  ''
+    #define @@HTMLMSITABLE_DUMP_TABLES
+
+    ;--- Call MSIDIFF to generate "raw" output ------------------------------
+    #DefineRexx ''
+        @@LogDir = '<$MAKEMSI_OTHER_DIR>\MsiTable';
+        call MakeDirectoryTree @@LogDir;
+        @@DiffFile   = @@LogDir || '\MsiDiff.txt';
+        @@ButtonFile = @@LogDir || '\Button.txt';
+        @@HtmlFile   = @@LogDir || '\Html.txt';
+        call FileDelete @@DiffFile;
+        call FileDelete @@ButtonFile;
+        call FileDelete @@HtmlFile;
+
+        ;--- call MSIDIFF ---------------------------------------------------
+        call ArraySplit '@@Tables', '<$HTMLMSITABLE_TABLES>';
+        @@List   = '';
+        do  @@i = 1 to @@Tables.0;
+            @@List = @@List || ' +' || @@Tables.@@i;
+        end;
+        @@MsiDiffError = 0;
+        @@Rc = AddressCmd('cscript.exe //NoLogo "<$HTMLMSITABLE_MSIDIFF_NAME>" "<$MSI_MSINAME>" ' || @@List || ' /JustTableData /MacroPrefix @@ <$HTMLMSITABLE_MSIDIFF_SWITCHES> > "' || @@DiffFile || '" 2>&1');
+    #DefineRexx
+
+    ;--- include to generate the tables -------------------------------------
+    #if FileQueryExists("<$HTMLMSITABLE_MSIDIFF_NAME>") <> ''
+        ;--- Throw output away... ---------------------------------------
+        #output 'nul' ASIS APPEND       ;;Don't want to include any MSIDIFF.VBS (or CSCRIPT.EXE error message etc!
+            ;--- We have redefined "@@Table", "@@row" etc -------------------
+            #include "<??@@DiffFile>"       ;;Generates button & html files
+        #output
+
+        ;--- We generated button tags in a separate file to ensure no crap on error ---
+        #if FileQueryExists(@@ButtonFile) <> ''
+            ;--- Include the previously generated button HTML ---------------
+            #include "<??@@ButtonFile>"
+        #endif
+
+        ;--- We gave "MsiDiffError" a chance to report an error -------------
+        #if  (@@Rc <> 0) & (@@MsiDiffError = 0)
+            <$HTMLMSITABLE_MSIDIFF_REPORTS_ERROR Text="MSIDIFF.VBS returned a return code of <??@@Rc>...">
+        #endif
+    #endif
+#)
+#(
+    #define  @@TABLE
+    #RexxVar @@TableRowCnt = 0           ;;Reset Count
+    #RexxVar @@TableName   = "{$#1}"     ;;Remember the tables name
+#)
+#define  @@TABLECREATE                ;;Do nothing
+#( ''
+    #define  @@/TABLE
+    #evaluate ^^ ^<$@@Rexx2Dump/Table {$?}>^
+#)
+#( ''
+    ;--- MSIDIFF.VBS is reporting an error ----------------------------------
+    #define  @@MsiDiffError
+
+    ;--- Use defined error handler ------------------------------------------
+    #RexxVar @@MsiDiffError + 1             ;;Count invokations (should be once only - but still)
+    <$HTMLMSITABLE_MSIDIFF_REPORTS_ERROR {$?}>
+#)
+#(
+    #define @@Row
+    #evaluate ^^ ^<$@@Rexx2DumpTableRow {$?}>^
+#)
+#DefineRexx '@@Rexx2DumpTableRow' NOPACK
+    ;--- Get complete parameter information ---------------------------------
+    {$??}        ;;Allows access to ROW/VALUE information
+
+    ;--- Flush to improve performance ---------------------------------------
+    call FlushQueuedOutput;
+
+    ;--- Do we need to output Heading? --------------------------------------
+    @@TableRowCnt = @@TableRowCnt + 1
+    @@H = ''
+    if  @@TableRowCnt = 1 then
+    do
+        ;--- Ouput Heading --------------------------------------------------
+        @@NL = '0D0A'x;
+        @@H = ''
+        @@H = @@H || '<br><center>';
+        @@H = @@H || '<a name="MsiTable_' || @@TableName || '"></a>' || @@NL;
+        @@H = @@H || '<' || '$HTMLRPT_HEADING TEXT="<$HTMLMSITABLE_HEADING_PREFIX>' || @@TableName || '<$HTMLMSITABLE_HEADING_SUFFIX>">' || @@NL;
+
+
+        ;--- Add a summary? -------------------------------------------------
+        @@SummaryMac = 'HTMLMSITABLE_HTML_ABOVE_TABLE.' || @@TableName;
+        if  Defined(@@SummaryMac) = 'Y' then
+        do
+            @@H = @@H || '</center>'
+            @@H = @@H || '<' || '$' || @@SummaryMac || '><p>' || @@NL;
+            @@H = @@H || '<center>'
+        end;
+
+        ;--- Start Table ----------------------------------------------------
+        @@H = @@H || '<TABLE COLS="6" <' || '$HTMLRPT_TABLE_LOOK_AND_FEEL>>' || @@NL;
+
+        ;--- Dump Heading ---------------------------------------------------
+        @@H = @@H || '<thead><TR <' || '$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>' || @@NL;
+        do  @@Fld = 1 to MP.0
+            ;--- We may not want to display this column ---------------------
+            @@ColName = MP.@@Fld.MpName;
+            @@ShowMac = 'HTMLMSITABLE_SHOW.' || @@TableName || '.' || @@ColName;
+            if  Defined(@@ShowMac) = 'Y' then
+                @@Show = MacroGet(@@ShowMac);           ;;Have table/column specific value
+            else
+                @@Show = "Y";                           ;;Defaults to "Y"
+            @@ColShow.@@Fld = @@Show;                   ;;Save info for row processing loop
+            if  @@ColShow.@@Fld = 'N' then
+                iterate;                               ;;Restart loop
+
+            ;--- What type of column is it? ---------------------------------
+            @@InfoPrefix = 'TABLEDEF_' || c2x(@@TableName) || '.!' || c2x(@@ColName)  || '.!';
+            @@UmVar = @@InfoPrefix || 'UpdateMethod';          ;;Stored by the "Column" command
+            @@Fmt   = ''
+            if  symbol(@@UmVar) <> 'VAR' then
+                @@Um = '';
+            else
+                @@Um = value(@@UmVar);
+            if  @@Um = '<$MAKEMSI_COLUPDATE_METHOD_INTEGER>' then
+            do
+                ;--- This is an integer column, how does the user want it formatted? ---
+                @@FmtMac = 'HTMLMSITABLE_FMT.' || @@TableName || '.' || @@ColName;
+                if  Defined(@@FmtMac) = 'Y' then
+                    @@Fmt = MacroGet(@@FmtMac);           ;;Have table/column specific value
+                else
+                    @@Fmt = MacroGet('HTMLMSITABLE_FMT'); ;;Use generic default
+            end;
+            @@ColFmt.@@Fld = @@Fmt;                       ;;Save format for row processing loop
+            if  @@Fmt = 'D' then
+                @@TH = "<th SortType='Number'"            ;;Decimal numbers can be sorted as
+            else
+                @@TH = "<th";                             ;;String or Hex integer so can only sort alphabetic...
+
+            ;--- Generate ToolTip (SQL TYPE) --------------------------------
+            @@SqlVar = @@InfoPrefix || 'SqlType';              ;;Stored by the "Column" command
+            @@TT     = 'Click to sort contents by this column!';
+            if  symbol(@@SqlVar) = 'VAR' then
+                @@TT = '<$HTMLMSITABLE_TT_BEFORE_SQLTYPE>' || value(@@SqlVar) || "&#10;&#10;" || @@TT;
+
+            ;--- User may have specified some tooltip text ------------------
+            @@TtMac = 'HTMLMSITABLE_TT.' || @@TableName || '.' || @@ColName;
+            if  Defined(@@TtMac) = 'Y' then
+                @@TtDesc = MacroGet(@@TtMac);
+            else
+            do
+                ;--- No specific ctable/column text, maybe applies to any table? ---
+                @@TtMac = 'HTMLMSITABLE_TT.*.' || @@ColName;
+                if  Defined(@@TtMac) = 'Y' then
+                    @@TtDesc = MacroGet(@@TtMac);
+                else
+                    @@TtDesc = '';
+            end;
+            if  @@TtDesc <> '' then
+                @@TT = @@TtDesc || "&#10;&#10;" || @@TT;
+
+            ;--- Add Tooltip ------------------------------------------------
+            @@TH = @@TH  || " TITLE='" || @@TT || "'";
+
+            ;--- Allow Column name to break where contents "thin" -----------
+            @@ColNameDisp = WBR(@@ColName,,,,1);    ;;down to 1 column wide!
+
+            ;--- End the header ---------------------------------------------
+            @@TH = @@TH  || ">";
+            @@H = @@H || @@TH || @@ColNameDisp || "</th>" || @@NL;
+        end;
+       @@H = @@H || "</tr></thead>" || @@NL || @@NL;
+    end;
+
+    ;--- Output the record --------------------------------------------------
+    @@H = @@H || "<tr>";
+    do  @@Fld = 1 to MP.0
+        ;--- Want this column? ----------------------------------------------
+        if  @@ColShow.@@Fld = 'N' then
+            iterate;                        ;;Restart loop
+
+        ;--- Get the value and column name ----------------------------------
+        @@V       = MP.@@Fld.MpValue;
+        @@ColName = MP.@@Fld.MpName;
+
+        ;--- Handle the value -----------------------------------------------
+        @@UmVar = 'TABLEDEF_' || c2x(@@TableName) || '.!' || c2x(@@ColName)  || '.!UpdateMethod';   ;;Stored by the "Column" command
+        if  symbol(@@UmVar) <> 'VAR' then
+            @@Um = '';
+        else
+            @@Um = value(@@UmVar);
+        if  @@Um = '<$MAKEMSI_COLUPDATE_METHOD_INTEGER>' then
+        do
+            ;--- Work Out HEX value -----------------------------------------
+            @@Dec = @@V;
+            if  @@V = '' then
+            do
+                @@V  = '&nbsp;';
+                @@TT = 'NULL';
+            end;
+            else
+            do
+                ;--- Value is not NULL so must be a valid integer -----------
+                @@Hex = d2x(@@Dec);
+                if  length(@@Hex) // 2 = 1 then
+                    @@Hex = '0' || @@Hex;
+                @@Hex = '0x' || @@Hex;
+
+                ;--- Display as HEX or decimal? ---------------------------------
+                if  @@ColFmt.@@Fld = 'D' then
+                do
+                    ;--- Decimal ------------------------------------------------
+                    @@V  = @@DEC;
+                    @@TT = 'Hex: ' || @@Hex;
+                end;
+                else
+                do
+                    ;--- HEX ----------------------------------------------------
+                    @@V  = @@Hex;
+                    @@TT = 'Decimal: ' || @@Dec;
+                end;
+            end;
+        end;
+        else
+        do
+            ;--- What ToolTip? ----------------------------------------------
+            @@TT = '';
+
+            ;--- Not a number so take care of certain characters ------------
+            if  @@V = '' then
+                @@V = '&nbsp;';
+            else
+            do
+                ;--- Want long values to wrap -------------------------------
+                @@V = WBR(@@V,, "{WbR}", 5, 10);
+
+                ;--- Make certain characters "safe" (for HTML & PPWIZARD!) ---
+                @@V = ReplaceString(@@V, '&', '&amp;');
+                @@V = ReplaceString(@@V, '<', '&lt;');
+                @@V = ReplaceString(@@V, '>', '&gt;');
+
+                ;--- Fix up the "<wbr>" info --------------------------------
+                @@V = ReplaceString(@@V, '{WbR}', '<wbr>');
+            end;
+        end;
+
+        ;--- Add this column ------------------------------------------------
+        if  @@TT = '' then
+            @@TD = '<td>';
+        else
+            @@TD = '<td Title="' || @@TT || '">'
+        @@H = @@H || @@TD || @@V || "</td>";
+    end;
+    @@H = @@H || "</tr>";
+
+    ;--- Write to output file -----------------------------------------------
+    call FileLineOut @@HtmlFile, @@H;
+#DefineRexx
+#DefineRexx '@@Rexx2Dump/Table'
+    ;--- Data output? -------------------------------------------------------
+    if  @@TableRowCnt <> 0 then
+    do
+        ;--- Finish off the HTML table --------------------------------------
+        @@H =        '</table>'
+        @@H = @@H || '<' || '$/HTMLRPT_HEADING>';  ;;Section contracts to here
+        @@H = @@H || '<p>' || @@TableRowCnt || ' rows in the "' || @@TableName || '" table.</center>' || @@NL || @@NL;
+        call FileLineOut @@HtmlFile, @@H;
+        call FileClose   @@HtmlFile;
+
+        ;--- Generate Button ------------------------------------------------
+        call FileLineOut @@ButtonFile, '<' || '$HTMLMSITABLE_BUTTON TableName=^' || @@TableName || '^ CNT=^' || @@TableRowCnt || '^>';
+        call FileClose   @@ButtonFile;
+    end
+#DefineRexx
+#(
+    #define? HTMLMSITABLE_BUTTON
+    <$BUTTON2 "MsiTable_{$TableName}" Text="<$HTMLMSITABLE_BUTTON_PREFIX>{$TableName}<$HTMLMSITABLE_BUTTON_SUFFIX>" TT="There were {$Cnt} rows in this MSI table." STYLE=^<$HTMLMSITABLE_BUTTON_STYLE>^ CNT="-1">
+#)
+
+
+;--- Do the Deed! -----------------------------------------------------------
+#(
+    #define? HTMLMSITABLE_MSITABLE_BUTTONS
+
+    ;--- Output the report --------------------------------------------------
+    <$HTMLMSITABLE_BEFORE_MSITABLE_BUTTONS>
+    #if ["<$HTMLMSITABLE_MSIDIFF_NAME>" <> '']
+        ;--- Not disabled ---------------------------------------------------
+        #if FileQueryExists("<$HTMLMSITABLE_MSIDIFF_NAME>") = ''
+            ;--- Don't know where MSIDIFF is! -------------------------------
+            <$HTMLMSITABLE_MSIDIFF_NOT_FOUND>       ;;User may choose to do nothing
+            #define+ HTMLMSITABLE_MSIDIFF_NAME      ;;Stop any other actions
+        #elseif
+            ;--- Add the table data -----------------------------------------
+            #info 'Using: "<$HTMLMSITABLE_MSIDIFF_NAME>"'
+            <$@@HTMLMSITABLE_DUMP_TABLES>
+        #endif
+    #endif
+    <$HTMLMSITABLE_AFTER_MSITABLE_BUTTONS>
+#)
+#(
+    #define? HTMLMSITABLE_MSITABLE_REPORT
+
+    ;--- Output the report --------------------------------------------------
+    <$HTMLMSITABLE_BEFORE_MSITABLE_REPORT>
+    #if ["<$HTMLMSITABLE_MSIDIFF_NAME>" <> '']
+        ;--- Not disabled ---------------------------------------------------
+        #if FileQueryExists(@@HtmlFile) <> ''
+            ;--- Include the previously generated HTML table(s) -------------
+            #include "<??@@HtmlFile>"
+        #endif
+    #endif
+    <$HTMLMSITABLE_AFTER_MSITABLE_REPORT>
+#)
+
+#NextId UNLOCK "HTMLMSITABLE.MMH"

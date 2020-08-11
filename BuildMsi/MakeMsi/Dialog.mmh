@@ -1,0 +1,271 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DIALOG.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.5  $
+;          $Date:   10 Dec 2008 20:10:52  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Dialog.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "DIALOG"
+
+;----------------------------------------------------------------------------
+;--- DialogPreview ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+    ;--- Define macro and validate parameters -------------------------------
+    #define DialogPreview
+    {$!KEYWORDS}  ;;Don't Expect any keywords!
+    {$!:#1}
+
+   ;--- Generate code (display all dialogs by default) ----------------------
+   <$UpdateMmLocation>
+   DialogPreview "{$#1=''}"
+#)
+
+
+;----------------------------------------------------------------------------
+;--- DialogRemove -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#(  '<?NewLine>'
+    ;--- Define macro and validate parameters -------------------------------
+    #define DialogRemove
+    {$!KEYWORDS}  ;;Don't Expect any keywords!
+    {$!:#1}
+
+    ;--- Initialization -----------------------------------------------------
+    <$UpdateMmLocation>
+
+    ;--- Find Prev/Next Info ------------------------------------------------
+    <$@@DialogFindPrevAndNextDialogs "{$#1}">
+
+    ;--- Now Remove the dialog ----------------------------------------------
+    <$Table "ControlEvent">
+        <$Row @Where="" @OK=^? > 0^ @Code="Y" *Argument="DlgArgument">
+            ;--- This a new dialog event? -----------------------------------
+            DlgArgument = <$COLSTR.ControlEvent.Argument>
+            if  <$COLSTR.ControlEvent.Event> = "NewDialog" then
+                if  DlgArgument = DlgFind then
+                    ;--- Something is pointing to the deleted dialog --------
+                    if  <$COLSTR.ControlEvent.Control_> = "Back" then DlgArgument = DlgPrev
+                    if  <$COLSTR.ControlEvent.Control_> = "Next" then DlgArgument = DlgNext
+                end if
+            end if
+        <$/Row>
+    <$/Table>
+
+    ;--- Stop any possible future matches on deleted dialogs! -----------
+    <$Table "ControlEvent">
+        <$RowsDelete WHERE=^Dialog_ = '{$#1}'^>
+    <$/Table>
+    <$Table "Dialog">
+        <$RowsDelete WHERE=^Dialog = '{$#1}'^>
+    <$/Table>
+    <$Table "Control">
+        <$RowsDelete WHERE=^Dialog_ = '{$#1}'^>
+    <$/Table>
+    <$Table "ControlCondition">
+        <$RowsDelete WHERE=^Dialog_ = '{$#1}'^>
+    <$/Table>
+
+#)
+#(  '<?NewLine>'
+    #define @@DialogFindPrevAndNextDialogs
+
+    ;--- Look for Next/Prev info --------------------------------------------
+    DlgFind = "{$#1}"
+    DlgPrev = ""
+    DlgNext = ""
+    <$Table "ControlEvent">
+        <$Row @Where="" @OK=^? > 0^ @Code="Y">
+            ;--- This a new dialog event? -----------------------------------
+            if  <$COLSTR.ControlEvent.Event> = "NewDialog" then
+                if  <$COLSTR.ControlEvent.Argument> = DlgFind then
+                    ;--- This points to the right dialog --------------------
+                    if  <$COLSTR.ControlEvent.Control_> = "Back" then
+                        DlgNext = <$COLSTR.ControlEvent.Dialog_>
+                    else
+                        DlgPrev = <$COLSTR.ControlEvent.Dialog_>
+                    end if
+                end if
+            end if
+        <$/Row>
+    <$/Table>
+
+    ;--- Output error information if required -------------------------------
+    if   DlgPrev = "" and DlgNext = "" then
+         error "No references to the dialog """ & DlgFind & """ were found in the ""ControlEvent"" table (dialog name spelt wrong? Wrong case?)."
+    end if
+    if   DlgPrev = "" then
+         error "The dialog after """ & DlgFind & """ is """ & DlgNext & """ however the previous dialog was not mentioned in the ""ControlEvent"" table."
+    end if
+    if   DlgNext = "" then
+         error "The dialog before """ & DlgFind & """ is """ & DlgPrev & """ however the next dialog was not mentioned in the ""ControlEvent"" table."
+    end if
+#)
+
+
+
+
+;**    [CommentBlockStart     (March 5, 2004 9:55:54 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|;----------------------------------------------------------------------------
+;**|;--- DialogInsert -----------------------------------------------------------
+;**|;----------------------------------------------------------------------------
+;**|#(  '<?NewLine>'
+;**|    ;--- Define macro and validate parameters -------------------------------
+;**|    #define DialogInsert
+;**|    {$!KEYWORDS}  ;;Don't Expect any keywords!
+;**|    {$!:#1}
+;**|
+;**|
+;**|    ;--- Initialization -----------------------------------------------------
+;**|    <$UpdateMmLocation>
+;**|
+;**|    ;--- Find Prev/Next Info ------------------------------------------------
+;**|    <$@@DialogFindPrevAndNextDialogs "{$#1}">
+;**|
+;**|    ;--- Now Insert the dialog ----------------------------------------------
+;**|    <$Table "ControlEvent">
+;**|        <$Row @Where="" @OK=^? > 0^ @Code="Y" *Argument="DlgArgument">
+;**|            ;--- This a new dialog event? -----------------------------------
+;**|            DlgArgument = <$COLSTR.ControlEvent.Argument>
+;**|            if  <$COLSTR.ControlEvent.Event> = "NewDialog" then
+;**|                if  <$COLSTR.ControlEvent.Dialog_> = DlgPrev and <$COLSTR.ControlEvent.Control_> = "Next" then DlgArgument = "{$#1}"
+;**|                if  <$COLSTR.ControlEvent.Dialog_> = DlgNext and <$COLSTR.ControlEvent.Control_> = "Back" then DlgArgument = "{$#1}"
+;**|            end if
+;**|        <$/Row>
+;**|    <$/Table>
+;**|#)
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (March 5, 2004 9:55:54 PM EST, Dennis)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- VBS constants ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define DialogVbsVariables
+
+   ;--- Due to Windows Installer Bug should only be opened once! ------------
+   dim oPreview : set oPreview = Nothing
+
+   ;--- Used by "DialogRemove" ----------------------------------------------
+   dim DlgFind, DlgPrev, DlgNext, DlgArgument
+#)
+
+;----------------------------------------------------------------------------
+;--- VBSCRIPT ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define DialogVbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   sub DialogPreview(ByVal ReMatch)
+   '=========================================================================
+       ;--- Create preview object -------------------------------------------
+       on error resume next
+'      dim oPreview : set oPreview = oMsi.EnableUIpreview()
+       if  oPreview is Nothing then                'Work around to Windows Installer bug
+           set oPreview = oMsi.EnableUIpreview()
+       end if
+
+       VbsCheck "Enabling Preview mode"
+
+       ;--- Put properties into preview object ------------------------------
+       Dim oRec, oView : Set oView = oMSI.OpenView("SELECT `Property`,`Value` FROM `Property`")
+       VbsCheck "Opening property view for updating the preview objects properties"
+       oView.Execute
+       VbsCheck "Executing property view for updating the preview objects properties"
+       do
+           ;--- Fetch next property -----------------------------------------
+           set oRec = oView.Fetch
+           VbsCheck "Fetching properties for the preview object"
+           if oRec is Nothing then exit do
+
+           ;--- Add property ------------------------------------------------
+           oPreview.Property(oRec.StringData(1)) = oRec.StringData(2)
+           VbsCheck "Updating the preview objects properties"
+       loop
+       oView.close
+       VbsCheck "Closing a property view"
+       set oView = Nothing
+
+       ;--- Want to see all dialogs? ----------------------------------------
+       if  ReMatch = "" then
+           ReMatch = ".*"
+       end if
+
+       ;--- Create a regular expression object ------------------------------
+       dim oRE : set oRE = CreateRE(ReMatch)
+
+       ;--- Open View of Dialog table ---------------------------------------
+       set oView = oMSI.OpenView("SELECT `Dialog` FROM `Dialog`")
+       VbsCheck "Opening ""Dialog"" view for updating the preview objects properties"
+       oView.Execute
+       VbsCheck "Executing ""Dialog"" view for updating the preview objects properties"
+
+       ;--- Process each dialog matching the request ------------------------
+       dim DialogCnt    : DialogCnt    = 0
+       dim DialogTotCnt : DialogTotCnt = 0
+       dim ThisDlg
+       do
+           ;--- Fetch next Dialog -------------------------------------------
+           set oRec = oView.Fetch
+           VbsCheck "Fetching dialogs to preview"
+           if oRec is Nothing then exit do
+           ThisDlg      = oRec.StringData(1)
+           DialogTotCnt = DialogTotCnt + 1
+
+           ;--- Want to view this dialog? -----------------------------------
+           dim Matches : Matches = TestRe(oRE, ThisDlg)
+           if  Matches then
+               ;--- Preview this dialog -------------------------------------
+               DialogCnt = DialogCnt + 1
+               oPreview.ViewDialog(ThisDlg)
+               VbsCheck "Failed to view the dialog """ & ThisDlg & """"
+
+               ;--- Wait ----------------------------------------------------
+               dim Title, Text, MsgRc
+               Title = "Preview """ & ThisDlg & """ dialog."
+               Text  = Title & vbCRLF & vbCRLF
+               Text  = Text  & "Match #" & DialogCnt & " for the regular expression """ & oRE.Pattern & """" & vbCRLF
+               Text  = Text  & "At or after " & MmLL & vbCRLF & vbCRLF
+               Text  = Text  & "Please move the underlying dialog out of the way."
+               MsgRc = MsgBox(Text, vbInformation+vbOKCancel, Title)
+
+               ;--- Exit loop if user pressed cancel ------------------------
+               if  MsgRc = vbCancel then
+                   exit do
+               end if
+           end if
+       loop
+       oView.close
+       VbsCheck "Closing a Dialog view"
+       if  DialogCnt = 0 then
+           MsgBox "No dialogs (out of " & DialogTotCnt & ") found matching the regular expression """ & oRE.Pattern & """.", vbExclamation, "No such dialogs!"
+       end if
+
+       ;--- Release preview object (and any others) -------------------------
+       set oRE      = Nothing
+       set oRec     = Nothing
+       set oView    = Nothing
+       oPreview.ViewDialog ""          ;;WiDialog.vbs does this...
+       'set oPreview = Nothing
+   end sub
+#)
+
+
+
+#NextId UNLOCK "DIALOG"
+
+

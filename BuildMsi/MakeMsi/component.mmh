@@ -1,0 +1,436 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   COMPONENT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.30  $
+;          $Date:   05 May 2018 16:40:22  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/component.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "COMPONENT.MMH"
+
+
+
+
+;--- VBS variables and code -------------------------------------------------
+#( '<?NewLine>'
+   #define ComponentVbsVariables
+
+   ;--- Use on "COMPONENT" macro (Attributes column) --------------------------
+   const msidbComponentAttributesLocalOnly                 = &H0000
+   const msidbComponentAttributesSourceOnly                = &H0001
+   const msidbComponentAttributesOptional                  = &H0002
+   const msidbComponentAttributesRegistryKeyPath           = &H0004
+   const msidbComponentAttributesSharedDllRefCount         = &H0008
+   const msidbComponentAttributesPermanent                 = &H0010
+   const msidbComponentAttributesODBCDataSource            = &H0020
+   const msidbComponentAttributesTransitive                = &H0040
+   const msidbComponentAttributesNeverOverwrite            = &H0080
+   const msidbComponentAttributes64bit                     = &H0100
+   const msidbComponentAttributesDisableRegistryReflection = &H0200
+   const msidbComponentAttributesUninstallOnSupersedence   = &H0400
+   const msidbComponentAttributesShared                    = &H0800
+
+
+   ;--- Used to calculate a GUID for the component --------------------------
+   public CompGuid : CompGuid = ""
+#)
+#( '<?NewLine>'
+   #define ComponentVbsFunctions
+
+   <?NewLine>
+   '=========================================================================
+   function ComponentDir(ByVal Component)
+   ;
+   ;  Returns the name of a component. The component must already exist and
+   ;  have the directory information populated.
+   '=========================================================================
+       on error resume next
+       dim SQL, oRecord
+       SQL = "SELECT * FROM `Component` WHERE Component = '" & Component & "'"
+       SqlOpenExec(Sql)
+       set oRecord = SqlViewFetch()
+       if  oRecord is Nothing then
+           error "The component """ & Component & """ does not exist (so directory can't be determined)!"
+       else
+           ComponentDir = <$ColStr.Component.Directory_ "oRecord">
+           if   ComponentDir = "" then
+                error "The component """ & Component & """ has a null ""Directory_"" column (so directory can't be determined)!"
+           end if
+       end if
+       set oRecord = Nothing
+       SqlViewClose()
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   sub DumpComponentTable4HtmlReport()
+   '=========================================================================
+        ;--- Not critical if it fails ---------------------------------------
+        on error resume next
+
+        ;--- Dump the table -------------------------------------------------
+        dim CompCnt : CompCnt = 0
+        SqlOpenExec("SELECT `Component`, `ComponentId`, `Directory_`, `Attributes`, `Condition`, `KeyPath` FROM `Component`")
+        do
+            ;--- Get record, exit loop at end -------------------------------
+            dim oRecord : set oRecord = SqlViewFetch()
+            if  oRecord is Nothing then exit do
+
+            ;--- Get record details -----------------------------------------
+            dim CompName  : CompName  = oRecord.StringData(1)
+            dim CompGuid2  : CompGuid2  = oRecord.StringData(2)
+            CompCnt = CompCnt + 1
+            #(
+                ;--- save whole table for use by the HTML report ------------
+                VbsReturnMacro "$Component#" & CompCnt,
+                                oRecord.StringData(1)       ;;Component Name
+                              & chr(1)
+                              & oRecord.StringData(2)       ;;ComponentId
+                              & chr(1)
+                              & oRecord.StringData(3)       ;;Directory_
+                              & chr(1)
+                              & oRecord.IntegerData(4)      ;;Attributes
+                              & chr(1)
+                              & oRecord.StringData(5)       ;;Condition
+                              & chr(1)
+                              & oRecord.StringData(6)       ;;KeyPath
+            #)
+        loop
+        SqlViewClose()
+
+        ;--- Return the count of entries ------------------------------------
+        VbsReturnMacro "$Component#Count", CompCnt
+   end sub
+#)
+
+
+
+;--- Map COMPONENT ATTRIBUTES -----------------------------------------------
+#RexxVar @@CA_LocalOnly                 = 'msidbComponentAttributesLocalOnly'
+#RexxVar @@CA_SourceOnly                = 'msidbComponentAttributesSourceOnly'
+#RexxVar @@CA_Optional                  = 'msidbComponentAttributesOptional'
+#RexxVar @@CA_RegistryKeyPath           = 'msidbComponentAttributesRegistryKeyPath'
+#RexxVar @@CA_SharedDllRefCount         = 'msidbComponentAttributesSharedDllRefCount'
+#RexxVar @@CA_Permanent                 = 'msidbComponentAttributesPermanent'
+#RexxVar @@CA_ODBCDataSource            = 'msidbComponentAttributesODBCDataSource'
+#RexxVar @@CA_Transitive                = 'msidbComponentAttributesTransitive'
+#RexxVar @@CA_NeverOverwrite            = 'msidbComponentAttributesNeverOverwrite'
+#RexxVar @@CA_64bit                     = 'msidbComponentAttributes64bit'
+#RexxVar @@CA_DisableRegistryReflection = 'msidbComponentAttributesDisableRegistryReflection'
+#RexxVar @@CA_UninstallOnSupersedence   = 'msidbComponentAttributesUninstallOnSupersedence'
+#RexxVar @@CA_Shared                    = 'msidbComponentAttributesShared'
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Component MACROS ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_COMPONENT_CREATE                     Y   ;;Default is to create component if attributes exist.
+#define? DEFAULT_COMPONENT_ATTRIBUTES                 LocalOnly
+#define? COMPONENT_REFERENCED_COMPONENTS_MUST_EXIST   Y
+#define? COMPONENT_FeatureComponents_ROW_@VALIDATE    NEW -MISSINGDATA  ;;See the "@Validate" parameter of the "ROW" command
+#RexxVar RxComponentNestingLevel = 0   ;;1 = first Component (0 = none)
+#RexxVar RxComponent.0           = ""
+#( ''
+   #define Component
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Increase nesting level ----------------------------------------------
+   #push "Component Macros"
+   #RexxVar RxComponentNestingLevel + 1
+   #RexxVar RxComponent.RxComponentNestingLevel = '{$#1}'  ;;Remember Component name!
+
+   ;--- Now Update/create this Component --------------------------------------
+   #if ['{$?Parms}' = 1]
+       ;--- Only a reference to an existing component -----------------------
+       #evaluate ^^ ^<$Rexx4ComponentReference {$?ResetUsed}{$?}>^
+   #elseif
+       ;--- Generate required VBS -------------------------------------------
+       <$UpdateMmLocation>
+       #if  ['{$CREATE=^<$DEFAULT_COMPONENT_CREATE>^}' = 'Y']
+           #evaluate ^^ ^<$Rexx4ComponentCreation {$?ResetUsed}{$?}>^
+       #elseif
+           #evaluate ^^ ^<$Rexx4ComponentUpdating {$?ResetUsed}{$?}>^
+       #endif
+       <??@@Vbs><?NewLine>
+
+        ;--- Want to create a "current user" registry keypath? --------------
+        #if ['{$CU="N" $$Upper}' <> 'N']
+            ;--- Want CU, make sure LM not also configured ------------------
+            #if ['{$LM="N" $$Upper}' <> 'N']
+                #error ^You specified "CU={$CU}" and "LM={$LM}" for the component "<??@@Component>"!{NL}One of these values needs to be "N" (only "N" means "no").^
+            #endif
+
+            ;--- Set up registry keypath (current user or ALLUSERS dependant) ---
+            #if ['{$CU}' = '?']
+                <$KeyPathRegistry Component="{$#1}" HKEY=^CURRENT_USER_OR_LOCAL_MACHINE^>
+            #else
+                <$KeyPathRegistry Component="{$#1}" HKEY=^CURRENT_USER^>
+            #endif
+        #elseif
+            ;--- Want to create a "local machine" registry keypath? ---------
+            #if ['{$LM $$Upper}' <> 'N']
+                ;--- Set up registry keypath (local machine or ALLUSERS dependant) ---
+                #if ['{$LM}' = '?']
+                    <$KeyPathRegistry Component="{$#1}" HKEY=^CURRENT_USER_OR_LOCAL_MACHINE^>
+                #else
+                    <$KeyPathRegistry Component="{$#1}" HKEY=^LOCAL_MACHINE^>
+                #endif
+            #endif
+        #endif
+   #endif
+#)
+#DefineRexx  'Rexx4ComponentCreation'
+       ;--- We are UPDATING a component (only modify what user provides) ----
+       @@Component = '{$#1}';
+       {$??}           ;;Allows access to ROW/VALUE information
+       @@Vbs = ''
+
+       ;--- Validate the component ID ---------------------------------------
+       <$Rexx2CheckMsiId IdVar="@@Component" What="component name">
+
+       ;--- Make sure we only create a component ONCE! ----------------------
+       @@OnceKey = '@@CompOnce_' || c2x(@@Component)
+       if   symbol(@@OnceKey) = 'VAR' then
+            error('The component "' || @@Component || '" has already been created at ' || value(@@OnceKey));
+       else
+            call value @@OnceKey, GetInputFileNameAndLine()
+
+       ;--- Handle the guid -------------------------------------------------
+       if  '{$ComponentId=^^ $$IsPassed}' = 'N' | '{$ComponentId}' = '*' then
+       do
+           ;--- Just generate a random GUID (don't persist value) -----------
+           @@ComponentIdFld = '*ComponentId'
+           @@ComponentIdVal = "GuidMake("""")"
+       end;
+       else
+       do
+           ;--- Get value, if it starts with "?" then want persistant GUID! ---
+           {$ComponentId $$RxVar:@@ComponentIdVal}   ;;Note "" is valid!
+           if  left(@@ComponentIdVal, 1) <> '?' then
+               @@ComponentIdFld = 'ComponentId';   ;;User passed a literal GUID
+           else
+           do
+               ;--- Want persistent GUID, with what name? -------------------
+               @@GuidName = substr(@@ComponentIdVal, 2);
+               if  @@GuidName = '' then
+                   @@GuidName = @@Component;
+               @@ComponentIdFld = '*ComponentId'
+               @@ComponentIdVal = 'CompGuid'
+
+               ;--- Generate GUID before row macro! -------------------------
+               @@Vbs = @@Vbs || '<' || '$Guid "' || @@GuidName || '" VB="CompGuid"><?NewLine>';
+           end;
+       end;
+
+       ;--- Handle the directory --------------------------------------------
+       {$Directory_='' $$RxVar:@@Directory}     ;;May or may not be a directory table key
+       if   @@Directory = '' then
+            error('You must pass the "Directory_" parameter when creating a component!');
+       <$Rexx4MakeDirectoryTree DirExp=^@@Directory^ DirParm=^Directory_^>;
+       @@Vbs    = @@Vbs || DTVBS;
+       @@DirKey = DT_KEYNAME;
+
+       ;--- Generate the start of row macro ---------------------------------
+       @@Vbs = @@Vbs || '<' || '$Table "Component">'
+       @@Vbs = @@Vbs || '<' || '$Row Component=^' || @@Component || '^'
+
+       ;--- Map component attributes ----------------------------------------
+       <$MapBits ResultVar=^@@Attributes^  RxMapVarName=^@@CA_^  BitList=^{$Attributes=^<$DEFAULT_COMPONENT_ATTRIBUTES>^}^ What=^component attribute^>
+
+       ;--- Add the rest of the attributes ----------------------------------
+       {$Condition=^^                                 $$RxVar:@@Condition}
+       {$KeyPath=^^                                   $$RxVar:@@KeyPath}
+       @@Vbs = @@Vbs || ' ' || @@ComponentIdFld || '=' || Quoted(@@ComponentIdVal)
+       @@Vbs = @@Vbs || '  Directory_=' || Quoted(@@DirKey)
+       @@Vbs = @@Vbs || '  Attributes=' || Quoted(@@Attributes)
+       @@Vbs = @@Vbs || '   Condition=' || Quoted(@@Condition)
+       @@Vbs = @@Vbs || '     KeyPath=' || Quoted(@@KeyPath)
+
+       ;--- Generate the end of the row macro -------------------------------
+       @@Vbs = @@Vbs || '>';
+       @@Vbs = @@Vbs || '<' || '$/Table Restore="N"><?NewLine>';
+
+       ;--- What feature does this component belong to ----------------------
+       if  '{$Feature=^^ $$IsPassed}' = 'Y' then
+       do
+           {$Feature $$RxVar:@@Feature}     ;;Can expand to multiple lines
+       end;
+       else
+           @@Feature = RxCurrentFeature.RxFeatureNestingLevel
+       if  @@Feature = '' then
+           error('We are creating the component "{$#1}".', 'To do this we must know which feature it will belong to!')
+          ;error('Create the component "{$#1}" in which feature?')
+
+       ;--- Now perform the Feature<->Component linking ---------------------
+       <$@@FeatureComponentLinking>
+
+       ;--- Remember the directory Key used for the component! --------------
+       call Value "Comp2DirKey." || @@Component, @@DirKey ;;Save DIR KEY
+
+       {$!}
+#DefineRexx
+#DefineRexx 'Rexx4ComponentReference'
+       ;--- Do we require component to exist even if only reference? --------
+       if   '<$COMPONENT_REFERENCED_COMPONENTS_MUST_EXIST $$UPPER>' <> 'N' then
+       do
+           ;--- The component must already have been create (WITH MAKEMSI) ---
+           @@Component = '{$#1}';
+           @@OnceKey = '@@CompOnce_' || c2x(@@Component)
+           if   symbol(@@OnceKey) <> 'VAR' then
+                error('The component "' || @@Component || '" was not created by MAKEMSI!', 'You are referring to an existing component that MAKEMSI did not create yet.');
+       end;
+#DefineRexx
+#DefineRexx  'Rexx4ComponentUpdating'
+       ;--- We are UPDATING a component (only modify what user provides) ----
+       @@Component = '{$#1}';
+       {$??}           ;;Allows access to ROW/VALUE information
+
+       ;--- Validate the component ID ---------------------------------------
+       <$Rexx2CheckMsiId IdVar="@@Component" What="component name">
+
+       ;--- Update the component if there is at least one column being updated! ---
+       @@Vbs = ''
+       @@Vbs = @@Vbs || '<' || '$Table "Component">'
+       @@Vbs = @@Vbs || '<' || '$Row @Where="`Component` = ''' || @@Component || '''" @OK=^=1^';
+       @@Pass = ',' ||  MacroGet('TABLECOLNAMES.Component') || ',';
+       @@ColCnt = 0
+       do  @@Fld = 1 to MP.0
+           ;--- Get column name (ignore non-attributes) ---------------------
+           @@ColName = MP.@@Fld.MpName
+           if  pos(',' || @@ColName || ',', @@Pass) = 0 then
+               iterate;             ;;Not the name of a valid "Component" column
+
+           ;--- Create the name/value pair on the ROW macro -----------------
+           @@ColCnt = @@ColCnt + 1
+           @@Vbs = @@Vbs || ' ' || @@ColName || '=';
+           @@Vbs = @@Vbs || Quoted(MP.@@Fld.MpValue);
+       end;
+       @@Vbs = @@Vbs || '>';
+       @@Vbs = @@Vbs || '<' || '$/Table>';
+       @@Vbs = @@Vbs || d2c(10);
+       if   @@ColCnt = 0 then
+            @@Vbs = '';
+
+;**    [CommentBlockStart     (30 April 2018 11:27:49 AM, Dennis)
+;**+----------------------------------------------------------------------
+;**|       ;--- Now perform the Feature<->Component linking ---------------------
+;**|       @@Feature = '{$Feature=^^}';
+;**|       if  '{$Feature=^^ $$IsPassed}' = 'Y' then
+;**|           @@Feature = '{$Feature}';                            ;;User passed value (may be "")
+;**|       else
+;**|           @@Feature = RxCurrentFeature.RxFeatureNestingLevel;
+;**|       if  @@Feature = '' & @@ColCnt = 0 then
+;**|           error('Update of the component "{$#1}" failed, not sure whats being updated...',,'No columns being updated, the "FEATURE" parameter was not supplied and the command is not nested within a feature...');
+;**|       <$@@FeatureComponentLinking>
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (30 April 2018 11:27:49 AM, Dennis)
+#DefineRexx
+#( ''
+   #define /Component
+
+   ;--- Validate nesting ----------------------------------------------------
+   #if [RxComponentNestingLevel <= 0]
+       #error "You are not currently within a Component!"
+   #endif
+   #if ['{$#1=^^}' <> '']
+       ;--- User wishes to match start/end component names for safety -------
+       #if ['{$#1}' <> RxComponent.RxComponentNestingLevel]
+           #error ^You are currently processing component "<??RxComponent.RxComponentNestingLevel>"{NL}You can't close component "{$#1}"!^
+       #endif
+   #endif
+   #RexxVar RxComponentNestingLevel - 1
+   #pop "Component Macros"
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!:#1}
+#)
+
+
+;--- Do the linking "@@Feature" contains one or more features ---------------
+#DefineRexx '@@FeatureComponentLinking'
+    ;@@Feature = translate(@@Feature,, <$SUNDRY_STANDARD_DELIMITERS_REXXEXP> || ',;', ' ');
+    <$Rexx2ConvertDelimitersToSpaces RxVar="@@Feature">
+    do  while @@Feature <> ''
+        ;--- Get next feature (normally only one) ---------------------------
+        parse var @@Feature @@Feature1 @@Feature
+        <$Rexx2ResolveFeatureName FeatVar="@@Feature1">
+
+        ;--- Do the linking for this feature --------------------------------
+        @@Vbs = @@Vbs || '<' || '$Table "FeatureComponents">'
+        @@Vbs = @@Vbs || '<' || '$Row'
+        @@Vbs = @@Vbs || ' Feature_=' || Quoted(@@Feature1);
+        @@Vbs = @@Vbs || ' Component_="' || @@Component || '"'
+        @@Vbs = @@Vbs || ' @Validate=^<$COMPONENT_FeatureComponents_ROW_@VALIDATE>^'
+        @@Vbs = @@Vbs || '>';
+        @@Vbs = @@Vbs || '<' || '$/Table>'
+        @@Vbs = @@Vbs || d2c(10);
+    end;
+#DefineRexx
+
+;--- Validation -------------------------------------------------------------
+#DefineRexx 'Rexx4ValidateInComponent'
+   if  RxComponentNestingLevel = 0 then
+       error('You are not within a Component block!', 'There is no default component information available.');
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Create a component with supplied or default attributes -----------------
+;----------------------------------------------------------------------------
+#RexxVar @@CompKeyCnt   = 0        ;;Incremented for each GENERATED environment key
+#define? DEFAULT_COMPONENT_ROWKEY_PREFIX  CompKey
+#( ''
+   #define MakeComponent_         ;;Only used internally
+
+   ;--- Do the work ---------------------------------------------------------
+   #evaluate ^^ ^<$Rexx4MakeComponent_ {$?}>^
+   <??@@Vbs><?RestartLine>
+#)
+#DefineRexx 'Rexx4MakeComponent_'
+   ;--- Work out the Key to use ---------------------------------------------
+   @@CompKey = '{$RowKey=^^}'        ;;Key into Component table
+   if  @@CompKey = '' then
+   do
+       @@CompKeyCnt = @@CompKeyCnt + 1
+       if  @@CompKeyCnt > 999 then
+           @@CompKey = '<$DEFAULT_COMPONENT_ROWKEY_PREFIX>' || @@CompKeyCnt;
+       else
+           @@CompKey = '<$DEFAULT_COMPONENT_ROWKEY_PREFIX>' || right(@@CompKeyCnt, 3, '0');
+   end;
+
+   ;--- Build the create command (pass on any user parameters) --------------
+   @@VBS = '<' || '$Component CREATE=^Y^ "' || @@CompKey || '" {$?}><' || '$/Component>'
+
+   ;--- User probably needs to know the value -------------------------------
+   RxCreatedComponentKey = @@CompKey
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Component? -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define Component?           <$Component?@@QUERY={$Query='N'}>{$!:QUERY}
+#define Component?@@QUERY=Y  <??RxComponent.RxComponentNestingLevel>
+#define Component?@@QUERY=N  <??RxComponent.RxComponentNestingLevel $$@@ComponentShouldNotBeBlank>
+#DefineRexx 'REXX_$$@@ComponentShouldNotBeBlank'
+   ;--- This is a workaround to a PPWIZARD restriction ----------------------
+   if  TheValue = '' then
+       error('The "Component?" macro was used in non-query mode but there is no current', 'component!');
+#DefineRexx
+
+
+
+
+#NextId UNLOCK "COMPONENT.MMH"
+

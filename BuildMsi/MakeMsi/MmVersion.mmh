@@ -1,0 +1,15 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MMVERSION.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.198  $
+;          $Date:   30 Mar 2019 09:22:00  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MmVersion.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;----------------------------------------------------------------------------
+
+;--- Holds the MAKEMSI version number ---------------------------------------
+#define+  MAKEMSI_VERSION   19.089
+

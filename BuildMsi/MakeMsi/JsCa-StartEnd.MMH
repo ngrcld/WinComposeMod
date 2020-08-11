@@ -1,0 +1,523 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   JsCa-StartEnd.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.0  $
+;          $Date:   30 May 2009 15:07:00  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/JsCa-StartEnd.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+
+;#############################################################################
+;########################## JSCA_CA_BINARY_START #############################
+;#############################################################################
+#(  '<?NewLine>'
+    #define JSCA_CA_BINARY_START
+
+    ;--- Syntax check --------------------------------------------------------
+    <?NewLine>
+    #ifdef  IsNT
+       try
+       {
+            <?SyntaxCheck>
+       }
+       catch(e) {}
+   #endif
+   <?NewLine>
+
+;--- "constant" Initialization ----------------------------------------------
+var msiMessageTypeError       = 0x01000000   ;;Display Error in a Message Box!
+var msiMessageTypeWarning     = 0x02000000   ;;Display Warning - stupid - looks like error anyway
+var msiMessageTypeUser        = 0x03000000   ;;Display Information box
+var msiMessageTypeInfo        = 0x04000000   ;;Send to the MSI Log
+var msiMessageTypeActionStart = 0x08000000   ;;Define a progress "step"
+var msiMessageTypeActionData  = 0x09000000   ;;Send "step"
+var ForReading   = 1
+var ForWriting   = 2
+var ForAppending = 8
+var TemporaryFolder = 2
+var LogPrefix         = "    JS-" + "> "     ;;Make logged lines easy to find
+var vbCRLF            = "\r\n"
+var MsgBoxInformation = "I"
+var MsgBoxCritical    = "E"
+
+;--- Where are we up to? ----------------------------------------------------
+var LastUserMsg    = "JSCRIPT \"{$Binary}\" just started..."
+var LastLogOnlyMsg = ""
+
+;--- Other global variables -------------------------------------------------
+var LogFile           = <$JSCA_LOGDIR_EXP_4_DEFAULT> +  "<$JSCA_LOGFILE_BASENAME_PREFIX>{$Binary}.LOG"
+var LogFileDirChecked = false;
+var LogInc            = 0;   ;;Debug indent level (0=lowest)
+var DebugPauses       = "{$Pause=^<$VBSCA_PAUSE>^}";  ;;User can specify via the "PAUSE" parameter
+DebugPauses = DebugPauses.toUpperCase()
+
+
+
+;**      CommentBlock  /* (Thursday 14/08/2003, 14:15:26, by Dennis Bareis) */
+;**+--------------------------------------------------------------------------
+;**|   ;--- Debug variables -----------------------------------------------------
+;**|   var LikelyReason = ""   ;;User suggestion as to cause of a trap
+;**|
+;**|   ;--- Want a log file (if so where? If not set to "") ---------------------
+;**|   #ifdef JSCA_LOGDIR_DONT_LOG
+;**|       ;--- User does not want a log ever -----------------------------------
+;**|       LogFile = ""
+;**|   #elseif
+;**|       ;--- Logging not disabled altogether ---------------------------------
+;**|       if  JsCaGetEnv("<$JSCA_LOG_OK_ENVVAR>", false) = "N" then
+;**|           ;--- Environment says don't log ----------------------------------
+;**|           LogFile = ""
+;**|       else
+;**|           ;--- Environment variable to disable logging not set to "N" ------
+;**|           #if ["{$LogFile=''}" <> '']
+;**|               ;--- User specified the log file name ----------------------------
+;**|               LogFile = "{$LogFile=''}";      ;;May or may not have a PATH attached
+;**|           #else
+;**|               ;--- User did not specify a log filename -------------------------
+;**|               LogFile = "<$JSCA_LOGFILE_BASENAME_PREFIX>{$Binary}.LOG";
+;**|           #endif
+;**|
+;**|           ;--- Do we need to add a PATH to the log file name? --------------
+;**|           if  (LogFile.indexOf("\\") == -1)
+;**|               ;--- Work out where to put the logfile -----------------------
+;**|               var LogDir = JsCaGetEnv("<$JSCA_LOGDIR_ENVVAR>", false);
+;**|               if  (LogDir == "")
+;**|                   ;--- Environment variable does not exist -----------------
+;**|                   LogDir = <$JSCA_LOGDIR_EXP_4_DEFAULT>;
+;**|               end if
+;**|
+;**|               ;--- Add the path to the filename ----------------------------
+;**|               if  right(LogDir, 1) <> "\" then
+;**|                   LogDir = LogDir & "\"
+;**|               end if
+;**|               LogFile = LogDir & LogFile
+;**|           end if
+;**|       end if
+;**|   #endif
+;**|
+;**|   ;--- Set up dictionary to hold details of CustomActionData ---------------
+;**|   //public oCad : set oCad = Nothing
+;**|
+;**|   ;--- This value only used for command line testing -----------------------
+;**|   #evaluate ^^ ^<$Rexx2BuildScriptCaData {$?} DelDefault=^<$DEFAULT_JSCA_CAD_DELIMITER>^>^   ;;Generates "@@S" as return code
+;**|   var DefaultCad4Js = "<??@@S>"
+;**|
+;**|   ;--- What do we want on line#1 of the progress bar? ----------------------
+;**|   #if ['{$Line1=^^}' = '']
+;**|       var Line1Prefix = "Custom Action ""{$Binary}"""
+;**|   #elseif
+;**|       var Line1Prefix = "{$Line1}"
+;**|   #endif
+;**|
+;**|   ;--- Set up global variables ---------------------------------------------
+;**|   var LastUserMsg    = "JSCRIPT ""{$Binary}"" just started..."
+;**|   var LastLogOnlyMsg = ""
+;**|
+;**|   ;--- What error code should we use on error (use 0 to ignore etc) --------
+;**|   var JsCaRcError = {$ErrorRc="1603"}
+;**|
+;**|   ;--- Output a separator to any text log we are maintaining ---------------
+;**|   //JsCaLog ""
+;**|   //JsCaLog string(79, "#")
+;**+--------------------------------------------------------------------------
+;**                    /* (Thursday 14/08/2003, 14:15:26, by Dennis Bareis) */
+
+    ;--- Output a separator to any text log we are maintaining ---------------
+    CaLog("")
+    CaLog(String(79, "#"))
+
+
+;--- Running as CA/WSH (set up logging stuff) -------------------------------
+try
+{
+   ;--- If this works we are running as a CA --------------------------------
+   oRecLine1  = Installer.CreateRecord(3)
+   oRecLine2  = Installer.CreateRecord(1)
+   oMsiLog    = Installer.CreateRecord(1)
+   IsCustomAction = true
+}
+catch(e)
+{
+    ;--- Trapped, so must be WSH ---------------------------------------------
+    IsCustomAction = false
+
+    ;--- Make sure running under CSCRIPT! ------------------------------------
+    if  (WScript.FullName.substr(WScript.Path.length+1, 1).toUpperCase() == "W")
+    {
+        WScript.echo("You can't test this Custom Action under WSCRIPT, use CSCRIPT instead!");
+        WScript.quit(876);
+    }
+}
+
+    ;--- Output interesting information -------------------------------------
+    var CaBinaryName   = "{$Binary}.Js"
+    var CaDefinedAt    = "<??RxMmLocation>"
+    var ProductName    = "<$ProdInfo.ProductName>"
+    var ProductVersion = "<$ProductVersion>"
+    var ProductMsi     = "<$MSI_MSIBASENAME>"
+    var CaMode
+    if  (IsCustomAction)
+       CaMode = "Custom Action";
+    else
+       CaMode = "Standard JSCRIPT";
+    CaDebug(0, "")
+    CaDebug(0, "")
+    CaDebug(0, "Custom Action  : " + CaBinaryName)
+    CaDebug(0, "Defined At     : " + CaDefinedAt)
+    CaDebug(0, "Running Mode   : " + CaMode)
+    CaDebug(0, "Product Name   : " + ProductName)
+    CaDebug(0, "Product Version: " + ProductVersion)
+    CaDebug(0, "Product MSI    : " + ProductMsi)
+    CaDebug(0, "Extra Log      : " + LogFile)
+    CaDebug(0, "")
+
+    ;--- If running as a WSH script then we wish to call an entry point -----
+    if  (!IsCustomAction)
+         CaTestingStub()
+   <?NewLine>
+   <?NewLine>
+#)
+
+
+
+;#############################################################################
+;######################### JSCA_CA_BINARY_END ################################
+;#############################################################################
+#( '<?NewLine>'
+   #define JSCA_CA_BINARY_END
+
+   <?NewLine>
+   <?NewLine>
+   //=====================================================================
+   function CaTestingStub()
+   //=====================================================================
+   {
+        var EntryRc
+        CaDebug(0, "WSH TESTING: Calling: <??@@DefaultTestingFunction>()")
+        EntryRc = <??@@DefaultTestingFunction>()
+        CaDebug(0, "WSH TESTING: RC: " + EntryRc)
+   }
+
+
+   <?NewLine>
+   //=====================================================================
+   function CaLogInc(IncAmount)     ;;Can pass positive and negative numbers
+   //=====================================================================
+   {
+       ;--- Adjust the increment (can't go negative!) ----------------------
+       #ifndef JSCA_DONT_INDENT_LOGGED_LINES
+           LogInc = LogInc + IncAmount
+           if   (LogInc < 0)
+                LogInc = 0
+       #elseif
+           '--- user chose not to support log file indentation ---
+       #endif
+   }
+
+   <?NewLine>
+   //=====================================================================
+   function CaLog(What)
+   //=====================================================================
+   {
+       ;--- See if we have a debug log to update ------------------------
+       if  (LogFile == "")
+           return(0);
+
+       ;--- ignore all errors -----------------------------------------------
+       try
+       {
+            ;--- Format text to be written ----------------------------------
+            var T
+            if  (What == "")
+                T = What
+            else
+            {
+                ;--- Start line with time info ------------------------------
+                var oDate = new Date();
+                var Time = oDate.toDateString() + ", " + oDate.toLocaleTimeString();
+                T = Time + ": " + What
+                T = T.replace(/\r\n/g, vbCRLF + String(Time.length, " ") + ": ")
+            }
+
+            ;--- Open file, write and close ---------------------------------
+            var oFS = new ActiveXObject("Scripting.FileSystemObject");
+            var Stream = oFS.OpenTextFile(LogFile, ForAppending, true);
+            Stream.WriteLine(T)
+            Stream.Close()
+       }
+       catch(e){}
+
+
+
+;**    [CommentBlockStart     (August 16, 2003 12:31:43 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|       ;--- Make sure the log directory exists --------------------------
+;**|       dim oFs : set oFs = CreateObject("Scripting.FileSystemObject")
+;**|       if  not LogFileDirChecked then
+;**|           ;--- Create the directory if it does not exist ---------------
+;**|           dim ParentDir : ParentDir = oFS.GetParentFolderName(LogFile)
+;**|           if  not oFS.FolderExists then
+;**|               CreateFolder ParentDir         ;;Do what on error?
+;**|           end if
+;**|           LogFileDirChecked = true
+;**|       end if
+;**|
+;**|       ;--- Open the log ------------------------------------------------
+;**|       dim Stream : set Stream = oFs.OpenTextFile(LogFile, ForAppending, True)
+;**|
+;**|       ;--- Update the log ----------------------------------------------
+;**|       if  What = "" then
+;**|           Stream.writeLine ""
+;**|       else
+;**|           ;--- Non blank lines have date added -------------------------
+;**|           dim Tp
+;**|           Tp =      "["  & FormatDateTime(now(), vbShortDate)
+;**|           Tp = Tp & ", " & FormatDateTime(now(), vbLongTime) & "] "
+;**|
+;**|           ;--- Add an indent (if allowed) ------------------------------
+;**|           #ifndef VBSCA_DONT_INDENT_LOGGED_LINES
+;**|               Tp = Tp & string(LogInc*<$VBSCA_INC_BY_SPACE_COUNT>, " ")
+;**|           #endif
+;**|
+;**|           ;--- Handle multiline text -----------------------------------
+;**|           What = replace(replace(What, vbCR, ""), vbLF, vbCRLF & string(len(Tp)-3, " ") & " | ")
+;**|           Stream.writeLine Tp & What
+;**|       end if
+;**|
+;**|       ;--- Close log ---------------------------------------------------
+;**|       Stream.close()
+;**|       set oFs    = Nothing
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (August 16, 2003 12:31:43 PM EST, Dennis)
+   }
+
+   <?NewLine>
+   //=====================================================================
+   function CaProgressLine1(Doing)
+   //
+   // This updates the top line of the progress bar (also put into log)
+   // This needs to be called even if you only have a single "step" process
+   // to set up the "LogPrefix" as that messages are easier to find in the
+   // log!
+   //=====================================================================
+   {
+       ;--- Output to progress bar -----------------------------------------
+       try
+       {
+           oRecLine1.StringData(1) = LogPrefix    ;;This item is only seen in the MSI log
+           oRecLine1.StringData(2) = Doing        ;;Top line of Progress Bar
+           oRecLine1.StringData(3) = "[1]"        ;;Format of second line
+           Session.Message(msiMessageTypeActionStart, oRecLine1)
+       }
+       catch(e) {};
+
+       ;--- Remember this in case we trap (display in trap) -------------
+       if  (Doing != "")
+       {
+           LastUserMsg    = Doing
+           LastLogOnlyMsg = ""
+       }
+   }
+
+
+   <?NewLine>
+   //=====================================================================
+   function CaProgressLine2(Doing)
+   //
+   // This updates the 2nd line of the progress bar ONLY.
+   // No other logging. Not recommended for user use, why display
+   // something to use but not log!
+   //=====================================================================
+   {
+       ;--- Output to progress bar --------------------------------------
+       try
+       {
+           oRecLine2.StringData(1) = Doing
+           Session.Message(msiMessageTypeActionData, oRecLine2)
+       }
+       catch(e) {};
+
+       ;--- Remember this in case we trap (display in trap) -------------
+       if  (Doing != "")
+       {
+           LastUserMsg    = Doing
+           LastLogOnlyMsg = ""
+       }
+   }
+
+
+
+   <?NewLine>
+   //=====================================================================
+   function CaDebug(ForUI, What)
+   //=====================================================================
+   {
+        ;--- If running as WSH (testing) then just output! ------------------
+        if  (!IsCustomAction)
+            WScript.echo(What)
+
+        ;--- Output to any MSI verbose log -----------------------------------
+        if  (IsCustomAction)
+        {
+            ;--- Ignore any errors -------------------------------------------
+            try
+            {
+                switch  (ForUI)
+                {
+                    //+++++++++++++++++
+                    case 1:
+                    //+++++++++++++++++
+                       CaProgressLine1(What)
+                       break;
+                    //+++++++++++++++++
+                    case 2:
+                    //+++++++++++++++++
+                        CaProgressLine2(What)
+                        break;
+                    //+++++++++++++++++
+                    default:
+                    //+++++++++++++++++
+                        //--- Just put into Windows Installer log (if there is one) ---
+                        oMsiLog.StringData(0) = LogPrefix + What
+                        Session.Message(msiMessageTypeInfo, oMsiLog)
+                        if  (What != "")
+                            LastLogOnlyMsg = What
+                }
+            }   catch(e) {};
+       }
+
+       ;--- Output to any log file (not MSI log) we have set up -------------
+       CaLog(What)
+   }
+
+
+    <?NewLine>
+    //=====================================================================
+    function CaDebugPause(Text)
+    //=====================================================================
+    {
+        ;--- Only display messages if user wants ----------------------------
+        if   (DebugPauses == "N")
+             return;
+
+        ;--- Extra information ----------------------------------------------
+        var X = ""
+        X = X + vbCRLF
+        X = X + vbCRLF
+        X = X + "Custom Action  : " + CaBinaryName
+        X = X + vbCRLF
+        X = X + "Defined At     : " + CaDefinedAt
+        X = X + vbCRLF
+        X = X + "Running Mode   : " + CaMode
+        X = X + vbCRLF
+        X = X + "Product Name   : " + ProductName
+        X = X + vbCRLF
+        X = X + "Product Version: " + ProductVersion
+        X = X + vbCRLF
+        X = X + "Product MSI    : " + ProductMsi
+        X = X + vbCRLF
+        X = X + "Extra Log      : " + LogFile
+
+        ;--- We want the pause ----------------------------------------------
+        var T
+        T =     "DEBUG PAUSE (JSCRIPT)" + vbCRLF
+        T = T + "~~~~~~~~~~~~~~~~~~~~~" + vbCRLF
+        CaMsgBox("I", T + Text + X)
+    }
+
+
+    <?NewLine>
+    //=====================================================================
+    function CaMsgBox(BoxType, Text)
+    //=====================================================================
+    {
+        ;--- Default box type -----------------------------------------------
+        if  (BoxType == "")
+            BoxType = MsgBoxInformation;
+        BoxType = BoxType.toUpperCase()
+
+       ;--- Now log the message -----------------------------------------
+       var BoxT    = "MSG BOX - "   + BoxType + vbCRLF
+       BoxT = BoxT + "~~~~~~~~~~~~" + vbCRLF
+       BoxT = BoxT + Text + vbCRLF
+       BoxT = BoxT + "^^^^^ End of Message Box ^^^^^"
+       CaDebug(0,  "")
+       CaDebug(0,  BoxT)
+       CaDebug(0,  "")
+
+       ;--- Display the message -----------------------------------------
+       if   (!IsCustomAction)
+       {
+            ;--- Running as WSH ----------------------------------------------
+            var oShell = new ActiveXObject("WScript.Shell");
+            if  (BoxType == MsgBoxInformation)
+                oShell.Popup(Text, 0, "INFORMATION: <??@@Binary>", 64)
+            else
+                oShell.Popup(Text, 0, "ERROR: <??@@Binary>", 48)
+       }
+       else
+       {
+           ;--- Running as Custom Action (possibly without UI!) ---------
+           var MsgTemplate, CaMsgType;
+           if  (BoxType == MsgBoxInformation)
+           {
+               CaMsgType   = msiMessageTypeUser;
+               MsgTemplate = "[1]";
+           }
+           else
+           {
+               CaMsgType   = msiMessageTypeError;
+               MsgTemplate = "ERROR: [1]";
+           }
+           var oRecMsgBox           = Installer.CreateRecord(1)
+           oRecMsgBox.StringData(0) = MsgTemplate
+           oRecMsgBox.StringData(1) = Text
+           Session.Message(CaMsgType, oRecMsgBox)
+       }
+       return(0);
+   }
+
+    <?NewLine>
+    //=====================================================================
+    function CaGetEnv(EnvVar, ThrowExceptionIfMissing)
+    //=====================================================================
+    {
+        var Try    = "%" + EnvVar + "%"
+        var oShell = new ActiveXObject("WScript.Shell");
+        var Result = oShell.ExpandEnvironmentStrings(Try)
+        if  (Result == Try)
+        {
+            ;--- Variable does not exist ------------------------------------
+            if  (!ThrowExceptionIfMissing)
+                Result = ""
+            else
+            {
+                ;--- Trow an exception --------------------------------------
+                var e = new Error(<?OutputLine>, "CaGetEnv(): The environment variable \"" + EnvVar + "\" does not exist")
+                throw(e);
+            }
+        }
+        return(Result)
+    }
+
+
+
+    <?NewLine>
+    //=====================================================================
+    function String(Number, RepeatThis)
+    //=====================================================================
+    {
+        var i
+        var T = ""
+        for (i=1; i<=Number; i++)
+            T = T + RepeatThis;
+        return(T);
+    }
+#)

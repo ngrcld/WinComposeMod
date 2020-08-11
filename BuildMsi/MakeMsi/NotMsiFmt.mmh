@@ -1,0 +1,60 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   NOTMSIFMT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.1  $
+;          $Date:   10 Aug 2005 18:43:40  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/NotMsiFmt.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "NOTMSIFMT.MMH"
+
+
+;--- Used to protect "[" and "]" during translation to MSI format -----------
+#define? NOTMSIFMT_HIDDEN_LSB  (DbLSb(       ;;Means "[\[]"
+#define? NOTMSIFMT_HIDDEN_RSB  )DbRSb)       ;;Means "[\]]"
+
+
+;--- In unusual situations we want to insert real square brackets -----------
+#define? NOTMSIFMT_REAL_LSB    (DbRealLSb(   ;;Means "["
+#define? NOTMSIFMT_REAL_RSB    (DbRealRSb(   ;;Means "]"
+
+
+;--- Initialization ---------------------------------------------------------
+#DefineRexx ''
+   @@HideL = '<$NOTMSIFMT_HIDDEN_LSB>';
+   @@HideR = '<$NOTMSIFMT_HIDDEN_RSB>';
+   @@RealL = '<$NOTMSIFMT_REAL_LSB>';
+   @@RealR = '<$NOTMSIFMT_REAL_RSB>';
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Hide chars like "[", "]", "{" and "}" which MSI formatting interprets! -
+;----------------------------------------------------------------------------
+#DefineRexx 'NotMsiFmt' NOPACK
+   ;--- Take care of the square brackets (hide then change) -----------------
+   {$OutVar=^{$InVar}^} = ReplaceString({$InVar},  '[',      @@HideL)     ;;[
+   {$OutVar}            = ReplaceString({$OutVar}, ']',      @@HideR)     ;;]
+   {$OutVar} = ReplaceString({$OutVar}, @@HideL,  '[\[]')      ;;"[" in MSI format
+   {$OutVar} = ReplaceString({$OutVar}, @@HideR,  '[\]]')      ;;"]" in MSI format
+
+   ;--- Take care of the curley brackets ------------------------------------
+   {$OutVar} = ReplaceString({$OutVar}, '{', '[\{]')           ;;{
+   {$OutVar} = ReplaceString({$OutVar}, '}', '[\}]')           ;;}
+
+   ;--- Allow insertion of real square brackets (some enclosing process) ----
+   {$OutVar} = ReplaceString({$OutVar}, @@RealL,  '[')
+   {$OutVar} = ReplaceString({$OutVar}, @@RealR,  ']')
+#DefineRexx
+
+
+#NextId UNLOCK "NOTMSIFMT.MMH"
+

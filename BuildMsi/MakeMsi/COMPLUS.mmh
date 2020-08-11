@@ -1,0 +1,912 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   COMPLUS.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.11  $
+;          $Date:   23 Aug 2007 17:55:06  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/COMPLUS.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "COMPLUS.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4Doco-MainOptions]---
+#define? DEFAULT_COMPLUS_DELETE        Y             ;;Delete this application on install/uninstall?
+#define? COMPLUS_INSTALL_CA_COND       <$CONDITION_INSTALL_ONLY>
+#define? COMPLUS_UNINSTALL_CA_COND     <$CONDITION_UNINSTALL_ONLY>
+#define? COMPLUS_VBSCRIPT_CONSTANTS                  ;;Any constants, variables or initialization code (executed for install AND uninstall)...
+#define? COMPLUS_VBSCRIPT_FUNCTIONS                  ;;You can define your own VBSCRIPT Subroutines+Functions if you wish
+#define? COMPLUS_CAD_SYMBOL_START      (*            ;;(*CadSymbolName*)
+#define? COMPLUS_CAD_SYMBOL_END        *)            ;;(*CadSymbolName*)
+#define? COMPLUS_SEQUENCE_INSTALL      RegisterComPlus-RegisterUser
+#define? COMPLUS_SEQUENCE_UNINSTALL    RegisterComPlus-RegisterUser
+;---[4Doco-MainOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Global state variables -------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@AppName        = ''  ;;Is non-blank and holds Application name when within a block
+#RexxVar @@AppDefnStarts  = ''  ;;Holds location where last COM+ Application started
+#RexxVar @@CompTest       = ''  ;;If non-blank in "ComPlusCompUpdate" block (contains VB test expression)
+#RexxVar @@CompDefnStarts = ''  ;;Holds location where component update defn started
+#RexxVar @@AppCnt         = 0   ;;Number of COM+ Applications seen
+
+
+;----------------------------------------------------------------------------
+;--- Define a #data "skeleton" ----------------------------------------------
+;----------------------------------------------------------------------------
+#data "@@ComPlusData" 2
+   ;--- Start with empty structure ------------------------------------------
+#data
+
+
+;----------------------------------------------------------------------------
+;--- ComPlusApp -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   ;--- Name Macro ----------------------------------------------------------
+   #define ComPlusApp
+
+   ;--- Validate nesting ----------------------------------------------------
+   #if ['<??@@AppName>' <> '']
+       #error ^Already in ComPlusApp "<??@@AppName>" started at <??@@AppDefnStarts>^
+   #endif
+   #PUSH "COM+ Application"
+
+   ;--- Init some variables -------------------------------------------------
+   #RexxVar @@RolesCnt         = 0  ;;No roles as yet
+   #RexxVar @@ComPlusData.0    = 0  ;;Init the #data
+
+   ;--- Add any supplied DATA! ----------------------------------------------
+   #if  ['{$Data=^^}' <> '']
+        #evaluate ^^ ^<$Rexx2AddDatatoCustomActionDataStructure Data="{$Data}" #DATA=^@@ComPlusData^>^
+   #endif
+
+   ;--- Keep count of applications seen -------------------------------------
+   #RexxVar @@AppCnt + 1
+
+   ;--- Remember details ----------------------------------------------------
+   #RexxVar @@AppName       = '{$#1}'
+   #RexxVar @@AppDefnStarts = ^<?=GetInputFileNameAndLine()>^
+   #RexxVar @@AppDelete     = '{$DELETE=^<$DEFAULT_COMPLUS_DELETE>^}'
+   #define+ @@AppGuidProperty COMPLUS_GUID_<??@@AppCnt>
+   #define+ @@AppDesc         COM+ Application #<??@@AppCnt> - <??@@AppName>
+
+   ;--- Get passed list of Properties ---------------------------------------
+   #RexxVar @@PropertyList  = '{$PROPERTIES=^^}'
+
+   ;--- Get Application GUID ------------------------------------------------
+   #if ['{$ID=^^}' <> '']
+       ;--- User passed the GUID --------------------------------------------
+       #define+ @@VbsGuidExpression "{$ID}"        ;;Just a VBSCRIPT literal
+   #elseif
+       ;--- Get a GUID into a property (same GUID every time) ---------------
+       dim <$@@AppGuidProperty><?NewLine>
+       <$Guid '{$#1}' VB="<$@@AppGuidProperty>">
+       <$Property "<$@@AppGuidProperty>" *Value="<$@@AppGuidProperty>">
+
+       ;--- Bit more work to get the value ----------------------------------
+       #RexxVar @@PropertyList  || ' <$@@AppGuidProperty>'
+       #define+ @@VbsGuidExpression VbsCaCadGet("<$@@AppGuidProperty>")
+   #endif
+
+   ;--- Set up the CAD ------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx2AddGuidToOurCustomActionData>^
+
+   ;--- Start creating the VBS which creates the application ----------------
+   #define+ @@AppBinaryKey ComPlus_{$#1}.VBS
+   <$VbsCa BINARY="<$@@AppBinaryKey>" DATA="@@ComPlusData">
+
+   ;--- Include start of VBS ------------------------------------------------
+   <$@@VBSCODE_START {$?ResetUsed}{$?}>
+
+   ;--- Look for incorrect parameters ---------------------------------------
+   {$!:#1,DELETE,ID,USER,PASSWORD,DATA,PROPERTIES}
+#)
+#DefineRexx '@@Rexx2AddGuidToOurCustomActionData'
+   ;--- Work through list of properties and add reference to each one -------
+   @@List = @@PropertyList;
+   do while @@List <> ''
+       ;--- Get next property -----------------------------------------------
+       parse var @@List @@Prop1 @@List
+
+       ;--- Add reference to #data ------------------------------------------
+       @@Ref1                = '[' || @@Prop1 || ']';
+       @@Cnt                 = @@ComPlusData.0 + 1
+       @@ComPlusData.@@Cnt.1 = @@Prop1;
+       @@ComPlusData.@@Cnt.2 = @@Ref1;
+       @@ComPlusData.0       = @@Cnt;
+   end;
+#DefineRexx
+#( '<?NewLine>'
+   #define @@OnTrap-Install
+   ;--- Do we Want to delete the application? -------------------------------
+   if  DeleteAppOnTrap then
+       on error resume next
+       CaDebug 0, "Exception detected so deleting the application (ignoring any errors)"
+       dim AppIndex : AppIndex  = -1
+       for each oApplication in oApplications   ;;Collection already populated
+           ;--- Is this the one? ------------------------------------
+           AppIndex = AppIndex + 1
+           if  oApplication.Value("ID") = AppId then
+               ;--- Found it ----------------------------------------
+               CaDebug 0, "Found the application, delete it! - Index #" & AppIndex
+               oApplications.Remove AppIndex
+               oApplications.SaveChanges()
+               exit for
+           end if
+       next
+   end if
+#)
+#( '<?NewLine>'
+   ;--- Name Macro ----------------------------------------------------------
+   #define @@VBSCODE_START
+   <?NewLine>
+
+   ;--- Basic information from MSI script (no userid/password/attribs) ------
+   public AppName   : AppName   = "{$#1}"
+   public AppId     : AppId     = <$@@VbsGuidExpression>
+   public AppDelete : AppDelete = ucase("<??@@AppDelete>")
+
+   ;--- Output some constants -----------------------------------------------
+
+   <?NewLine>
+   '--- APPLICATION constants useful in the "ATTRIB" attribute --------------
+   const COMAdminAccessChecksApplicationLevel          = 0
+   const COMAdminAccessChecksApplicationComponentLevel = 1
+   const COMAdminActivationInproc = 0
+   const COMAdminActivationLocal  = 1
+   const COMAdminAuthenticationDefault   = 0
+   const COMAdminAuthenticationNone      = 1
+   const COMAdminAuthenticationConnect   = 2
+   const COMAdminAuthenticationCall      = 3
+   const COMAdminAuthenticationPacket    = 4
+   const COMAdminAuthenticationIntegrity = 5
+   const COMAdminAuthenticationPrivacy   = 6
+   const COMAdminAuthenticationCapabilitiesNone            = &H00
+   const COMAdminAuthenticationCapabilitiesStaticCloaking  = &H20
+   const COMAdminAuthenticationCapabilitiesDynamicCloaking = &H40
+   const COMAdminAuthenticationCapabilitiesSecureReference = &H02
+   const COMAdminImpersonationAnonymous   = 1
+   const COMAdminImpersonationIdentify    = 2
+   const COMAdminImpersonationImpersonate = 3
+   const COMAdminImpersonationDelegate    = 4
+   const COMAdminQCMessageAuthenticateSecureApps = 0
+   const COMAdminQCMessageAuthenticateOff        = 1
+   const COMAdminQCMessageAuthenticateOn         = 2
+   const SAFER_DISALLOWED   = &H00000
+   const SAFER_UNRESTRICTED = &H40000
+
+   <?NewLine><?NewLine>
+   '--- COMPONENT constants useful in "ComPlusProperty" macro ---------------
+   const COMAdminSynchronizationIgnored     = 0
+   const COMAdminSynchronizationNone        = 1
+   const COMAdminSynchronizationSupported   = 2
+   const COMAdminSynchronizationRequired    = 3
+   const COMAdminSynchronizationRequiresNew = 4
+   const COMAdminThreadingModelApartment = 0
+   const COMAdminThreadingModelFree      = 1
+   const COMAdminThreadingModelMain      = 2
+   const COMAdminThreadingModelBoth      = 3
+   const COMAdminThreadingModelNeutral   = 4
+   const COMAdminTransactionIgnored     = 0
+   const COMAdminTransactionNone        = 1
+   const COMAdminTransactionSupported   = 2
+   const COMAdminTransactionRequired    = 3
+   const COMAdminTransactionRequiresNew = 4
+
+   <?NewLine><?NewLine>
+   '--- Used by "ComPlusCompUpdate" command --------------------------------
+   dim ComponentCnt, MatchedCnt
+
+   '--- Used by "ComPlusRole" command --------------------------------------
+   dim oAssignedRole
+
+   <?NewLine><?NewLine>
+   '--- Constants useful when exporting -------------------------------------
+   const COMAdminExportNoUsers               = 0
+   const COMAdminExportUsers                 = 1
+   const COMAdminExportApplicationProxy      = 2
+   const COMAdminExportForceOverwriteOfFiles = 4
+   const COMAdminExportIn10Format            = 16  'Export in COM+ 1.0 (Windows 2000) format.
+
+   <?NewLine><?NewLine>
+
+   ;--- Initialization ------------------------------------------------------
+   public ExportedMsi, ExportRc
+   public UserId
+   public oCatalog, oApplications, oApplication
+   public oRoles, oRole, oUsersInRole, oNewUser
+   public oComps, oComp, oRoles4Comp
+   public DeleteAppOnTrap : DeleteAppOnTrap     = false
+
+   ;--- Used by "MachinesDomain()" ------------------------------------------
+   public CachedDomain : CachedDomain = ""
+
+   ;--- User hook -----------------------------------------------------------
+   <$COMPLUS_VBSCRIPT_CONSTANTS>
+
+
+   <?NewLine>
+   <?NewLine>
+   '============================================================================
+   <$VbsCaEntry "UnInstall">
+   '============================================================================
+       CaDebug 1, "Removing <$@@AppDesc>"
+
+       ;--- Check that we wish to delete the application --------------------
+       if  AppDelete = "N" then
+           CaDebug 0, "Don't wish to delete the application"
+       else
+           ;--- Get collection of applications ------------------------------
+           set oCatalog      = CaMkObject("COMAdmin.COMAdminCatalog")
+           set oApplications = oCatalog.GetCollection("Applications")
+           oApplications.Populate
+
+           ;--- User hook ---------------------------------------------------
+           #ifdef COMPLUS_START_UNINSTALL_HOOK
+               ;--- User has defined a hook ---------------------------------
+               CaDebug 0, "Running user hook: COMPLUS_START_UNINSTALL_HOOK"
+               <$COMPLUS_START_UNINSTALL_HOOK>
+               CaDebug 0, "Finished user hook: COMPLUS_START_UNINSTALL_HOOK"
+           #endif
+
+           ;--- See if the application already exists -----------------------
+           CaDebug 0, "Looking for a COM+ application matching """ & AppId & """"
+           dim AppIndex
+           AppIndex  = -1
+           for each oApplication in oApplications
+               ;--- Need index to remove the application --------------------
+               AppIndex = AppIndex + 1
+
+               ;--- Is this the one? ----------------------------------------
+               if  oApplication.Value("ID") = AppId then
+                   ;--- Delete the application ------------------------------
+                   CaDebug 0, "Deleting the application - Remove()"
+                   oApplications.Remove AppIndex
+                   CaDebug 0, "Deleting the application - SaveChanges()"
+                   oApplications.SaveChanges()
+                   exit for
+               end if
+           next
+       end if
+       CaDebug 0, ""
+       CaDebug 0, "Finished!"
+   <$/VbsCaEntry>
+
+   <?NewLine>
+   '============================================================================
+   <$VbsCaEntry "Install" DEFAULT="Y">
+   '============================================================================
+       CaDebug 1, "Installing <$@@AppDesc>"
+
+       ;--- Get collection of applications ----------------------------------
+       set oCatalog      = CaMkObject("COMAdmin.COMAdminCatalog")
+       set oApplications = oCatalog.GetCollection("Applications")
+       oApplications.Populate
+
+       ;--- User hook -----------------------------------------------------------
+       #ifdef COMPLUS_START_INSTALL_HOOK
+           ;--- User has defined a hook -------------------------------------
+           CaDebug 0, "Running user hook: COMPLUS_START_INSTALL_HOOK"
+           <$COMPLUS_START_INSTALL_HOOK>
+           CaDebug 0, "Finished user hook: COMPLUS_START_INSTALL_HOOK"
+       #endif
+
+       ;--- See if the application already exists ---------------------------
+       CaDebug 0, "Looking for existing com+ application matching """ & AppId & """"
+       dim AppIndex, AppExisted
+       AppIndex  = -1
+       AppExisted = false
+       for each oApplication in oApplications
+           ;--- Need index if we are to remove the application --------------
+           AppIndex = AppIndex + 1
+
+           ;--- Is this the one? --------------------------------------------
+           if  oApplication.Value("ID") = AppId then
+               ;--- It exists, Do we wish to delete it? ---------------------
+               if  AppDelete = "N" then
+                   ;--- Don't wish to delete the application ----------------
+                   CaDebug 0, "Application already exists, we want to update it!"
+                   AppExisted = true
+               else
+                   ;--- We wish to delete the application -------------------
+                   CaDebug 0, "Application already exists, we want to delete it!"
+                   oApplications.Remove AppIndex
+                   oApplications.SaveChanges()
+               end if
+               exit for         ;;Exit loop as we have found the application
+           end if
+       next
+
+       ;--- Define userid and password values (from MSI script) -------------
+       CaDebug 0, "Initializing UserId & Password..."
+       dim AppUserId : AppUserId = {$User=^""^}
+       dim AppPw     : AppPw     = {$Password=^""^}
+
+       ;--- Do we wish to add domain name to the userid? --------------------
+       if  instr(AppUserId, "*") <> 0 then
+           AppUserId = replace(AppUserId, "*", MachinesDomain())
+       end if
+
+       ;--- Show userId and password ----------------------------------------
+       #if ['<$MmMode>' <> '<$MMMODE_PRODUCTION>']
+           ;--- Not production so show USERID and PASSWORD ------------------
+           #ifndef COMPLUS_NEVER_LOG_USERID
+               CaDebug 0, "USERID  : """ & AppUserId & """"
+           #endif
+           #ifndef COMPLUS_NEVER_LOG_PASSWORD
+               CaDebug 0, "PASSWORD: """ & AppPw & """"
+           #endif
+       #endif
+
+       ;--- If not found then we need to create it (not just update) --------
+       if  AppExisted then
+           CaDebug 0, "Application already exists, will update"
+       else
+           ;--- Have to create a new one ------------------------------------
+           CaDebug 0, "Application does not exist, creating a new one"
+           set oApplication = oApplications.Add()
+
+           ;--- Need prompting? ---------------------------------------------
+           if  AppUserId = "?" then
+               CaDebug 0, "Prompting for USERID"
+               AppUserId = InputBox("Please enter a user id for the COM+ application """ & AppName & """.", "ENTER COM+ USER ID", "")
+               CaDebug 0, "USERID = " & AppUserId
+           end if
+           if  AppPw = "?" then
+               CaDebug 0, "Prompting for PASSWORD"
+               AppPw = InputBox("Please enter a password for the COM+ application """ & AppName & """.", "ENTER COM+ PASSWORD", "")
+               CaDebug 0, "PASSWORD entered by user (lets not log it!)"
+           end if
+       end if
+
+       ;--- Now update/set the application information ----------------------
+       CaDebug 0, "Setting up values for the COM+ application """ & AppName & """ (" & AppId & ")"
+       oApplication.Value("Name") = AppName
+       if  not AppExisted then
+           oApplication.Value("ID") = AppId
+       end if
+       if  AppUserId <> "" then
+           ;--- Want to specify userid and password -------------------------
+           if  AppUserId <> "?" then oApplication.Value("Identity") = AppUserId
+           if  AppPw     <> "?" then oApplication.Value("Password") = AppPw
+       end if
+
+       ;--- User will follow with any attribute assignment ------------------
+       <?NewLine><?NewLine><?NewLine>
+       '###############################################
+       '### USER COM+ APPLICATION ATTRIBUTES FOLLOW ###
+       '###############################################
+       #define @@ComplusAppAttributesNeedSaving    ;;If exists need to save!
+#)
+#( '<?NewLine>'
+   ;--- User must place updates for attributes before this is used! ---------
+   #define @@CompleteComPlusAppUpdate
+
+   ;--- Need to save attributes? --------------------------------------------
+   #ifdef @@ComplusAppAttributesNeedSaving
+       ;--- Save the changes ------------------------------------------------
+       <?NewLine><?NewLine><?NewLine>
+       CaDebug 0, "Saving changes for the COM+ application """ & AppId & """"
+       VbsCaLikelyReason4Trap "An invalid userid or its password?"
+       oApplications.SaveChanges()
+       VbsCaLikelyReason4Trap ""
+
+       ;--- Doesn't work ----------------------------------------------------
+       <?NewLine>
+       'set oErrors = oApplications.GetCollection("ErrorInfo", "")
+       'oErrors.Populate
+       'on error goto 0
+       'for each oError in oErrors
+       '   wscript.echo "-----------------"
+       '   wscript.echo "NAME = " & oError.Name
+       '   wscript.echo "-----------------"
+       'next
+       <?NewLine>
+       <?NewLine>
+
+       ;--- If we created the application we should uninstall on error ------
+       if  not AppExisted then
+           CaDebug 0, "On trap, we will delete the application if it exists"
+           DeleteAppOnTrap = true
+       end if
+       #undef @@ComplusAppAttributesNeedSaving
+   #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- /ComPlusApp ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define /ComPlusApp
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@AppName>' = '']
+       #error ^You are not within a ComPlusApp block!^
+   #endif
+   #POP "COM+ Application"
+
+   ;--- May need to flush application update --------------------------------
+   <$@@CompleteComPlusAppUpdate>
+
+   ;--- Finish the VBS ------------------------------------------------------
+   <$@@VBSCODE_END_INSTALL {$?ResetUsed}{$?}>  ;;End of the VBS Install code
+   <$/VbsCaEntry>                              ;;Install()
+   <$@@VBSCODE_END_ROUTINES {$?ResetUsed}{$?}> ;;End of the VBS (add functions etc)
+   <$/VbsCa>                                   ;;End of the custom action code
+
+   ;--- Create the custom actions -------------------------------------------
+   <$VbsCaSetup Binary="<$@@AppBinaryKey>" DATA="@@ComPlusData" Entry="Install"   Seq=^<$COMPLUS_SEQUENCE_INSTALL>^   CONDITION=^<$COMPLUS_INSTALL_CA_COND>^>
+   <$VbsCaSetup Binary="<$@@AppBinaryKey>" DATA="@@ComPlusData" Entry="UnInstall" Seq=^<$COMPLUS_SEQUENCE_UNINSTALL>^ CONDITION=^<$COMPLUS_UNINSTALL_CA_COND>^>
+
+   ;--- Mark the End of the application -------------------------------------
+   #RexxVar @@AppName = ''
+#)
+#( '<?NewLine>'
+   ;--- Name Macro ----------------------------------------------------------
+   #define @@VBSCODE_END_INSTALL
+       <?NewLine>
+
+       ;--- Success! --------------------------------------------------------
+       set oApplication  = Nothing
+       set oApplications = Nothing
+       set oCatalog      = Nothing
+#)
+#( '<?NewLine>'
+   ;--- Name Macro ----------------------------------------------------------
+   #define @@VBSCODE_END_ROUTINES
+   <?NewLine>
+   <?NewLine>
+
+   ;--- Any User refined routines here --------------------------------------
+   <$COMPLUS_VBSCRIPT_FUNCTIONS>
+
+   <?NewLine>
+   <?NewLine>
+   '=========================================================================
+   sub AddComponent(ByVal DllName, ByVal TlbName, ByVal ProxyStubName)
+   '=========================================================================
+       ;--- The DLL must exist! ---------------------------------------------
+       CaDebug 0, "Checking the COM+ component files exist"
+       AddComponentValidate DllName,       "DLL"
+       AddComponentValidate TlbName,       "TYPE LIBRARY"
+       AddComponentValidate ProxyStubName, "PROXY STB DLL"
+       CaDebug 0, "The components all exist."
+
+       ;--- Now add the component -------------------------------------------
+       CaDebug 0, "Installing COM+ component """ & DllName & """"
+       dim AddRc: AddRc = oCatalog.InstallComponent(AppId, DllName, TlbName, ProxyStubName)
+       CaDebug 0, "oCatalog.InstallComponent() RC: " & AddRc
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   sub AddComponentValidate(ByVal FileName, ByVal ObjectType)
+   '=========================================================================
+       if  FileName <> "" then
+           dim oFs : set oFs = CaMkObject("Scripting.FileSystemObject")
+           if  not oFS.FileExists(FileName) then
+               VbsCaRaiseError "AddComponent()", "Could not install the component into the COM+ Application." & VbCRLF & VbCRLF & "The " & ObjectType & " """ & FileName & """ does not exist!"
+           end if
+           set oFs = Nothing
+       end if
+   end sub
+
+   <?NewLine>
+   '============================================================================
+   function MachinesDomain()                ;;What domain is the computer in?
+   '============================================================================
+       ;--- Do we already know the value? -----------------------------------
+       on error goto 0             ;;Raise exception on error
+       if  CachedDomain = "" then
+           ;--- No we don't have it yet -------------------------------------
+           dim    oSystemInfo
+           dim    Bit, i
+           set oSystemInfo = CaMkObject("AdSystemInfo")
+           CaDebug 0, "This computers name = " & oSystemInfo.ComputerName
+           Bit = split(oSystemInfo.ComputerName, ",")
+           CachedDomain = ""
+           for i = 0 to ubound(Bit)
+               if  ucase(left(Bit(i),3)) = "DC=" then
+                   CachedDomain = mid(Bit(i), 4)
+                   exit for
+               end if
+           next
+           set oSystemInfo = Nothing
+       end if
+       MachinesDomain = CachedDomain
+   end function
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- ComPlusComp ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define ComPlusComp
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@AppName>' = '']
+       #error ^You are not within a ComPlusApp block!^
+   #endif
+
+   ;--- May need to flush application update --------------------------------
+   <$@@CompleteComPlusAppUpdate>
+
+   ;--- Add the component ---------------------------------------------------
+   #( ""
+       AddComponent VbsCaCadReplace("{$Dll=^^}",          "<$COMPLUS_CAD_SYMBOL_START>", "<$COMPLUS_CAD_SYMBOL_END>"),
+                    VbsCaCadReplace("{$TypeLib=^^}",      "<$COMPLUS_CAD_SYMBOL_START>", "<$COMPLUS_CAD_SYMBOL_END>"),
+                    VbsCaCadReplace("{$ProxyStubDll=^^}", "<$COMPLUS_CAD_SYMBOL_START>", "<$COMPLUS_CAD_SYMBOL_END>")
+   #)
+
+   ;--- Look for incorrect parameters ---------------------------------------
+   {$!:DLL,TYPELIB,ProxyStubDLL}
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- ComPlusProperty --------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Name Macro ----------------------------------------------------------
+   #define ComPlusProperty
+
+   ;--- Check usage ---------------------------------------------------------
+   #if ['<??@@CompTest>' <> '']
+       ;--- Within a component (nesting etc must be OK) ---------------------
+       #define+ @@Property4Obj  oComp
+       #define+ @@Property4Desc "Setting the component property"
+   #elseif
+       ;--- OK must for for an application! ---------------------------------
+       #if ['<??@@AppName>' = '']
+           #error ^You must use this macro within a COM+ application or component!^
+       #elseif
+           ;--- We are within an application, make sure we haven't FLUSHED! ---
+           #ifndef @@ComplusAppAttributesNeedSaving
+               #error ^You can no longer set COM+ application properties!^
+           #endif
+
+           ;--- Must be OK to set application properties --------------------
+           #define+ @@Property4Obj  oApplication
+           #define+ @@Property4Desc "Setting COM+ property (for """ & AppName & """)"
+       #endif
+   #endif
+
+   ;--- Update the COM+ application or component ----------------------------
+   #( ''
+       #DefineRexx ''
+            {$Value $$RxVar:@@VbExpUser};
+            @@VbExp     = strip(@@VbExpUser);
+            @@VbExpSafe = ReplaceString(@@VbExpUser, """", """""");       ;;Duplicate double quotes
+            if  left(@@VbExp, 1) = '"' then;
+            do;
+                ;--- A string value (so safe to play with) ----------------------
+                @@VbExp = 'VbsCaCadReplace(' || @@VbExp || ', "<$COMPLUS_CAD_SYMBOL_START>", "<$COMPLUS_CAD_SYMBOL_END>")';
+            end;
+       #DefineRexx
+   #)
+
+   ;--- Say what we are doing! ----------------------------------------------
+   <?NewLine>
+   CaDebug 0, <$@@Property4Desc> & ":" & vbCRLF & " .{$#1} = <??@@VbExpSafe>"
+
+   ;--- Make the change -----------------------------------------------------
+   <$@@Property4Obj>.Value("{$#1}") = <??@@VbExp>
+;**    [CommentBlockStart     (October 8, 2005 2:13:13 PM EST, Dennis)
+;**+----------------------------------------------------------------------
+;**|   <$@@Property4Obj>.Value("{$#1}") = {$Value}
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (October 8, 2005 2:13:13 PM EST, Dennis)
+
+   ;--- Look for incorrect parameters ---------------------------------------
+   {$!:#1,VALUE}
+#)
+
+
+;----------------------------------------------------------------------------
+;--- ComPlusRole ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define ComPlusRole
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@AppName>' = '']
+       #error ^You are not within a ComPlusApp block!^
+   #endif
+
+   ;--- Define an application role OR assign the role to component(s) -------
+   <?NewLine>
+   #if ['<??@@CompTest>' = '']
+       ;--- May need to flush application update ----------------------------
+       <$@@CompleteComPlusAppUpdate>
+
+       ;--- Creating ROLES for the application (init if the 1st role) -------
+       #RexxVar @@RolesCnt + 1
+       #if [@@RolesCnt = 1]
+           ;--- This is the first role, need to get roles object ------------
+           CaDebug 0, "Getting access to the roles collection"
+           set oRoles = oApplications.GetCollection("Roles", oApplication.Key)
+           oRoles.populate
+       #endif
+
+       ;--- Add the Role to the application ---------------------------------
+       CaDebug 0, "Adding the role ""{$#1}"""
+       set oRole = oRoles.Add
+       CaDebug 0, "Updating the role ""{$#1}"" - Name"
+       oRole.Value("Name") = "{$#1}"
+       #if ['{$Description=^^}' <> '']
+           ;--- We have been given a description ----------------------------
+           #evaluate ^^ ^{$Description $$RxVar:@@Description}; @@Description = ReplaceString(@@Description, '"', '""');^
+           CaDebug 0, "Updating the role ""{$#1}"" - Description"
+           oRole.Value("Description") = "<??@@Description>"
+       #endif
+
+       CaDebug 0, "Save the roles."
+       oRoles.SaveChanges
+
+       ;--- Do we wish to add users to the new role? ------------------------
+       #if ['{$Users=^^}' <> '']
+           ;--- Initialization ----------------------------------------------
+           CaDebug 0, "Getting access to the users in role collection"
+           set oUsersInRole = oRoles.GetCollection("UsersInRole", oRole.Key)
+           oUsersInRole.Populate
+
+           ;--- Add each user -----------------------------------------------
+           #{  SET ^User={;}{$Users}^
+               #if  SET_USER <> ""
+                   ;--- Add next user ---------------------------------------
+                   CaDebug 0, "Creating a new user (<??SET_USER>) for the role ""{$#1}"""
+                   set oNewUser = oUsersInRole.Add
+                   CaDebug 0, "Updating a new user (<??SET_USER>) for the role ""{$#1}"""
+                   UserId = "<??SET_USER>"
+                   if  instr(UserId, "*") <> 0 then
+                       UserId = replace(UserId, "*", MachinesDomain())
+                   end if
+                   oNewUser.Value("User") = UserId
+               #endif
+           #}
+
+           ;--- Thats all so save the changes -------------------------------
+           CaDebug 0, "Saving the users in role information"
+           oUsersInRole.SaveChanges
+           set oNewUser     = Nothing
+           set oUsersInRole = Nothing
+       #endif
+
+       ;--- Save the Role ---------------------------------------------------
+       CaDebug 0, "Save the roles."
+       oRoles.SaveChanges
+   #elseif
+       ;--- Assigning roles to component (init if the 1st role) -------------
+       #RexxVar @@RolesInCurrentComponent + 1
+       #if [@@RolesInCurrentComponent = 1]
+           ;--- First role in this component --------------------------------
+           CaDebug 0, "Loading the RolesForComponent collection"
+           set oRoles4Comp = oComps.GetCollection("RolesForComponent", oComp.Key)
+           oRoles4Comp.populate
+       #endif
+
+       ;--- Check for stupid errors -----------------------------------------
+       #if ['{$Users=^^}' <> '']
+           #error ^You should not supply a list of users when assigning an existing role to a component!^
+       #endif
+       #if ['{$Description=^^}' <> '']
+           #error ^The role description should not be supplied when assigning an existing role to a component!^
+       #endif
+
+       ;--- OK now assign the role to the component -------------------------
+       CaDebug 0, "Add a new role for the component"
+       set oAssignedRole = Nothing: set oAssignedRole = oRoles4Comp.add
+       CaDebug 0, "Set the name for the role ""{$#1}"""
+       oAssignedRole.Value("Name") = "{$#1}"
+       set oAssignedRole = Nothing
+   #endif
+   CaDebug 0, "Finished role change..."
+   <?NewLine>
+
+   ;--- Look for incorrect parameters ---------------------------------------
+   {$!:#1,DESCRIPTION,USERS}
+#)
+
+
+;----------------------------------------------------------------------------
+;--- ComPlusCompUpdate (update one or more components) ----------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Name Macro ----------------------------------------------------------
+   #define ComPlusCompUpdate
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@AppName>' = '']
+       #error ^You are not within a ComPlusApp block!^
+   #endif
+   #if ['<??@@CompTest>' <> '']
+       #error ^Already looking for component(s) matching '<??@@CompTest>' started at <??@@CompDefnStarts>^
+   #endif
+
+   ;--- Keep track of Roles ASSIGNED to this component ----------------------
+   #RexxVar @@RolesInCurrentComponent = 0
+
+   ;--- Remember details ----------------------------------------------------
+   #RexxVar @@CompDefnStarts = ^<?=GetInputFileNameAndLine()>^
+   #evaluate ^^ ^<$@@HandleComponentUpdateSelection {$?}>^
+   CaDebug 0, "Updating components where: <??@@CompTestLit>"
+
+   ;--- Find the component! -------------------------------------------------
+   <?NewLine>
+   CaDebug 0, "Getting list of components for the application"
+   set oComps = oApplications.GetCollection("Components", AppId)  ;;Get list of all components for the app
+   oComps.Populate
+
+   ;--- Work through each component -----------------------------------------
+   CaDebug 0, "Now search through the component list"
+   VbsCaLogInc 1
+   ComponentCnt = 0
+   MatchedCnt   = 0
+   for each oComp in oComps
+       ;--- Do we wish to update this component -----------------------------
+       WITH oComp                      'User does not need to know the name
+       ComponentCnt = ComponentCnt + 1
+       CaDebug 0, "Component #" & ComponentCnt & ": ProgId=""" & .Value("ProgID") & """ (" & .Value("DLL") & ")"
+       if  <??@@CompTest> then
+           ;--- We do wish to update this one -------------------------------
+           VbsCaLogInc 1
+           CaDebug 0, "We do wish to update this component!"
+           MatchedCnt = MatchedCnt + 1
+
+           <?NewLine><?NewLine>
+           '--- User component updates (START) ---
+
+   ;--- Look for incorrect parameters ---------------------------------------
+   {$!:WHERE,PROGID,COMPAREOP}
+#)
+#DefineRexx '@@HandleComponentUpdateSelection'
+   if '{$Where=^^ $$IsPassed}' = 'Y' then
+   do
+       {$Where $$RxVar:@@CompTest}
+       @@CompTestLit = ReplaceString(@@CompTest, '"', '""')
+   end;
+   else
+   do
+       if '{$ProgId=^^ $$IsPassed}' = 'Y' then
+       do
+           ;--- Select by ProgId --------------------------------------------
+           @@CompTest    = '.Value("ProgID") {$CompareOp=^=^} "{$ProgID}"';
+           @@CompTestLit = ReplaceString(@@CompTest, '"', '""')
+       end;
+       else
+       do
+           ;--- Want all ----------------------------------------------------
+           @@CompTest    = 'true = true'
+           @@CompTestLit = "Any Component (processing all)";
+       end;
+   end;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- /ComplusCompUpdate -----------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Name Macro ----------------------------------------------------------
+   #define /ComplusCompUpdate
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@CompTest>' = '']
+       #error ^You are not within a "ComplusCompUpdate" block!^
+   #endif
+
+   ;--- User changes above --------------------------------------------------
+   '--- User component updates (END) -----
+   <?NewLine><?NewLine>
+
+   ;--- Need to save any roles added to the component -----------------------
+   #if [@@RolesInCurrentComponent <> 0]
+       ;--- Save role changes -----------------------------------------------
+       CaDebug 0, "Saving all role changes - Saving component"
+       oComps.SaveChanges
+       CaDebug 0, "Saving all role changes - Saving roles"
+       oRoles4Comp.SaveChanges
+       CaDebug 0, "Successfully saved the role changes."
+       set oRoles4Comp = Nothing
+   #endif
+
+   ;--- End the component test and loop -------------------------------------
+           VbsCaLogInc -1
+       end if                              ;;End of component matched test!
+       end with                            ;;End the "with" block
+   next
+   VbsCaLogInc -1
+
+   ;--- Must have found at least one component! -----------------------------
+   #evaluate ^^ ^@@Tmp = ReplaceString(@@CompTest, '"', '""')^
+   if  MatchedCnt = 0 then
+       VbsCaRaiseError "ComplusCompUpdate", "No components matched: <??@@Tmp>"
+   else
+       ;--- Save the changes ------------------------------------------------
+       CaDebug 0, "Saving changes made to " & MatchedCnt & "/" & ComponentCnt & " components"
+       oComps.SaveChanges
+   end if
+   set oComps = Nothing
+   <?NewLine>
+
+   ;--- Mark end of block ---------------------------------------------------
+   #RexxVar @@CompTest = ''
+
+   ;--- Look for incorrect parameters (expect none) -------------------------
+   {$!}
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- ComPlusExport ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Name Macro ----------------------------------------------------------
+   #define ComPlusExport
+
+   ;--- Check nesting -------------------------------------------------------
+   #if ['<??@@AppName>' = '']
+       #error ^You are not within a ComPlusApp block!^
+   #endif
+
+   ;--- Work out exactly how we should export -------------------------------
+   #if translate('{$Users="N"}') = 'N'
+       #RexxVar @@ExportMode = 'COMAdminExportNoUsers'
+   #elseif
+       #RexxVar @@ExportMode = 'COMAdminExportUsers'
+   #endif
+   #if translate('{$Overwrite="Y"}') = 'Y'
+       #RexxVar @@ExportMode || ' or COMAdminExportForceOverwriteOfFiles'
+   #endif
+   #if translate('{$In10Format="N"}') = 'Y'
+       #RexxVar @@ExportMode || ' or COMAdminExportIn10Format'
+   #endif
+   #if translate('{$Proxy="Y"}') = 'N'
+       #RexxVar @@ExportType  = "APPLICATION"
+   #elseif
+       #RexxVar @@ExportMode || ' or COMAdminExportApplicationProxy'
+       #RexxVar @@ExportType  = "PROXY"
+   #endif
+
+   ;--- Flush any changes to the application --------------------------------
+   <$@@CompleteComPlusAppUpdate>
+
+   ;--- Export the application ----------------------------------------------
+   <?NewLine>
+   ExportedMsi = VbsCaCadReplace("{$Msi}", "<$COMPLUS_CAD_SYMBOL_START>", "<$COMPLUS_CAD_SYMBOL_END>")
+   CaDebug 0, "Exporting (<??@@ExportType>) : " & ExportedMsi
+   VbsCaLikelyReason4Trap "You tried to export to a non-existant share or drive (the export will create directories if required)."
+   ExportRc = oCatalog.ExportApplication(AppName, ExportedMsi, <??@@ExportMode>)
+   VbsCaLikelyReason4Trap ""
+   CaDebug 0, "oCatalog.ExportApplication(" & ExportedMsi & ") RC: " & ExportRc
+
+   ;--- Look for incorrect parameters ---------------------------------------
+   {$!:MSI,USERS,OVERWRITE,PROXY,IN10FORMAT}
+#)
+
+
+
+#NextId UNLOCK "COMPLUS.MMH"
+
+

@@ -1,0 +1,527 @@
+;----------------------------------------------------------------------------
+;    MODULE NAME:   EventLog.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.10  $
+;          $Date:   18 Jun 2018 16:46:28  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/EventLog.mmh.pvcs  $
+;
+; DESCRIPTION
+; ~~~~~~~~~~~
+; Defines "EventLogSource" & "EventLogCustomView"
+;
+; RegJump.exe HKLM\SYSTEM\CurrentControlSet\services\eventlog\Application
+;
+;----------------------------------------------------------------------------
+
+
+
+;--- Global Options ----------------------------------------------------------
+        ;---[4DocoOptions4EventLogCustomView]---
+#define? DEFAULT_EVENTLOG_PROTECTED     Y            ;;By default we protect files
+#define? DEFAULT_EVENTLOG_VITAL         N            ;;By default file is not important enought to FORCE an about *user allowed to ignore issues on these files)
+#define? EVENTLOG_FILTER_ROOT_DIR       [CommonAppDataFolder]\Microsoft\Event Viewer\Views  ;;You can add to this if you want your root to be a company name under this etc
+        ;---[4DocoOptions4EventLogCustomView]---
+        ;---[4DocoOptions4EventLogSource]---
+#define? DEFAULT_EVENTLOG_REGISTER_ONLY Y            ;;Don't generate any scripts to log to the sources you define
+#define? EVENTLOG_TYPE                  INFORMATION
+#define? EVENTLOG_FILE_DIR              <$MAKEMSI_NONCA_SCRIPT_DIR>\EventLog
+#define? EVENTLOG_CATEGORY              219            ;;Windows can't search for this accross sources/logs!
+#define? EVENTLOG_EVENTID               0              ;;Currently must only use ones valid for "WSH"
+#define? EVENTLOG_LOG                   Application    ;;Untested on anything else, let me know details of any issues (fallback will always be to "Application" log)
+#define? EVENTLOG_LOGGING_CODE_DIRKEY   INSTALLDIR     ;;Do you want to install code that can log to the sources you create or have you "rolled your own"? Supply a installation directory keyname to install the files (RegisterOnly=N)
+#define? EVENTLOG_REGISTRY_COMMENT_NAME $InstalledBy$  ;;Make it empty to prevent installation of the comment
+#define? EVENTLOG_REGISTRY_COMMENT      MSI: "[ProductName]" version [ProductVersion] built @ <?CompileTime> & installed at [Date] [Time].
+#define? EVENTLOG_REGISTRY_COMMENT.PS1  <?Space><?Space>"<$EVENTLOG_SNNE_GENERIC>.ps1" can be used to log to this source!
+#define? EVENTLOG_#OPTIONS              KeepIndent=YES LeaveBlankLines=YES AllowPack=NO
+        ;---[4DocoOptions4EventLogSource]---
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Add a custom filter ----------------------------------------------------
+;----------------------------------------------------------------------------
+;--- Use Event Viewer (EventVwr.msc) to create/modify the view and copy the
+;--- generated file from the "C:\ProgramData\Microsoft\Event Viewer\Views"
+;--- tree. Look for the highest numbered file (View_1.xml) or at least the
+;--- latest xml file (sort by date/time). Either way confirm contents with
+;--- notepad etc.
+;---
+;--- I like to rename the file to the name of the filter such as:
+;---   "All events (last 12 hours).xml"
+;---
+;--- Examples:
+;---   <$EventLogCustomView FilterXml="ALL WSH (last 30 days).xml">
+;---   <$EventLogCustomView FilterXml="Some filter name.xml"   Folder="Product X\Sub Menu">
+;----------------------------------------------------------------------------
+#RexxVar @@CustomFilterCnt = 0
+#define? EVENTLOG_DEFAULT_KEY_PREFIX   EVENT_LOG_CUSTOM_VIEW
+#(  '<?NewLine>'
+    #define+ EventLogCustomView
+             {$!KEYWORDS}
+             {$!:FILTERXML,FilterName,FOLDER,Protected,Vital}
+             <$UpdateMmLocation>
+
+    ;--- Need to define the root directory "C:\ProgramData\Microsoft\Event Viewer\Views" ---
+    #RexxVar @@CustomFilterCnt + 1
+    #ifnDef @@EventViewer-Views-WIKEY
+           #define @@EventViewer-Views-WIKEY    <$EVENTLOG_DEFAULT_KEY_PREFIX>_ROOT_DIR
+           <$DirectoryTree  Key="<$@@EventViewer-Views-WIKEY>"    Dir="<$EVENTLOG_FILTER_ROOT_DIR>"  MAKE="Y" REMOVE="Y">  ;;All Users Application data, redirected to "C:\ProgramData" on WIN7
+    #end if
+
+
+    ;--- Do some preparation ------------------------------------------------
+    #evaluate ^^ ^<$@@EventLogCustomView {$?}>^
+
+
+    ;--- Define the folder the XML file goes into -----------------------------
+    #if [@@Folder == ""]
+        #define+ @@XmlFolder  [<$@@EventViewer-Views-WIKEY>]
+    #elseif
+        ;--- Need to define the key -----------------------------------------
+        #define+  @@XmlFolder [<$@@EventViewer-Views-WIKEY>]\<??@@Folder>
+    #end if
+
+    ;--- Add the file -------------------------------------------------------
+    <$Component "<$EVENTLOG_DEFAULT_KEY_PREFIX>.<??@@CustomFilterCnt>" Create="Y" Directory_="<$@@XmlFolder>">
+        #(
+            <$File
+                    Source="<??@@FilterXML>"
+               Destination=^<??@@FilterName>.<??@@XmlExtn>^
+                Attributes=^<??@@Attributes>^
+                   KeyPath="Y"
+            >
+        #)
+    <$/Component>
+#)
+#DefineRexx '@@EventLogCustomView'
+    @@Folder     = "{$Folder=''}"
+    @@FilterName = "{$FilterName=''}"       ;;User can "rename" the filter
+    @@Protected  = ToUpperCase("{$Protected='<$DEFAULT_EVENTLOG_PROTECTED>'}")
+    @@Vital      = ToUpperCase("{$Vital='<$DEFAULT_EVENTLOG_VITAL>'}")
+    @@FilterXML  = "{$FilterXml}"
+    @@XmlBN      = FilePart('basename', @@FilterXML)
+    @@XmlExtn    = FilePart('extn', @@FilterXML)
+    if  ToUpperCase(@@XmlExtn) <> 'XML' then
+        call ERROR 'The filter filename (' || @@FilterXML || ') is expected to end with ".xml"'
+
+    ;--- What attributes should the file have? ------------------------------
+    @@Attributes = ''
+    if @@Protected <> "N" then @@Attributes = "ReadOnly"
+    if @@Vital     <> "N" then @@Attributes = @@Attributes || " vital"
+
+    ;--- If filter shortname begins with "[" then the folder is within the filename "]" ---
+    if  @@Folder = "" then
+    do
+        ;--- No folder was specified by the user ----------------------------
+        if  left(@@XmlBN,1) = "[" then
+        do
+            ;--- Expect something like "a, b, c" to represent "a\b\c --------
+            parse var @@XmlBN '[' @@Dir ']' @@XmlBN
+            @@Dir = ReplaceString(@@Dir, ', ', ',')
+            @@Dir = ReplaceString(@@Dir, ',', '\')
+            @@Folder = @@Dir
+            @@XmlBN  = strip(@@XmlBN)       ;;User can add spaces to front
+        end
+    end
+    if @@FilterName = "" then
+       @@FilterName = @@XmlBN
+#DefineRexx
+
+
+
+
+;--- Define the macro to Add events to the windows event log ----------------
+#ifndef EVENTLOG_COMPACT
+        #option PUSH
+        #option <$EVENTLOG_#OPTIONS>
+#endif
+#(  '<?NewLine>'
+    #define+ EventLogSource
+             {$!KEYWORDS}
+             {$!:SourceName,RegisterOnly,ALIAS,ScriptName,FunctionName,GenericFunctionName}
+             <$UpdateMmLocation>
+
+    ;--- Handle code for logging --------------------------------------------
+    <$@@EventLogSourceGenerateLoggingCodeIfWanted {$?}>
+
+    ;--- "COPY" Windows Scripting Host (WSH) registry to the new source -----
+    <$Component "ApplicationEventLogSource" Create="Y" Directory_="<$ANYDIR>">
+        ;--- RegJump.exe HKLM\SYSTEM\CurrentControlSet\services\eventlog\Application
+        #(
+               <$Registry
+                            KeyPath="Y"
+                            HKEY="LOCAL_MACHINE"
+                             Key="SYSTEM\CurrentControlSet\services\eventlog\Application\{$SourceName}"
+                            Name="EventMessageFile"
+                           Value="%SystemRoot%\System32\wshext.dll"
+                            Type="EXPSTRING"
+               >
+        #)
+        #(
+               <$Registry
+                            HKEY="LOCAL_MACHINE"
+                             Key="SYSTEM\CurrentControlSet\services\eventlog\Application\{$SourceName}"
+                            Name="TypesSupported"
+                           Value="31"
+                            Type="DWORD"
+               >
+        #)
+        #if ['<$EVENTLOG_REGISTRY_COMMENT_NAME $$ISBLANK>' = 'N']
+            #if ['<$EVENTLOG_REGISTRY_COMMENT $$ISBLANK>'  = 'N']
+                ;--- Comment varies depending on whether creating code to create events ---
+                #define+ @@COMMENT <$EVENTLOG_REGISTRY_COMMENT>
+                #if ['<$EVENTLOG_REGISTRY_COMMENT.PS1 $$ISBLANK>'  = 'N']
+                    #if ['{$RegisterOnly=^<$DEFAULT_EVENTLOG_REGISTER_ONLY $$UPPER>^}' <> 'Y']
+                        ;--- We are creating .ps1 code ----------------------
+                        #define+ @@COMMENT <$EVENTLOG_REGISTRY_COMMENT><$EVENTLOG_REGISTRY_COMMENT.PS1>
+                    #endif
+                #endif
+
+                ;--- Add the comment to the registry ------------------------
+                #(
+                       <$Registry
+                                    HKEY="LOCAL_MACHINE"
+                                     Key="SYSTEM\CurrentControlSet\services\eventlog\Application\{$SourceName}"
+                                    Name="<$EVENTLOG_REGISTRY_COMMENT_NAME>"
+                                   Value=^<$@@COMMENT>^
+                            MsiFormatted="Value"        ;;get the product details and install date/time expanded
+                       >
+                #)
+            #endif
+        #endif
+    <$/Component>
+#)
+#(  '<?NewLine>'
+    #define @@EventLogSourceGenerateLoggingCodeIfWanted
+
+    ;--- Do we want to create (and optionally install) scripts to log to the event source defined above? ---
+    #if ['{$RegisterOnly=^<$DEFAULT_EVENTLOG_REGISTER_ONLY $$UPPER>^}' <> 'Y']
+
+        ;--- Create the logging code --------------------------------------------
+        #define+ EVENTLOG_SOURCE_NAME           {$SourceName}
+        #define+ EVENTLOG_SNNE                  {$ScriptName=~AppEv={$ALIAS=^{$SourceName}^}~}
+        #define+ EVENTLOG_SNNE_GENERIC          EventLog
+        #define+ EVENTLOG_VBSFUNC_NAME          {$FunctionName=^EventLog_{$Alias}^}
+        #define+ EVENTLOG.VBSFUNC.TXT           <$EVENTLOG_FILE_DIR>\<$EVENTLOG_SNNE>.VbsFunc.txt
+        #define+ EVENTLOG.VBS                   <$EVENTLOG_FILE_DIR>\<$EVENTLOG_SNNE>.vbs
+        #ifndef EVENTLOG.POWERSHELL.PS1
+            ;--- Only need to do this once! -------------------------------------
+            #define EVENTLOG.POWERSHELL.PS1 <$EVENTLOG_FILE_DIR>\<$EVENTLOG_SNNE_GENERIC>.ps1
+            #define @@RC_SUCCESSFUL 219
+            #define @@RC_FAILED     666
+            #if ['<$EVENTLOG_LOGGING_CODE_DIRKEY $$IsBlank>' = 'N']
+                ;--- User wants logging support files installed ---------------------
+                ;<$FileMake "<$EVENTLOG.POWERSHELL.PS1>" MODE="POWERSHELL" #options=^<$EVENTLOG_#OPTIONS>^>  ;;<?Hash><?SyntaxCheck> doesn't work as ppwizard still tries to test syntax :-(
+                <$FileMake "<$EVENTLOG.POWERSHELL.PS1>" MODE="OTHER" #options=^<$EVENTLOG_#OPTIONS>^>
+                    param
+                    (
+                        [Parameter(Mandatory=$true)][string]    $MSG,
+                        [Parameter(Mandatory=$true)][string]    $EventSource,
+                        [string]                                $EventCategory = <$EVENTLOG_CATEGORY>,
+                        [string]                                $EventType     = "<$EVENTLOG_TYPE>"
+                    )
+                    $Msg = ($Msg -replace "{nl}", "`n")
+                    $global:PGM_VERSION        = "2017.11.10a"
+                    $global:EVENT_LOG_NAME     = "<$EVENTLOG_LOG>"
+                    $global:EVENT_LOG_EVENTID  = <$EVENTLOG_EVENTID>
+                    $global:RC_SUCCESSFUL      = <$@@RC_SUCCESSFUL>
+                    $global:RC_FAILED          = <$@@RC_FAILED>
+
+                    <?Hash>--- Powershell is very flakey if we don't see this message and RC=5 then it's dying ---
+                    Write-Output ('<$EVENTLOG_SNNE_GENERIC>.ps1 version ' + $PGM_VERSION  + " starting up...`r`n")
+
+                    <?Hash>--- How to handle errors? --------------------------------------
+                    $ErrorActionPreference   = 'Stop'
+                    $WarningActionPreference = 'Stop'
+                    Set-StrictMode -Version Latest
+
+
+
+                    <?Hash>------------------------------------------------------------------------------------
+                    function StringRepeat($Count, $BaseString)   #WORKS WIN10, DOESN'T WORK WIN7 ==> [string]::new('~', 79)
+                    <?Hash>------------------------------------------------------------------------------------
+                    {
+                        $Result = ''
+                        for ($I = 1; $I -le $Count; $I +=1)
+                        {
+                            $Result = $Result + $BaseString
+                        }
+                        return $Result
+                    }
+                    $global:Doing_MAJ = ""
+                    $global:Doing_MIN = ""
+                    <?Hash>------------------------------------------------------------------------------------
+                    function SaySection($What)
+                    <?Hash>------------------------------------------------------------------------------------
+                    {
+                        $global:Doing_MAJ = $What
+                        Write-Output ( "`r`n`r`n" + (StringRepeat 79  '#')         )
+                              SAY $What
+                        Write-Output (          (StringRepeat 79  '#')  + "`r`n" )
+                    }
+
+                    <?Hash>------------------------------------------------------------------------------------
+                    function Say($What)
+                    <?Hash>------------------------------------------------------------------------------------
+                    {
+                        $global:Doing_MIN = $What
+                        $NOWTIME          = Get-Date -format "T"
+                        Write-Output ('[' + $NOWTIME + '] ' + $What)
+                    }
+                    <?Hash>------------------------------------------------------------------------------------
+                    function Quit($ExitRc)
+                    <?Hash> Script must be called similar to: EXEC: PowerShell.exe -ExecutionPolicy Bypass -NoLogo -NonInteractive -Command "& 'C:TMP\Script.ps1'; exit $LASTEXITCODE"
+                    <?Hash>------------------------------------------------------------------------------------
+                    {
+                        <?Hash>--- Say we are existiting ----------------------------------------------
+                        Say ("Exiting with return code " + $ExitRc + "`t(program version " + $PGM_VERSION + ")")
+
+                        <?Hash>--- Very Quick but needs "exit $LASTEXITCODE" on command line to work correctly ---
+                        exit $ExitRc
+
+                        <?Hash>--- Very, very very slow -----------------------------------------------
+                        <?Hash>[Environment]::Exit($ExitRc)
+                    }
+
+
+                    <?Hash>#########################################################################################################
+                    <?Hash>##########[ MAIN CODE ]##################################################################################
+                    <?Hash>#########################################################################################################
+                    try
+                    {
+                        Write-EventLog -LogName $EVENT_LOG_NAME -Source $EventSource -EventId $EVENT_LOG_EVENTID -Category $EventCategory -EntryType $EventType -Message $MSG
+                        Say ("[EVENT SUCCESSFULLY LOGGED]" + "`r`n" + "`r`n`t`t---[ START " + $EventType + " EVENT ] ---`r`n" + $MSG + "`r`n`t`t---[ END " + $EventType + " EVENT ] ---`r`n")
+                    }
+                    catch
+                    {
+                        Say "Event Log Test failed.................................."
+                        Say ("[EVENT LOGGING FAILED]" + "`r`n`r`n" + $MSG + "`r`n`r`n" + "REASON: " + $_)
+                        Quit($RC_FAILED)
+                    }
+                    Quit($RC_SUCCESSFUL)       #Successful
+                <$/FileMake>
+            #endif
+        #endif
+        #ifndef EVENTLOG_VBSFUNC_GENERIC_NAME
+            ;--- Only need to do this once! -------------------------------------
+            #define EVENTLOG_VBSFUNC_GENERIC_NAME  {$GenericFunctionName=^EventLog_^}
+            #define EVENTLOG.VBSFUNC_GENERIC.TXT   <$EVENTLOG_FILE_DIR>\<$EVENTLOG_SNNE_GENERIC>.VbsFunc.GENERIC.txt
+            <$FileMake "<$EVENTLOG.VBSFUNC_GENERIC.TXT>" #options=^<$EVENTLOG_#OPTIONS>^>
+                <?NewLine><?NewLine><?NewLine>
+                function <$EVENTLOG_VBSFUNC_GENERIC_NAME>(ByVal EventSource, ByVal EventType, ByVal EventText)
+                    '--- Make sure type is valid & Need so escape double quotes (\") ---
+                    on error resume next
+                    if  EventType <> "INFORMATION" AND EventType <> "WARNING" AND EventType <> "ERROR" then
+                        EventText =  EventText & vbCRLF & vbCRLF & vbCRLF & "{ERROR: ""<$EVENTLOG_SNNE>.vbs"" WAS PASSED AN INVALID EVENT TYPE OF: " & EventType & """}"
+                        EventType =  "ERROR"
+                    end if
+
+                    '--- We want certain information logged as part of any event, add it if required ---
+                    EventText = AddImportantInfoToEventIfRequired_(EventText)
+
+                    '--- Create the objects we require ----------------------------
+                    dim oShell : set oShell = CreateObject("wscript.shell")
+                    dim oFS    : set oFS    = CreateObject("Scripting.FileSystemObject")
+                        '--- Work out where powershell script is ------------------
+                        dim PsSn : PsSn = "<$EVENTLOG_SNNE_GENERIC>.ps1"
+                        dim PShellScript
+                        PShellScript = ".\" & PsSn
+                        if not oFS.FileExists(PShellScript) then
+                           '--- Not in current directory ----------------------------
+                           PShellScript = oFS.GetParentFolderName(wscript.ScriptFullName) &  "\" & PsSn
+                           if not oFS.FileExists(PShellScript) then
+                              '--- Not in same dir as this script, Praying in path.... ---
+                              PShellScript = PsSn
+                           end if
+                        end if
+
+                        '--- Work out temp file name --------------------------------
+                        randomize
+                        dim StdOut : StdOut = GetEnvVal_("TEMP") & "\EventLogApplication{" & GetRandomInt_(0, 31999) & "}.txt"
+
+                        '--- Get string ready for powershell  ---
+                        dim PsSafeText : PsSafeText = EventText
+                        PsSafeText = replace(PsSafeText,  vbCRLF,   "{nl}")
+                        if  1 = ((len(PsSafeText) - len(replace(PsSafeText, """", ""))) MOD 2) then
+                            '--- WTF: odd number of quotes kills powershell script that uses "param"! ---
+                            LogLine "Working around powershell odd quote bug..."
+                            PsSafeText = PsSafeText & "{nl}{nl}""<-PowerShell workaround"
+                        end if
+                        PsSafeText = replace(PsSafeText,    """",     "\""")
+
+                        '--- Execute The command ------------------------------------
+                        dim CMD : CMD = """PowerShell.exe"" -ExecutionPolicy Bypass -NoLogo -NonInteractive  -File """ & PShellScript & """ -EventSource """ & EventSource & """ -EventType " & EventType & " -Msg """ & PsSafeText & """"
+                        dim FullCMD : FullCMD = CMD & " > """ & StdOut & """ 2>&1"
+                                      FullCMD = "cmd.exe /c """ & FullCMD & """"
+                        dim LogRc   : LogRc   = oShell.run(FullCMD, 0, true)
+
+                        '--- See if the command worked ------------------------------
+                        <$EVENTLOG_VBSFUNC_GENERIC_NAME> = 0
+                        if LogRc <> <$@@RC_SUCCESSFUL> then
+                            '--- Get the console output of failing command ------
+                            dim Contents: Contents = ""
+                            dim oStream : set oStream = oFS.OpenTextFile(StdOut, 1)
+                                Contents = oStream.ReadAll()
+                            oStream.close()
+
+                            ;--- Only return 2 error codes anything else is powershell ---
+                            if  LogRc <> <$@@RC_FAILED> then
+                                '--- Not success or failure code ----------------
+                                if  Contents = "" then
+                                    Contents = "<<UNKNOWN RETURN CODE NO CONTENTS FOUND (THIS IMPLIES A POWERSHELL ISSUE RATHER THAN A SCRIPT ISSUE)>>"
+                                else
+                                    Contents = Contents & vbCRLF & vbCRLF & "<<UNKNOWN RETURN CODE: This is a powershell issue (maybe script fails interpretation)>>"
+                                end if
+                            end if
+                            if  Contents = "" then Contents = "<<NO CONTENTS FOUND>>"
+
+                            '--- Need to fall back to normal VBSCRIPT Logging -------
+                            dim EventTypeInt
+                            if      EventType = "INFORMATION" then
+                                    EventTypeInt = 4
+                            elseif  EventType = "WARNING" then
+                                    EventTypeInt = 2
+                            else
+                                    EventTypeInt = 1
+                            end if
+                            dim SPOS : SPOS = instr(EventText, "{{user=")
+                            if  SPOS <> 0 then
+                                '--- This event will have source "WSH", we will add intended source tye to the header ---
+                                dim Insert : Insert = "source=" & EventSource & ", "
+                                SPOS = SPOS + 2  '->user
+                                EventText = left(EventText, SPOS-1) & Insert & mid(EventText, SPOS)
+                            end if
+                            EventText = replace(EventText, "{nl}", vbCRLF)
+                            EventText = EventText & vbCRLF & vbCRLF & vbCRLF & "{<$EVENTLOG_SNNE_GENERIC>.ps1 Failed}" & vbCRLF & "EXECUTED: " & CMD & vbCRLF & vbCRLF & "RESULTS(rc=" & LogRc & "):" & vbCRLF & "~~~~~~~~~~~~" & vbCRLF & Contents
+                            err.clear()
+                            oShell.LogEvent EventTypeInt, EventText
+                            <$EVENTLOG_VBSFUNC_GENERIC_NAME> = err.number
+                        end if
+                        oFS.DeleteFile StdOut
+
+                    '--- All done ---------------------------------------------------
+                    set oFS    = Nothing
+                    set oShell = Nothing
+                end function
+                <?NewLine>
+                '============================================================================
+                function AddImportantInfoToEventIfRequired_(ByRef EventText)
+                '============================================================================
+                    ;--- if we can't see a user id then we add it ---------------
+                    on error resume next
+                    AddImportantInfoToEventIfRequired_ = EventText
+                    dim oShell : set oShell = CreateObject("wscript.shell")
+                        dim UserId       : UserId       = GetEnvVal_("USERNAME")
+                        dim CompName     : CompName     = GetEnvVal_("COMPUTERNAME")
+                        dim CitrixReg    : CitrixReg    = "HKLM\Software\Citrix\ICA\Session\"       '64 bit registry!
+                        dim EndPointName : EndPointName = "" : EndPointName = oShell.RegRead(CitrixReg & "ClientName")
+                        dim EndPointIP   : EndPointIP   = "" : EndPointIP   = oShell.RegRead(CitrixReg & "ClientAddress")
+                    set oShell = Nothing
+                    dim AddInfo : AddInfo = false
+                    if      instr(ucase(EventText), UserId) = 0 then
+                            AddInfo = true
+                    elseif  EndPointName <> "" or EndPointIP <> "" then
+                            if  instr(ucase(EventText), EndPointName) = 0 then AddInfo = true
+                            if  instr(ucase(EventText), EndPointIP)   = 0 then AddInfo = true
+                    end if
+                    if  AddInfo then
+                        dim Info : Info = "{{user=" & UserId & ", PC=" & CompName
+                        if  EndPointIP & EndPointName <> "" then
+                            Info = Info & ", TcNAME=" & EndPointName
+                            Info = Info & ", TcIP="   & EndPointIP
+                        end if
+                        Info                               = Info & "}}" & vbCRLF & vbCRLF
+                        AddImportantInfoToEventIfRequired_ = Info & EventText
+                    end if
+                end function
+                <?NewLine>
+                '============================================================================
+                function GetRandomInt_(IntFrom, IntTo)
+                '============================================================================
+                    on error resume next
+                    GetRandomInt_ = -1
+                    GetRandomInt_ = Int((IntTo - IntFrom + 1) * Rnd() + IntFrom)
+                end function
+                <?NewLine>
+                '============================================================================
+                function GetEnvVal_(EnvName)
+                '============================================================================
+                    on error resume next
+                   dim Try
+                   Try    = "%" & EnvName & "%"
+                   dim oShell : set oShell = CreateObject("wscript.shell")
+                        GetEnvVal_ = oShell.ExpandEnvironmentStrings(Try)
+                   set oShell = Nothing
+                   if  GetEnvVal_ = Try then
+                       GetEnvVal_ = ""
+                   end if
+                end function
+               <?NewLine><?NewLine><?NewLine>
+            <$/FileMake>
+        #endif
+        <$FileMake "<$EVENTLOG.VBSFUNC.TXT>" #options=^<$EVENTLOG_#OPTIONS>^>
+            <?NewLine><?NewLine><?NewLine>
+            function <$EVENTLOG_VBSFUNC_NAME>(ByVal EventType, ByVal EventText)
+                on error resume next
+                <$EVENTLOG_VBSFUNC_NAME> = "Failed to execute <$EVENTLOG_VBSFUNC_GENERIC_NAME>()"
+                <$EVENTLOG_VBSFUNC_NAME> = <$EVENTLOG_VBSFUNC_GENERIC_NAME>("<$EVENTLOG_SOURCE_NAME>", EventType, EventText)
+            end function
+
+            <?NewLine>
+            #include "<$EVENTLOG.VBSFUNC_GENERIC.TXT>"
+           <?NewLine><?NewLine><?NewLine>
+        <$/FileMake>
+        #if ['<$EVENTLOG_LOGGING_CODE_DIRKEY $$IsBlank>' = 'N']
+            ;--- User wants logging support files installed ---------------------
+            <$FileMake "<$EVENTLOG.VBS>" #options=^<$EVENTLOG_#OPTIONS>^>
+               '--- Force explicit declarations & Insert Syntax Checking Stub ---
+               <?NewLine>
+               <?SyntaxCheck>
+               <?NewLine>
+
+               '--- Get arguments ---------------------------------------------------
+               dim EventType
+               dim Msg
+               if       wscript.arguments.count < 2 then
+                        Msg = "{ERROR: EXPECT AT A MINIMUM 2 ARGUMENTS (got " & wscript.arguments.count & "): 1=TYPE 2=Text}"
+               else
+                        ;--- Get event type -----------------------------------------
+                        EventType = ucase(wscript.arguments(0))
+                        if  EventType <> "INFORMATION" AND EventType <> "WARNING" AND EventType <> "ERROR" then
+                            Msg       =  Msg & "{NL}{NL}{ERROR: ""<$EVENTLOG_SNNE>.vbs"" WAS PASSED AN INVALID EVENT TYPE OF: " & EventType & """}"
+                            EventType =  "ERROR"
+                        end if
+                        Msg = ""
+                        for Parm = 1 To wscript.arguments.count - 1
+                            if  Parm <> 1 then Msg = Msg & " "
+                                               Msg = Msg & wscript.arguments(Parm)
+                        next
+                        Msg = replace(Msg, "{dq}", """")
+               end if
+
+               '--- Call the function we generated above and included below ---------
+               <$EVENTLOG_VBSFUNC_NAME> EventType, Msg
+               wscript.quit 219
+
+               '--- Include the code we generated above -----------------------------
+               #include "<$EVENTLOG.VBSFUNC.TXT>"
+            <$/FileMake>
+        #endif
+
+        #if ['<$EVENTLOG_LOGGING_CODE_DIRKEY $$IsBlank>' = 'N']
+            ;--- User wants logging support files installed ---------------------
+            <$Component "ApplicationEventLogEXE" Create="Y" Directory_="<$EVENTLOG_LOGGING_CODE_DIRKEY>">
+                <$File SOURCE="<$EVENTLOG.POWERSHELL.PS1>" KeyPath="Y">
+                <$File SOURCE="<$EVENTLOG.VBS>">
+            <$/Component>
+        #endif
+    #endif
+#)
+
+
+#ifndef EVENTLOG_COMPACT
+        #option POP
+#endif
+

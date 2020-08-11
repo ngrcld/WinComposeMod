@@ -1,0 +1,416 @@
+<script>
+//FROM (Stefan Vogel, Martin Honnen): http://www.faqts.com/knowledge_base/view.phtml/aid/1052/fid/130
+function storeCaret (textEl) {
+if (textEl.createTextRange)
+textEl.caretPos = document.selection.createRange().duplicate();
+}
+function insertAtCaret (textEl, text) {
+if (textEl.createTextRange && textEl.caretPos) {
+var caretPos = textEl.caretPos;
+caretPos.text =
+caretPos.text.charAt(caretPos.text.length - 1) == ' ' ?
+text + ' ' : text;
+}
+else
+textEl.value  = text;
+}
+</script>
+<script language="vbscript">
+'---
+'--- $Header:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/RegularExpTestMm.hta.pvcs   1.6   21 Sep 2017 17:33:02   USER "Dennis"  $
+'---
+on error resume next
+BoxWidth  = 800
+BoxHeight = 700
+BoxWidth  = cint( ConfigRead("BoxWidth",  BoxWidth) )
+BoxHeight = cint( ConfigRead("BoxHeight", BoxWidth) )
+BoxX      = cint( ConfigRead("BoxX", "0") )
+BoxY      = cint( ConfigRead("BoxY", "0") )
+if BoxWidth  > screen.availWidth  then BoxWidth  = screen.availWidth  - 10
+if BoxHeight > screen.availHeight then BoxHeight = screen.availHeight - 10
+if BoxX = 0                       then BoxX      = (screen.availWidth  - BoxWidth)  / 2
+if BoxY = 0                       then BoxY      = (screen.availHeight - BoxHeight) / 2
+moveto   BoxX,     BoxY
+resizeto BoxWidth, BoxHeight
+</script>
+<html>
+<head>
+<HTA:APPLICATION
+ID="oRegExpMm"
+APPLICATIONNAME="REGULAR EXPRESSION TESTER - MAKEMSI - v2017.09.21d"
+SCROLL="auto"
+SINGLEINSTANCE="no"
+WINDOWSTATE="normal"
+ContextMenu="no"
+maximizeButton="no"
+minimizeButton="yes"
+ICON="RegularExpTestMm.ico"
+SHOWINTASKBAR="Yes"
+>
+
+<title>Regular Expression Tester by Dennis Bareis</title>
+
+<style>
+td
+{
+font-family: arial;
+font-size: 8pt;
+color: blue;
+margin-left: 3px;
+}
+textarea
+{
+font-family: arial;
+font-size: 8pt;
+margin-left: 3px;
+color: #781351;
+background: #fee3ad;
+border: 1px solid #781351
+}
+.TestButton
+{
+font-size: 10pt;
+color: #000;
+background: #ffa20f;
+border: 2px outset #d7b9c9
+}
+.AddButton
+{
+font-size: xx-small;
+background: #fff;
+padding: 1px;
+font-family: Geneva, Vera, Arial, Helvetica, sans-serif;
+border : 1px solid #aaa;
+}
+</style>
+</head>
+<script language="vbscript">
+dim TestThis, Against, oRE
+
+
+'=======================================
+function ConfigRead(What, ByVal DefaultValue)
+'=======================================
+on error resume next
+ConfigRead = ""
+dim oShell  : set oShell = CreateObject("WScript.Shell")
+ConfigRead = oShell.RegRead("HKCU\Software\MAKEMSI\RegularExpTestMm.hta\" & What)
+set oShell = Nothing
+if  ConfigRead = "" then
+ConfigRead = DefaultValue
+end if
+end function
+
+
+'=======================================
+function ConfigWrite(What, ItsValue)
+'=======================================
+on error resume next
+dim oShell  : set oShell = CreateObject("WScript.Shell")
+oShell.RegWrite  "HKCU\Software\MAKEMSI\RegularExpTestMm.hta\" & What, ItsValue
+set oShell = Nothing
+end function
+
+
+'=======================================
+sub Window_Onload
+'=======================================
+'RegularExpressionText.Value = "(A.*?C)"
+'TestAgainstText.Value       = "xxxxxxAbbbbbbbbbbbCyyyyyyA##Cyyy"
+
+
+dim UseTest_ : UseTest_ = ConfigRead("UseTest", "0")
+if  UseTest_ = "-1" then
+UseTest.Checked = true
+else
+UseTest.Checked = false
+end if
+
+
+
+dim CaseInsensitive_ : CaseInsensitive_ = ConfigRead("CaseInsensitive", "0")
+if  CaseInsensitive_ = "-1" then
+CaseInsensitive.Checked = true
+else
+CaseInsensitive.Checked = false
+end if
+
+
+
+dim SingleLine_ : SingleLine_ = ConfigRead("SingleLine", "0")
+if  SingleLine_ = "-1" then
+SingleLine.Checked = true
+else
+SingleLine.Checked = false
+end if
+
+
+
+dim MultiLine_ : MultiLine_ = ConfigRead("MultiLine", "0")
+if  MultiLine_ = "-1" then
+MultiLine.Checked = true
+else
+MultiLine.Checked = false
+end if
+
+
+
+dim Global_ : Global_ = ConfigRead("Global", "0")
+if  Global_ = "-1" then
+Global.Checked = true
+else
+Global.Checked = false
+end if
+
+TestThis = ConfigRead("TestThis",        "String overflow (greater than length permitted in column).+\.0880F209_45FA_42C5_92AE_5E620033E8EC_O\.0880F209_45FA_42C5_92AE_5E620033E8EC")
+Against  = ConfigRead("Against",         "String overflow (greater than length permitted in column); Table: Registry, Column: Registry, Key(s): Registry83.0880F209_45FA_42C5_92AE_5E620033E8EC_O.0880F209_45FA_42C5_92AE_5E620033E8EC")
+RegularExpressionText.Value = TestThis
+TestAgainstText.Value        = Against
+end sub
+
+
+'=======================================
+function ReAdd(What)
+'=======================================
+'RegularExpressionText.Value = RegularExpressionText.Value & What
+insertAtCaret RegularExpressionText, What
+end function
+
+
+'=======================================
+function ReAddLiteralText()
+'=======================================
+dim LiteralText : LiteralText = ""
+LiteralText = InputBox("", "ENTER THE TEXT", "")
+if  LiteralText <> "" then
+dim EscapedText
+EscapedText   = replace(LiteralText,  "\",  "\\")
+EscapedText   = replace(EscapedText,  ".",  "\.")
+EscapedText   = replace(EscapedText,  "^",  "\^")
+EscapedText   = replace(EscapedText,  "$",  "\$")
+EscapedText   = replace(EscapedText,  "*",  "\*")
+EscapedText   = replace(EscapedText,  "+",  "\+")
+EscapedText   = replace(EscapedText,  "?",  "\?")
+EscapedText   = replace(EscapedText,  "|",  "\|")
+EscapedText   = replace(EscapedText,  "(",  "\(")
+EscapedText   = replace(EscapedText,  ")",  "\)")
+EscapedText   = replace(EscapedText,  "[",  "\[")
+EscapedText   = replace(EscapedText,  "]",  "\]")
+EscapedText   = replace(EscapedText,  "{",  "\{")
+EscapedText   = replace(EscapedText,  "}",  "\}")
+ReAdd(EscapedText)
+end if
+end function
+
+
+'=======================================
+function TestRegularExpression()
+'=======================================
+TestRegularExpression = 0
+on error resume next
+set oRE = new RegExp
+if err.number <> 0 then
+UpdateResults "Could not create a regular expression object: " & err.description
+exit function
+end if
+TestThis        = RegularExpressionText.Value
+Against         = TestAgainstText.Value
+oRe.Global      = Global.Checked
+oRe.MultiLine   = MultiLine.Checked
+oRe.SingleLine  = SingleLine.Checked
+oRe.IgnoreCase  = CaseInsensitive.Checked
+on error goto 0
+ConfigWrite "TestThis",        TestThis
+ConfigWrite "Against",         Against
+ConfigWrite "UseTest", UseTest.Checked          '0 or -1
+ConfigWrite "CaseInsensitive", CaseInsensitive.Checked          '0 or -1
+ConfigWrite "Global", Global.Checked          '0 or -1
+ConfigWrite "MultiLine", MultiLine.Checked          '0 or -1
+ConfigWrite "SingleLine", SingleLine.Checked          '0 or -1
+oRE.Pattern = TestThis
+dim Matched : Matched = false
+dim ReDied  : ReDied  = false
+Matched = Matches(ReDied)
+if  Matched then
+dim SomeStatement
+'Now done in function: UpdateResults "Your regular expression matched. Good work!"
+else
+if  ReDied then
+exit function
+end if
+dim ChangedRe
+dim ChangedWhat
+ChangedWhat = "escaped ()"
+ChangedRe   = replace(TestThis,  "(", "\(")
+ChangedRe   = replace(ChangedRe, ")", "\)")
+oRE.Pattern = ChangedRe
+Matched     = Matches(ReDied)
+if  not Matched and not ReDied then
+ChangedWhat = ChangedWhat & ", also []"
+ChangedRe   = replace(ChangedRe, "[", "\[")
+ChangedRe   = replace(ChangedRe, "]", "\]")
+oRE.Pattern = ChangedRe
+Matched     = Matches(ReDied)
+end if
+if NOT matched then
+if not ReDied then      'User already seen a message if it has
+UpdateResults "We didn't match your regular expression"
+end if
+else
+InputBox "We had to modify your regular expression to match!" & vbCRLF & vbCRLF & "We " & ChangedWhat & ". Copy the new expression from the entry field below.", "WARNING: MATCHED AFTER CHANGES APPLIED", ChangedRe
+end if
+end if
+end function
+
+
+'=======================================
+function Matches(ByRef FailedFlag)
+'=======================================
+'--- Want to make the resuilts flash so user notices ----------------
+ResultsText.Value = "######################[ Working... ]###################"
+dim oShell  : set oShell = CreateObject("WScript.Shell")
+oShell.run "%comspec% /c echo Will Update screen", 0, true
+set oShell = Nothing
+
+'--- Perform the test -----------------------------------------------
+if  UseTest.Checked then
+Matches = MatchByTest(FailedFlag)
+else
+Matches = MatchByExecute(FailedFlag)
+end if
+end function
+
+
+'=======================================
+function MatchByTest(ByRef FailedFlag)
+'=======================================
+on error resume next
+MatchByTest = ""
+FailedFlag  = false
+MatchByTest = oRE.test(Against)
+if err.number <> 0 then
+FailedFlag  = true
+UpdateResults "The "".Test"" comparison using your regular expression just failed!" & vbCRLF & vbCRLF & "This probably means that its syntax is wrong." & vbCRLF & vbCRLF & "Reason Provided: " & err.description
+else
+if   MatchByTest then
+UpdateResults "Your regular expression matched. Good work!"
+end if
+end if
+end function
+
+
+'=======================================
+function MatchByExecute(ByRef FailedFlag)
+'=======================================
+on error resume next
+MatchByExecute = false
+FailedFlag     = false
+dim oMatches, oMatch
+set oMatches = oRE.Execute(Against)
+if err.number <> 0 then
+FailedFlag  = true
+UpdateResults "The "".Execute"" comparison using your regular expression just failed!" & vbCRLF & vbCRLF & "This probably means that its syntax is wrong." & vbCRLF & vbCRLF & "Reason Provided: " & err.description
+else
+dim MatchText  : MatchText  = ""
+dim MatchCount : MatchCount = 0
+for each oMatch in oMatches
+MatchCount = MatchCount + 1
+if MatchText <> "" then MatchText = MatchText & vbCRLF
+MatchText = MatchText & "[MATCH #" & MatchCount & "] " & oMatch.Value
+dim oSubMatch
+dim SubMatchIndex
+for SubMatchIndex = 0 to oMatch.SubMatches.Count
+MatchText = MatchText & vbCRLF & vbTAB & "> #" & SubMatchIndex+1 & ": " & oMatch.SubMatches(SubMatchIndex)
+next
+next
+MatchByExecute = (MatchCount <> 0)
+if  MatchByExecute then
+UpdateResults "Your regular expression found " & MatchCount & " match as follows:" & vbCRLF & vbCRLF & MatchText
+end if
+end if
+exit function
+end function
+
+
+'=======================================
+sub UpdateResults(What)
+'=======================================
+on error resume next
+ResultsText.Value =  "[" & now() & "]" & vbCRLF & "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" & vbCRLF & What
+end sub
+</script>
+
+<body ID="IdBody" bgcolor="#FFFED3">
+<center>
+<h2><span title='$Header:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/RegularExpTestMm.hta.pvcs   1.6   21 Sep 2017 17:33:02   USER "Dennis"  $'>Regular Expression Tester v2017.09.21d</span> <br><font size='xxsmall'><a href='https://regex101.com/' target='_blank' title='A very good alternative online tester, it expains your expression very well&#10;&#10;https://regex101.com/'>[Online Tester]</a>&nbsp;&nbsp;&nbsp;<a href='http://makemsi-manual.dennisbareis.com/regular_expression_tester.htm' target='_blank' title='Open the MAKEMSI manual (online) for tool information and to explain the regular expression syntax.'>[Online Tool &amp; Syntax Help]</a>&nbsp;&nbsp;&nbsp;<a href='http://msdn.microsoft.com/en-us/library/yd1hzczs(v=vs.110).aspx' target='_blank' title='Open the info at Microsoft to explain the regular expression syntax.&#10;&#10;http://msdn.microsoft.com/en-us/library/yd1hzczs(v=vs.110).aspx'>[Online Microsoft Syntax info]</a></font></h2>
+
+
+
+<center>
+<font size='xx-small'>
+<input class='AddButton' type='button' value='Any 1'      onClick='ReAdd(".")' title='A simple expression which matches any single character (.)'>
+<input class='AddButton' type='button' value='Exp Begin'  onClick='ReAdd("(")' title='( = Defines the start of an expression'>
+<input class='AddButton' type='button' value='Exp End'    onClick='ReAdd(")")' title=') = Defines the end of an expression'>
+<input class='AddButton' type='button' value='CharSet Begin'  onClick='ReAdd("[")' title='[ = Defines the start of a character set, some example expressions:&#10;&#10;[xyz], "x", "y" or "z" &#10;[^xyz], not "x", "y" or "z"&#10;[^a-z], not "a" to "z"'>
+<input class='AddButton' type='button' value='CharSet End'    onClick='ReAdd("]")' title='] = Defines the end of a character set expression'>
+&nbsp;&nbsp;
+<input class='AddButton' type='button' value='0+'   onClick='ReAdd("*")' title='match preceeding expression ZERO or more times (*)'>
+<input class='AddButton' type='button' value='1+'   onClick='ReAdd("+")' title='match preceeding expression ONE or more times (+)'>
+<input class='AddButton' type='button' value='or'   onClick='ReAdd("|")' title='x|y matches either x or y.&#10;&#10;For example, &#39;z|food&#39; matches "z" or "food". &#39;(z|f)ood&#39; matches "zood" or "food".'>
+<br><br>
+<span title='If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\.") as it has special meaning in a regular expression!'>
+&nbsp;&nbsp;
+<input class='AddButton' type='button' value='^'  onClick='ReAdd("\^")' Title='"^" has special meaning in a regular expression (matches the position at the beginning of the input string. If the "MultiLine" checkbox is ticked then "^" also matches the position following "\n" or "\r").&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\^")!'>
+<input class='AddButton' type='button' value='*'  onClick='ReAdd("\*")' Title='"*" has special meaning in a regular expression (matches the preceding subexpression ZERO or more times).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\*")!'>
+<input class='AddButton' type='button' value='+'  onClick='ReAdd("\+")' Title='"+" has special meaning in a regular expression (matches the preceding subexpression ONE or more times).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\+")!'>
+<input class='AddButton' type='button' value='.'  onClick='ReAdd("\.")' Title='"." has special meaning in a regular expression (matches any single character except "\n". To match any character including the "\n", use a pattern such as "[.\n]". (or tick the "SingleLine" checkbox)).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\.")!'>
+<input class='AddButton' type='button' value='('  onClick='ReAdd("\(")' Title='"(" has special meaning in a regular expression (marks the start of an area to CAPTURE).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\(")!'>
+<input class='AddButton' type='button' value=')'  onClick='ReAdd("\)")' Title='")" has special meaning in a regular expression (marks the end of an area to CAPTURE).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\)")!'>
+<input class='AddButton' type='button' value='['  onClick='ReAdd("\[")' Title='"[" has special meaning in a regular expression (marks the start of a character set, matches (or does not match if "^" follows it) any one of the enclosed characters. For example, "[abc]" matches the "a" in "plain").&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\[")!'>
+<input class='AddButton' type='button' value=']'  onClick='ReAdd("\]")' Title='"]" has special meaning in a regular expression (marks the end of a character set).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\]")!'>
+<input class='AddButton' type='button' value='{'  onClick='ReAdd("\{")' Title='"{" has special meaning in a regular expression (marks the start of a repeat specification).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\{")!'>
+<input class='AddButton' type='button' value='}'  onClick='ReAdd("\}")' Title='"}" has special meaning in a regular expression (marks the end of a repeat specification).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\}")!'>
+<input class='AddButton' type='button' value='|'  onClick='ReAdd("\|")' Title='"|" has special meaning in a regular expression (an "OR" operator, for example, "z|food" matches "z" or "food". "(z|f)ood" matches "zood" or "food").&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\|")!'>
+<input class='AddButton' type='button' value='?'  onClick='ReAdd("\?")' Title='"?" has special meaning in a regular expression (When this character immediately follows any of the other quantifiers (*, +, ?, {n}, {n,}, {n,m}), the matching pattern is non-greedy).&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\?")!'>
+<input class='AddButton' type='button' value='\'  onClick='ReAdd("\\")' Title='As the "\" is a special character used to escape other special characters, it must itself be escaped if you want the LITERAL character'>
+<input class='AddButton' type='button' value='$'  onClick='ReAdd("\$")' Title='"$" has special meaning in a regular expression (matches the position at the end of the input string. If the "MultiLine" checkbox is ticked then "^" also matches the position preceeding "\n" or "\r").&#10;&#10;If you want the LITERAL character then you will need to "escape" the character (with a "\" e.g. "\$")!'>
+<input class='AddButton' type='button' value='LiteralText' onClick='ReAddLiteralText()' title='The text you type will be added to the regular expression as literal text (escaped as needed)'>
+</span>
+</font>
+</center>
+<p>
+<table>
+<tr>
+<td title="Type in the regular expression you'd like to test here">Regular<br>Expression:</td>
+<td>
+<textarea name="RegularExpressionText" rows="7" cols="100"
+ONSELECT="storeCaret(this);"
+ONCLICK="storeCaret(this);"
+ONKEYUP="storeCaret(this);"
+></textarea>
+</td>
+</tr>
+<tr>
+<td title="This is the string you'd like the regular expression to match">Test&nbsp;Against:</td>
+<td><textarea name="TestAgainstText" rows="7" cols="100"></textarea></td>
+</tr>
+<tr>
+<td>
+<span title="Tick to ignore case of alphabetic characters while searching."><input type="checkbox" name="CaseInsensitive" value="0">Case&nbsp;Insensitive</span><br>
+<span title="Changes the meaning of '^' and '$'."><input type="checkbox" name="MultiLine" value="0">MultiLine</span><br>
+<span title="When ticked '.' also matched EOL."><input type="checkbox" name="SingleLine" value="0">SingleLine</span><br>
+<span title="When ticked checks for multiple occurances of the search string and doesn't stop at the first match"><input type="checkbox" name="Global" value="0">Global</span><br>
+<span title="Use .Test() instead of .Execute() to search for regular expression, '.Test()' only matches/not matches, no count)."><input type="checkbox" name="UseTest" value="0">Use&nbsp;Test()</span>
+</td>
+<td><textarea name="ResultsText" rows="13" cols="100"></textarea></td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td><input class='TestButton' type='button' name='TestButton' value='Test Regular Expression' onClick='TestRegularExpression()'></td>
+</tr>
+</table>
+</center>
+
+
+</body>
+</html>

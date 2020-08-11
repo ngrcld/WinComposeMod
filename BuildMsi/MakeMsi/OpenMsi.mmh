@@ -1,0 +1,53 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   OPENMSI.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.10  $
+;          $Date:   05 May 2018 16:40:30  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/OpenMsi.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   This is the main ("ENTRY POINT") header that can be
+;                   used to update or manipulate MSI files.
+;                   To create MSIs from scratch it would be better to use
+;                   "MAKEMSI.MMH" (or "DEPT.MMH").
+;
+;                   Do NOT touch this file it is included by your script!
+;
+;                   No VB knowledge is required.
+;----------------------------------------------------------------------------
+
+;--- Turn off certain things ------------------------------------------------
+#define VER_FILE_DONT_USE_IT
+
+;--- If not readonly these also need disabling/setting ----------------------
+#define ONEXIT_MSG_BEFORE_RUNNING_VBS_PASS2
+#define Rexx4ExecutingVbsPass2
+#define ONEXIT_GENERATE_HTML                N
+#define MSI_NO_PASS2_PROCESSING
+#define MSI_ONOPEN_LEAVE_SUMMARY_ALONE
+#define MSI_ONOPEN_LEAVE_PROPERTIES_ALONE
+
+;**    [CommentBlockStart     (29 April 2018 2:50:16 PM, Dennis)
+;**+----------------------------------------------------------------------
+;**|#define COMPILE_SRC_FILE_NAME               <?InputFile $$FilePart:N,W> ;;Name of generated SOURCE files (without extension)
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (29 April 2018 2:50:16 PM, Dennis)
+
+
+;--- There is no ".VER" file (user can override these values) ---------------
+#define? CABINET_SRC_FILE_NAME         <?InputFile $$FilePart:N>
+#define? ProdInfo.ProductName          <?InputFile $$FilePart:N>
+#define? ProductVersion
+#define? MSI_SUMMARY_MSI_VERSION_TITLE
+
+
+;--- There is only a single pass so indicate this... ------------------------
+#define? MSI_COMPLETE_AT_END_OF_PASS       1
+
+
+;--- Include the common header (at some stage improve this) -----------------
+#include "MakeMSI.MMH"
+

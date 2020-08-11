@@ -1,0 +1,493 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SCHEDULE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.14  $
+;          $Date:   02 Jun 2009 17:22:06  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/schedule.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "SCHEDULE.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainScheduleRelatedOptions]---
+#define? SCHEDULE_JT_USE_TMPFILE_TO_SHORTEN_CMDLINE_INSTALL N                                             ;;Use "@ file" mechanism for JT.EXE installs? (shortens command line - Good for WinNT)
+#define? SCHEDULE_JT_DEBUG_SWITCHES_INSTALL                 /PJ                                           ;;Dump schedule with triggers so it appears in the logs
+#define? SCHEDULE_BINARY_KEY                                Installs_<??@@ScheduleCnt>_Schedules          ;;Name of the Binary table entry holding the schedule VBS
+#define? SCHEDULE_INSTALL_SEQ                               StartServices-RegisterUser                    ;;After files installed!
+#define? SCHEDULE_UNINSTALL_SEQ                             ProcessComponents-RemoveDuplicateFiles        ;;Before files removed!
+#define? SCHEDULE_INSTALL_MIN_CONDITION                     VersionNT and (<$CONDITION_EXCEPT_UNINSTALL>) ;;Use "1" to disable, this PLUS any condition your supply must be met
+#define? SCHEDULE_UNINSTALL_MIN_CONDITION                   VersionNT and (<$CONDITION_UNINSTALL_ONLY>)   ;;Use "1" to disable, this PLUS any condition your supply must be met
+#define? SCHEDULE_CAD_SYMBOL_START                          (*                                            ;;(*CadSymbolName*) - Start
+#define? SCHEDULE_CAD_SYMBOL_END                            *)                                            ;;(*CadSymbolName*) - End
+#define? SCHEDULE_CREATION_IS_CRITICAL                      Y                                             ;;Schedule creation command must succeed for install to succeed? You'd generally leave this value alone...
+;---[4DocoMainScheduleRelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- SCHEDULE ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@ThisScheduleName  = ''
+#RexxVar @@ScheduleStartedAt = ''
+#RexxVar @@ScheduleCnt       = '0'
+#RexxVar @@TweakFunction     = ''
+#RexxVar @@ScheduleUsing     = ''
+         #define  @@TYPE_JT.EXE       JT
+         #define  @@TYPE_SCHTASKS.EXE SCHTASKS
+#option push DefineMacroReplace="ON"
+        #define  @@ThisHeadersName   <?InputComponent>
+#option pop
+#( ''
+    ;--- Start Macro --------------------------------------------------------
+    #define Schedule
+    <$UpdateMmLocation>
+
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}  ;;Don't Expect any keywords!
+    {$!:#1,JT.EXE,SCHTASKS.EXE,DATA,CONDITION,TweakFunction}
+
+    ;--- Check for invalid nesting -------------------------------------------
+    #if ['<??@@ThisScheduleName>' <> '']
+        #error ^Still in Schedule "<??@@ThisScheduleName>" started at <??@@ScheduleStartedAt>^
+    #endif
+    #push "SCHEDULE macro"
+    #RexxVar @@ScheduleStartedAt = ^<?=GetInputFileNameAndLine()>^
+    #RexxVar @@ThisScheduleName  = '{$#1}'
+    #RexxVar @@TweakFunction     = '{$TweakFunction=^^}'     ;;Name of macro containing function of same name
+
+    ;--- Using which program and where is it at install time? ---------------
+    #if ['{$JT.EXE=^^}' <> '']
+        ;--- Using JT.EXE ---------------------------------------------------
+        #RexxVar @@ScheduleFullExeName = ^{$JT.EXE}^
+        #RexxVar @@ScheduleUsing       = ^<$@@TYPE_JT.EXE>^
+    #elseif
+        ;--- Not JT.EXE -----------------------------------------------------
+        #if  ['{$SCHTASKS.EXE=^^}' <> '']
+            ;--- Using SCHTASKS.EXE -----------------------------------------
+            #RexxVar @@ScheduleFullExeName = ^{$SCHTASKS.EXE}^
+            #RexxVar @@ScheduleUsing       = ^<$@@TYPE_SCHTASKS.EXE>^
+        #elseif
+            ;--- Neither specified (do we already have this information?) ---
+            #if ['<??@@ScheduleUsing>' = '']
+                #error ^At least your first schedule must use one of the following parameters:{NL}   * JT.EXE{NL}   * SCHTASKS.EXE^
+            #endif
+        #endif
+    #endif
+
+    ;--- Keep count of schedules --------------------------------------------
+    #RexxVar @@ScheduleCnt + 1
+
+    ;--- Start with an Empty #Data structure --------------------------------
+    #data "@@CadSchedule<??@@ScheduleCnt>" 2
+    #data
+
+    ;--- Do stuff -----------------------------------------------------------
+    #evaluate ^^ ^<$@@Rexx4Schedule {$?}>^
+
+    ;--- Remember Install/Uninstall Conditions ------------------------------
+    #RexxVar @@ScheduleInstallCondition.@@ScheduleCnt   = '{$Condition=^1^} and <$SCHEDULE_INSTALL_MIN_CONDITION>'
+    #RexxVar @@ScheduleUnInstallCondition.@@ScheduleCnt = '{$Condition=^1^} and <$SCHEDULE_UNINSTALL_MIN_CONDITION>'
+
+    ;--- Hold output --------------------------------------------------------
+    #OutputHold
+#)
+#DefineRexx '@@Rexx4Schedule'
+    ;--- Add the Schedule EXE information to the #Data ----------------------
+    @@CadName = "@@CadSchedule" || @@ScheduleCnt || '.';
+    call value @@CadName || '1.1', "ScheduleExe";
+    call value @@CadName || '1.2', @@ScheduleFullExeName;
+
+    ;--- Copy Entries from the passed #data ---------------------------------
+    @@CadFrom = '{$Data=^^}';
+    if  @@CadFrom = '' then
+        @@RowCnt = 0
+    else
+    do
+        ;--- User did pass some information ---------------------------------
+        @@CadFrom = @@CadFrom || '.'
+        @@RowCnt  = DataInfo(@@CadFrom || '?')
+        do  @@f = 1 to @@RowCnt
+            @@t = @@f + 1
+            call value @@CadName || @@t || '.1', DataInfo(@@CadFrom || @@f || '.1');
+            call value @@CadName || @@t || '.2', DataInfo(@@CadFrom || @@f || '.2');
+        end;
+    end;
+    call value @@CadName || '0', 1 + @@RowCnt;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- /SCHEDULE --------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define /Schedule
+
+   ;--- Check for invalid nesting -------------------------------------------
+   #if ['<??@@ThisScheduleName>' = '']
+       #error ^There is no schedule to complete!^
+   #endif
+   #pop "SCHEDULE macro"
+
+   ;--- No more switches, process what we have ------------------------------
+   #outputHold '@@Rexx4EndOfSchedule'
+#)
+#DefineRexx '@@Rexx4EndOfSchedule'
+   ;--- Remove any line breaks ----------------------------------------------
+   @@CmdLine = ReplaceString(HeldOutput, '0D0A'x, ' ');
+   @@CmdLine = ReplaceString(@@CmdLine,  '0A'x,   ' ');
+
+   ;--- These values are used to create VB strings --------------------------
+   @@CmdLine              = ReplaceString(@@CmdLine,            '"',   '""');
+   @@ThisScheduleName    = ReplaceString(@@ThisScheduleName,    '"',   '""');
+
+   ;--- Create The code to invoke the Install/Uninstall ---------------------
+   @@ClString = '"' || @@CmdLine || '"'
+   if   @@TweakFunction = '' then
+   do
+        ;--- Command line left as is (typical situation). -------------------
+        @@SchedCl = @@ClString
+        @@VbsTweakCode.@@ScheduleCnt = '';
+   end;
+   else
+   do
+        ;--- User supplied some VB code to run over the command line --------
+        @@SchedCl = @@TweakFunction || '(' || @@ClString || ')'
+
+        ;--- Get the code from the macro ------------------------------------
+        if  Defined(@@TweakFunction) = 'N' then
+            error('The specified schedule tweak macro "' || @@TweakFunction || '" doesn''t exist!')
+        @@Code = '0A'x || MacroGet(@@TweakFunction);
+
+
+        ;--- We may have used the same function previously (ONLY DEFINE ONCE!) ---
+        do  @@i = 1 to @@ScheduleCnt-1
+            if  @@Code = @@VbsTweakCode.@@i then
+            do
+                ;--- This has already been generated ------------------------
+                @@Code = "'--- " || @@TweakFunction || "() already generated (no need to do so for this schedule)! ---"
+                leave;
+            end;
+        end;
+
+        ;--- Save the code for later generation -----------------------------
+        @@VbsTweakCode.@@ScheduleCnt = @@Code;
+   end;
+   @@ParametersI = '"' || @@ThisScheduleName || '", ' || @@SchedCl;
+   @@ParametersU = '"' || @@ThisScheduleName || '", ' || @@ClString;
+   @@VbsInstall.@@ScheduleCnt   = 'InstallScheduleUsing'   || @@ScheduleUsing || ' ' || @@ParametersI;
+   @@VbsUnInstall.@@ScheduleCnt = 'UnInstallScheduleUsing' || @@ScheduleUsing || ' ' || @@ParametersU;
+
+   ;--- We don't want to output anything ------------------------------------
+   HeldOutput = ''
+
+   ;--- Mark end of the schedule --------------------------------------------
+   @@ThisScheduleName = ''
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Called on EXIT to generate schedule VBS if required --------------------
+;----------------------------------------------------------------------------
+#(
+   #define SCHEDULE_GENERATE_IF_REQUIRED
+   #if [@@ScheduleCnt <> 0]
+       <$@@GenerateCustomActions>
+   #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- GENERATE SCHEDULE custom action ----------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+    #define @@GenerateCustomActions
+
+    <$VbsCa Binary="<$SCHEDULE_BINARY_KEY>">
+       ;--- Global variables ------------------------------------------------
+       dim ScheduleType
+
+       ;--- Create INSTALL/UNINSTALL routines for each schedule -------------
+       #{ for @@ScheduleIndex = 1 to @@ScheduleCnt
+           <$VbsCaEntry "InstallSchedule_<??@@ScheduleIndex>">
+               ;--- Use previously prepared call ----------------------------
+               <??@@VbsInstall.@@ScheduleIndex>
+           <$/VbsCaEntry>
+           <$VbsCaEntry "UnInstallSchedule_<??@@ScheduleIndex>">
+               ;--- Use previously prepared call ----------------------------
+               <??@@VbsUnInstall.@@ScheduleIndex>
+           <$/VbsCaEntry>
+
+           ;--- Any supporting code for Tweaking command line parameters ----
+           <?NewLine>
+           <??@@VbsTweakCode.@@ScheduleIndex>
+       #}
+       <?NewLine><?NewLine><?NewLine>
+
+       <?NewLine>
+       ;========================================================================
+       sub InstallScheduleUsingJT(ByVal Name, ByVal ExeCmdLine)
+       ;========================================================================
+           dim ExeName : ExeName = GetNameOfScheduleExe()
+           ScheduleType = "<$@@TYPE_JT.EXE>"
+           UnInstallSchedule Name, ExeName, ExeCmdLine
+           InstallSchedule   Name, ExeName, ExeCmdLine
+       end sub
+
+       <?NewLine>
+       ;========================================================================
+       sub UnInstallScheduleUsingJT(ByVal Name, ByVal ExeCmdLine)
+       ;========================================================================
+           ;dim ExeName : ExeName = GetNameOfScheduleExe()
+           dim ExeName : ExeName = "<<NotActuallyUsedDontWantToFailIfUserDeletedEtc>>"
+           ScheduleType = "<$@@TYPE_JT.EXE>"
+           UnInstallSchedule Name, ExeName, ExeCmdLine
+       end sub
+
+
+       <?NewLine>
+       ;========================================================================
+       sub InstallScheduleUsingSCHTASKS(ByVal Name, ByVal ExeCmdLine)
+       ;========================================================================
+           dim ExeName : ExeName = GetNameOfScheduleExe()
+           ScheduleType = "<$@@TYPE_SCHTASKS.EXE>"
+           UnInstallSchedule Name, ExeName, ExeCmdLine
+           InstallSchedule   Name, ExeName, ExeCmdLine
+       end sub
+
+       <?NewLine>
+       ;========================================================================
+       sub UnInstallScheduleUsingSCHTASKS(ByVal Name, ByVal ExeCmdLine)
+       ;========================================================================
+           dim ExeName : ExeName = GetNameOfScheduleExe()
+           ScheduleType = "<$@@TYPE_SCHTASKS.EXE>"
+           UnInstallSchedule Name, ExeName, ExeCmdLine
+       end sub
+
+       <?NewLine>
+       ;========================================================================
+       sub InstallSchedule(ByVal Name, ByVal ExeName, ByVal ExeCmdLine)
+       ;========================================================================
+           ;--- Trap on errors ----------------------------------------------
+           on error goto 0
+           CaDebug 0, "Creating schedule: " & Name
+           VbsCaLogInc 1
+
+           ;--- Replace parameters ------------------------------------------
+           Name       = VbsCaCadReplace(Name,       "<$SCHEDULE_CAD_SYMBOL_START>", "<$SCHEDULE_CAD_SYMBOL_END>")
+           ExeCmdLine = VbsCaCadReplace(ExeCmdLine, "<$SCHEDULE_CAD_SYMBOL_START>", "<$SCHEDULE_CAD_SYMBOL_END>")
+           CaDebug 1, "Creating schedule: " & Name
+
+           ;--- Build the command to be executed ----------------------------
+           dim SchedCmd, SchedCmdRc
+           dim TmpFile : TmpFile = ""
+           if  ScheduleType = "<$@@TYPE_SCHTASKS.EXE>" then
+               ;--- Using SCHTASKS.EXE --------------------------------------
+               SchedCmd = GetSchTasksCmdPrefix(Name, ExeName) & "/CREATE "  & ExeCmdLine
+           else
+               ;--- Using JT.EXE --------------------------------------------
+               ExeCmdLine = ExeCmdLine & trim(" <$SCHEDULE_JT_DEBUG_SWITCHES_INSTALL>")
+               ExeCmdLine = ExeCmdLine & " /svj """ & GetNameOfDotJobFile(Name) & """"
+
+               ;--- WinNT doesn't support longish command lines (gets "weird" "permission errors") ---
+               #if  ['<$SCHEDULE_JT_USE_TMPFILE_TO_SHORTEN_CMDLINE_INSTALL>' = 'Y']
+                    ;--- Get name of a temporary file (only one install occurs at any time) ---
+                    CaDebug 0, "Creating temporary command line file (to shorten command line): " & ExeCmdLine
+                    dim oFS : set oFS     = CaMkObject("Scripting.FileSystemObject")
+                    TmpFile = CaGetEnv("TEMP", true) & "\JtCl-" & oFS.GetTempName()
+
+                    ;--- Write the command line -----------------------------
+                    on error resume next
+                    dim errNumb, errDesc
+                    dim oStream : set oStream = oFS.CreateTextFile(TmpFile, true)
+                    if err.number = 0 then oStream.writeline ExeCmdLine
+                    if err.number = 0 then oStream.Close()
+                    errNumb = err.number
+                    errDesc = err.description
+                    set oStream = Nothing
+                    on error goto 0
+                    if  errNumb <> 0 then
+                        ;--- Failed to write output -------------------------
+                        VbsCaRaiseError "InstallSchedule()", "Failed creating Temporary Command Line File, reason 0x" & hex(errNumb) & " - " & errDesc
+                    end if
+
+                    ;--- New Command line simply points to the temp file ----
+                    ExeCmdLine = "@ """ & TmpFile & """"
+               #endif
+
+               ;--- Build JT.EXE command line -------------------------------
+               SchedCmd = """" & ExeName & """ " & ExeCmdLine
+           end if
+
+           ;--- Execute the task --------------------------------------------
+           CaDebug 2, "Executing: " & SchedCmd
+           dim CreateRc : CreateRc = VbsCaRunSync(SchedCmd, 0, TmpFile & ";?")
+           if  CreateRc <> 0 then
+               ;--- Display an error message ----------------------------
+               dim Text
+               Text  =        "Failed creating schedule: " & Name & vbCrLf & vbCrLf
+               Text  = Text & """" & ExeName & """ returned a return code of " & CreateRc & ", the full command:" & vbCrLf & vbCrLf
+               Text  = Text & SchedCmd
+               #if ['<$SCHEDULE_CREATION_IS_CRITICAL $$UPPER>' = 'N']
+                   ;--- No, just log ----------------------------------------
+                   CaDebug 2, "Schedule creation failed but this has been marked as non-critical so we are not aborting the install."
+                   CaDebug 0, Text
+               #elseif
+                   ;--- YES, so abort ---------------------------------------
+                   VbsCaRaiseError "CreateSchedule()", Text
+               #endif
+           end if
+
+           ;--- Have a command line file to delete? -------------------------
+           if   TmpFile <> "" then
+                on error resume next
+                oFS.DeleteFile TmpFile, true
+                set oFS = Nothing
+                on error goto 0
+           end if
+
+           ;--- Finished ----------------------------------------------------
+           VbsCaLogInc -1
+           CaDebug 0, "Finished creating schedule: " & Name
+       end sub
+
+       <?NewLine>
+       '============================================================================
+       sub UnInstallSchedule(ByVal Name, ByVal ExeName, ByVal ExeCmdLine)
+       '============================================================================
+           CaDebug 0, "Removing schedule: " & Name
+           VbsCaLogInc 1
+
+           ;--- Replace parameters ------------------------------------------
+           Name       = VbsCaCadReplace(Name,       "<$SCHEDULE_CAD_SYMBOL_START>", "<$SCHEDULE_CAD_SYMBOL_END>")
+           ExeCmdLine = VbsCaCadReplace(ExeCmdLine, "<$SCHEDULE_CAD_SYMBOL_START>", "<$SCHEDULE_CAD_SYMBOL_END>")
+           CaDebug 1, "Removing schedule: " & Name
+
+           ;--- How do we delete the schedule -------------------------------
+           if  ScheduleType = "<$@@TYPE_JT.EXE>" then
+               ;--- Using JT.EXE --------------------------------------------
+               dim oFS : set oFS = CaMkObject("Scripting.FileSystemObject")
+               dim JobFile : JobFile = GetNameOfDotJobFile(Name)
+               if  not oFS.FileExists(JobFile) then
+                   CaDebug 2, "Schedule doesn't exist: " & JobFile
+               else
+                   CaDebug 2, "Deleting the schedule's file: " & JobFile
+                   oFS.DeleteFile JobFile, true
+               end if
+               set oFS = Nothing
+           else
+               ;--- Using SCHTASKS.EXE --------------------------------------
+               CaDebug 2, "Stopping the schedule (it may be executing)"
+               VbsCaRunSync GetSchTasksCmdPrefix(Name, ExeName) & "/END",       0, ""
+               CaDebug 2, "Deleting the schedule (it may be executing)"
+               VbsCaRunSync GetSchTasksCmdPrefix(Name, ExeName) & "/DELETE /F", 0, ""
+           end if
+           VbsCaLogInc -1
+           CaDebug 0, "Finished removing schedule: " & Name
+       end sub
+
+       <?NewLine>
+       '============================================================================
+       function GetNameOfDotJobFile(ByVal ScheduleName)
+       '============================================================================
+           GetNameOfDotJobFile = CaGetEnv("SYSTEMROOT", true) & "\TASKS\" & ScheduleName & ".job"
+       end function
+
+       <?NewLine>
+       '============================================================================
+       function GetNameOfScheduleExe()
+       '============================================================================
+           ;--- Get name of the EXE (passed as a #DATA parameter) -----------
+           GetNameOfScheduleExe = VbsCaCadGet("ScheduleExe")
+           GetNameOfScheduleExe = VbsCaCadReplace(GetNameOfScheduleExe, "<$SCHEDULE_CAD_SYMBOL_START>", "<$SCHEDULE_CAD_SYMBOL_END>")
+
+           ;--- Make sure it exists (only if it has a path) -----------------
+           if  instr(GetNameOfScheduleExe, "\") <> 0 then
+               ;--- Have a dir attached (validate file exists) --------------
+               dim oFS : set oFS = CaMkObject("Scripting.FileSystemObject")
+               if  not oFS.FileExists(GetNameOfScheduleExe) then
+                   VbsCaRaiseError "GetNameOfScheduleExe()", "The schedule creation tool """ & GetNameOfScheduleExe & """ doesn't exist!"
+               end if
+               set oFS = Nothing
+           end if
+       end function
+
+
+       <?NewLine>
+       '============================================================================
+       function GetSchTasksCmdPrefix(ByVal ScheduleName, ByVal ExeName)
+       '============================================================================
+           dim Strt : Strt = """"     & ExeName       & """ "
+           Strt =     Strt & "/TN """ & ScheduleName  & """ "
+           GetSchTasksCmdPrefix = Strt
+       end function
+    <$/VbsCa>
+
+    ;--- Schedule all the install/uninstall custom actions ------------------
+    #{ for @@ScheduleIndex = 1 to @@ScheduleCnt
+        ;--- Work aound "#{" nesting feature! -------------------------------
+        #ifdef DodgyBrothers
+            ;--- Only included by "name" ------------------------------------
+            [DodgyBrothers]
+                <$ScheduleLoopWorkaround>
+            [DodgyBrothers]
+        #endif
+        #include "<$@@ThisHeadersName>" "[DodgyBrothers]"
+    #}
+#)
+#(
+    #define ScheduleLoopWorkaround
+
+    ;--- INSTALL ROLLBACK ---------------------------------------------------
+    #(
+        <$VbsCaSetup
+                    Data="@@CadSchedule<??@@ScheduleIndex>"
+                   Entry="UnInstallSchedule_<??@@ScheduleIndex>"
+                     Key="Schedules<??@@ScheduleIndex>RollBack"
+                  Binary="<$SCHEDULE_BINARY_KEY>"
+                     Seq=^<$SCHEDULE_INSTALL_SEQ>^
+               CONDITION=^<??@@ScheduleInstallCondition.@@ScheduleIndex>^
+             Description=^Rolling back (removing) task schedule #<??@@ScheduleIndex>^
+                    Type="Rollback"
+        >
+    #)
+
+    ;--- INSTALL ------------------------------------------------------------
+    #(
+        <$VbsCaSetup
+                    Data="@@CadSchedule<??@@ScheduleIndex>"
+                   Entry="InstallSchedule_<??@@ScheduleIndex>"
+                     Key="Schedules<??@@ScheduleIndex>Installation"
+                  Binary="<$SCHEDULE_BINARY_KEY>"
+                     Seq=^<$SCHEDULE_INSTALL_SEQ>^
+               CONDITION=^<??@@ScheduleInstallCondition.@@ScheduleIndex>^
+             Description=^Installing task schedule #<??@@ScheduleIndex>^
+        >
+    #)
+
+    ;--- UNINSTALL ----------------------------------------------------------
+    #(
+        <$VbsCaSetup
+                    Data="@@CadSchedule<??@@ScheduleIndex>"
+                   Entry="UnInstallSchedule_<??@@ScheduleIndex>"
+                     Key="Schedules<??@@ScheduleIndex>UnInstallation"
+                  Binary="<$SCHEDULE_BINARY_KEY>"
+                     Seq=^<$SCHEDULE_UNINSTALL_SEQ>^
+               CONDITION=^<??@@ScheduleUnInstallCondition.@@ScheduleIndex>^
+             Description=^Installing task schedule #<??@@ScheduleIndex>^
+        >
+    #)
+#)
+
+
+#NextId UNLOCK "SCHEDULE.MMH"
+
+

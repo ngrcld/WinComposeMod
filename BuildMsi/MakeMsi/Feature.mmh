@@ -1,0 +1,257 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FEATURE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.11  $
+;          $Date:   27 Sep 2007 17:38:20  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Feature.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "FEATURE.MMH"
+
+
+
+;--- Constants to place into VBS --------------------------------------------
+#( '<?NewLine>'
+   #define FeatureVbsConstants
+
+   ;--- Use on "FEATURE" macro (Attributes column) --------------------------
+   const msidbFeatureAttributesFavorLocal             = &H0000
+   const msidbFeatureAttributesFavorSource            = &H0001
+   const msidbFeatureAttributesFollowParent           = &H0002
+   const msidbFeatureAttributesFavorAdvertise         = &H0004
+   const msidbFeatureAttributesDisallowAdvertise      = &H0008
+   const msidbFeatureAttributesUIDisallowAbsent       = &H0010
+   const msidbFeatureAttributesNoUnsupportedAdvertise = &H0020
+#)
+
+;--- Map FEATURE ATTRIBUTES -------------------------------------------------
+#RexxVar @@FA_FavorLocal             = 'msidbFeatureAttributesFavorLocal'
+#RexxVar @@FA_FavorSource            = 'msidbFeatureAttributesFavorSource'
+#RexxVar @@FA_FollowParent           = 'msidbFeatureAttributesFollowParent'
+#RexxVar @@FA_FavorAdvertise         = 'msidbFeatureAttributesFavorAdvertise'
+#RexxVar @@FA_DisallowAdvertise      = 'msidbFeatureAttributesDisallowAdvertise'
+#RexxVar @@FA_UIDisallowAbsent       = 'msidbFeatureAttributesUIDisallowAbsent'
+#RexxVar @@FA_NoUnsupportedAdvertise = 'msidbFeatureAttributesNoUnsupportedAdvertise'
+
+
+;----------------------------------------------------------------------------
+;--- Feature MACROS ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_FEATURE_DISPLAY    2   ;;Default for "Display" column
+#define? DEFAULT_FEATURE_LEVEL      3   ;;Default for "Level" column
+#define? DEFAULT_FEATURE_ATTRIBUTES FavorLocal
+#define? DEFAULT_FEATURE_CREATE     Y   ;;Default is to create feature if attributes exist.
+#RexxVar RxFeatureNestingLevel = 0   ;;1 = first feature (0 = none)
+#RexxVar RxCurrentFeature.0    = ""  ;;.0 = ""
+#( ''
+   #define Feature
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Increase nesting level ----------------------------------------------
+   #push "FEATURE Macros"
+   #RexxVar RxFeatureNestingLevel + 1
+   #RexxVar RxCurrentFeature.RxFeatureNestingLevel = '{$#1}'  ;;Remember feature name!
+
+   ;--- Now Update/create this feature --------------------------------------
+   #if ['{$?Parms}' > 1]
+       ;--- Generate required VBS -------------------------------------------
+       <$UpdateMmLocation>
+       #if  ['{$CREATE=^<$DEFAULT_FEATURE_CREATE>^}' = 'Y']
+           #evaluate ^^ ^<$Rexx4FeatureCreation {$?ResetUsed}{$?}>^
+       #elseif
+           #evaluate ^^ ^<$Rexx4FeatureUpdating {$?ResetUsed}{$?}>^
+       #endif
+       <??@@Vbs><?NewLine>
+       <??@@VbsC><?NewLine>            ;;Any "condition" related code
+   #endif
+
+   ;--- Validate parameters! ------------------------------------------------
+   {$!:#1,CREATE,Feature_Parent,Title,Description,Display,Level,Directory_,Attributes}
+#)
+#DefineRexx  'Rexx4FeatureCreation'
+       ;--- We are CREATING a feature (only modify what user provides) ------
+       @@Feature = '{$#1}';
+       {$??}           ;;Allows access to ROW/VALUE information
+
+       ;--- Validate the feature's ID ---------------------------------------
+       <$Rexx2CheckMsiId IdVar="@@Feature" What="feature name">
+
+       ;--- Make sure we only create a feature ONCE! ------------------------
+       @@OnceKey = '@@CompOnce_' || c2x(@@Feature)
+       if   symbol(@@OnceKey) = 'VAR' then
+            error('The feature "' || @@Feature || '" has already been created at ' || value(@@OnceKey));
+       else
+            call value @@OnceKey, GetInputFileNameAndLine()
+
+       ;--- Generate the start of row macro ---------------------------------
+       @@VbsC = '';
+       @@Vbs  = '<' || '$Table "Feature">'
+       @@Vbs  = @@Vbs || '<' || '$Row Feature=^' || @@Feature || '^'
+
+       ;--- What is the "parent"? -------------------------------------------
+       if  '{$Feature_Parent=^^ $$IsPassed}' = 'Y' then
+       do
+           {$Feature_Parent $$RxVar:@@ParentFeature}    ;;Can expand to multiple lines
+       end
+       else
+       do
+           ;--- Parent not overriden so work it out -------------------------
+           @@ParentLevel   = RxFeatureNestingLevel - 1
+           @@ParentFeature = RxCurrentFeature.@@ParentLevel
+       end;
+       @@Vbs = @@Vbs || ' Feature_Parent=' || Quoted(@@ParentFeature)
+
+       ;--- The LEVEL parameter can have a condition ------------------------
+       {$Level='<$DEFAULT_FEATURE_LEVEL>' $$RxVar:@@Level}
+       <$@@Rexx2HandleLevel>
+
+       ;--- Get the feature attribute information ---------------------------
+       <$MapBits ResultVar=^@@Attributes^  RxMapVarName=^@@FA_^  BitList=^{$Attributes='<$DEFAULT_FEATURE_ATTRIBUTES>'}^ What=^feature attribute^>
+
+
+       ;--- Add the rest of the attributes ----------------------------------
+       {$Title=''                                   $$RxVar:@@Title}
+       {$Description=''                             $$RxVar:@@Description}
+       {$Display='<$DEFAULT_FEATURE_DISPLAY>'       $$RxVar:@@Display}
+       {$Directory_=''                              $$RxVar:@@Directory}
+       @@Vbs = @@Vbs ||       ' Title=' || Quoted(@@Title)
+       @@Vbs = @@Vbs || ' Description=' || Quoted(@@Description)
+       @@Vbs = @@Vbs || '     Display=' || Quoted(@@Display)
+       @@Vbs = @@Vbs || '       Level=' || Quoted(@@LevelFalse)
+       @@Vbs = @@Vbs || '  Directory_=' || Quoted(@@Directory)
+       @@Vbs = @@Vbs || '  Attributes=' || Quoted(@@Attributes)
+
+       ;--- Generate the end of the row macro -------------------------------
+       @@Vbs = @@Vbs || '>' || d2c(10)
+       @@Vbs = @@Vbs || '<' || '$/Table>'
+#DefineRexx
+#DefineRexx  'Rexx4FeatureUpdating'
+       ;--- We are UPDATING a feature (only modify what user provides) ------
+       @@Feature = '{$#1}';
+       {$??}           ;;Allows access to ROW/VALUE information
+
+       ;--- Validate the feature's ID ---------------------------------------
+       <$Rexx2CheckMsiId IdVar="@@Feature" What="feature name">
+
+       ;--- Generate the start of row macro ---------------------------------
+       @@VbsC = '';
+       @@Vbs = ''
+       @@Vbs = @@Vbs || '<' || '$Table "Feature">'
+       @@Vbs = @@Vbs || '<' || '$Row @Where="`Feature` = ''' || @@Feature || '''" @OK=^=1^';
+       do  @@Fld = 1 to MP.0
+           ;--- Get column name (ignore non-attributes) ---------------------
+           @@ColName = MP.@@Fld.MpName
+           if  @@ColName = '#1' | translate(@@ColName) = 'CREATE' then
+               iterate;
+
+           ;--- See if the LEVEL parameter ----------------------------------
+           if  translate(@@ColName) = 'LEVEL' then
+           do
+               ;--- Its the level parameter ---------------------------------
+               @@Level = MP.@@Fld.MpValue;
+               <$@@Rexx2HandleLevel>
+               if  @@LevelFalse <> '?' then
+                   @@Vbs = @@Vbs || ' Level=' Quoted(@@LevelFalse);
+           end;
+           else
+           do
+               ;--- Create the name/value pair on the ROW macro -------------
+               @@Vbs = @@Vbs || ' ' || @@ColName || '=';
+               @@Vbs = @@Vbs || Quoted(MP.@@Fld.MpValue);
+           end;
+       end;
+       @@Vbs = @@Vbs || '>';
+       @@Vbs = @@Vbs || '<' || '$/Table>';
+       @@Vbs = @@Vbs || d2c(10);
+#DefineRexx
+#DefineRexx  '@@Rexx2HandleLevel'
+   @@Level = translate(@@Level, ';', ',');
+   if  pos(';', @@Level) = 0 then
+       @@LevelFalse = @@Level;             ;;No condition
+   else
+   do
+       ;--- There is a condition attached -----------------------------------
+       parse var @@Level @@LevelFalse ';' @@LevelTrue ';' @@Condition;
+       if  @@Condition = '' then
+           error('Condition missing on the feature level:', '   ' || @@Level);
+       @@LevelFalse = strip(@@LevelFalse);
+       @@LevelTrue  = strip(@@LevelTrue);
+       @@Condition  = strip(@@Condition);
+       @@VbsC  = @@VbsC || '<' || '$Table "Condition">'
+       @@VbsC  = @@VbsC || '<' || '$Row Feature_=^' || @@Feature || '^'
+       @@VbsC  = @@VbsC || '     Level=' || Quoted(@@LevelTrue)
+       @@VbsC  = @@VbsC || ' Condition=' || Quoted(@@Condition)
+       @@VbsC  = @@VbsC || '><' || '$/Table>' || d2c(10);
+   end;
+#DefineRexx
+#( ''
+   #define /Feature
+
+   ;--- Validate nesting ----------------------------------------------------
+   #if [RxFeatureNestingLevel <= 0]
+       #error "You are not currently within a feature!"
+   #endif
+   #if ['{$#1=^^}' <> '']
+       ;--- User wishes to match start/end feature names for safety ---------
+       #if ['{$#1}' <> RxCurrentFeature.RxFeatureNestingLevel]
+           #error ^You are currently processing feature "<??RxCurrentFeature.RxFeatureNestingLevel>"{NL}You can't close feature "{$#1}"!^
+       #endif
+   #endif
+   #RexxVar RxFeatureNestingLevel - 1
+   #pop "FEATURE Macros"
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!:#1}
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Feature? -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define Feature?           <$Feature?@@QUERY={$Query='N'}>{$!:QUERY}
+#define Feature?@@QUERY=Y  <??RxCurrentFeature.RxFeatureNestingLevel>
+#define Feature?@@QUERY=N  <??RxCurrentFeature.RxFeatureNestingLevel $$@@FeatureShouldNotBeBlank>
+#DefineRexx 'REXX_$$@@FeatureShouldNotBeBlank'
+   ;--- This is a workaround to a PPWIZARD restriction ----------------------
+   if  TheValue = '' then
+       error('The "Feature?" macro was used in non-query mode but there is no current', 'feature!');
+#DefineRexx
+
+
+
+
+;--- Takes care of "." (current), "\" (complete) etc ------------------------
+#DefineRexx 'Rexx2ResolveFeatureName'           ;;Used by other commands
+   if  {$FeatVar} = '\' | {$FeatVar} = '.' then
+   do
+       ;--- Must be within a feature! ---------------------------------------
+       if  RxFeatureNestingLevel <= 0 then
+           Error('You used "' || {$FeatVar} || '" to refer to a feature however there is no current or root', 'feature available!');
+
+       /*--- Now get the appropriate item -----------------------------------*/
+       select
+           /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+           when {$FeatVar} = "\" then
+           /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               {$FeatVar} = RxCurrentFeature.1;
+           /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+           when {$FeatVar} = "." then
+           /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+               {$FeatVar} = RxCurrentFeature.RxFeatureNestingLevel;
+       end
+   end;
+#DefineRexx
+
+
+
+#NextId UNLOCK "FEATURE.MMH"
+

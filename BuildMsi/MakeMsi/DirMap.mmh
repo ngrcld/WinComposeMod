@@ -1,0 +1,116 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DIRMAP.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.4  $
+;          $Date:   13 Oct 2006 20:33:14  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DirMap.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "DIRMAP.MMH"
+
+;----------------------------------------------------------------------------
+;--- You can replace/disable these if you wish ------------------------------
+;----------------------------------------------------------------------------
+;---[DirMapExampleWhichIsUsedInDoco]---
+#( ''
+   #define? DIRMAP_STANDARD_MAPPINGS
+
+   ;--- Standard mappings ---------------------------------------------------
+   <$MapUserDir "C:\Program Files\"    "[ProgramFilesFolder]\">
+   <$MapUserDir "C:\Windows\"          "[WindowsFolder]\">
+   <$MapUserDir "C:\WinNT\"            "[WindowsFolder]\">
+   <$MapUserDir "C:\Windows\System32\" "[SystemFolder]\">
+   <$MapUserDir "C:\WinNT\System32\"   "[SystemFolder]\">
+#)
+;---[DirMapExampleWhichIsUsedInDoco]---
+
+;--- Some HOOKS (perhaps to insert mappings) --------------------------------
+#define? DIRMAP_BEFORE_STANDARD_MAPPINGS
+#define? DIRMAP_AFTER_STANDARD_MAPPINGS
+
+
+
+;----------------------------------------------------------------------------
+;--- Define directory tree mapping macro ------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@DirMapFrom.0 = 0
+#RexxVar @@DirMapTo.0   = 0
+#(
+   #define MapUserDir
+   #evaluate ^^ ^<$Rexx4MapUserDir {$?}>^
+
+#)
+#DefineRexx 'Rexx4MapUserDir'
+   @@Cnt              = @@DirMapFrom.0 + 1;
+   @@DirMapFrom.@@Cnt = translate('{$#1}');
+   @@DirMapTo.@@Cnt   = '{$#2}';
+   @@DirMapFrom.0     = @@Cnt;
+   @@DirMapTo.0       = @@Cnt;
+   #if  ['<$DBG_MapUserDir>' <> 'N']
+        <$DBG_SAY> 'MapUserDir: "{$#1}" (any case) to "{$#2}"'
+   #endif
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Now do the mappings ----------------------------------------------------
+;----------------------------------------------------------------------------
+;--- User hook --------------------------------------------------------------
+<$DIRMAP_BEFORE_STANDARD_MAPPINGS>
+
+;--- Map to some standard folder names --------------------------------------
+<$DIRMAP_STANDARD_MAPPINGS>
+
+;--- Example of mapping one drive to another --------------------------------
+;;;;<$MapUserDir "C:\"  "E:\">
+
+;--- User hook --------------------------------------------------------------
+<$DIRMAP_AFTER_STANDARD_MAPPINGS>
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Can be called to translate a directory name ----------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'DirMapRexx2MapDirectory'
+   #if  ['<$DBG_MapUserDir>' <> 'N']
+        <$DBG_SAY> 'See if any defined MapUserDir mappings apply (' || @@DirMapFrom.0 || ' items)'
+        <$DBG_INC>
+   #endif
+   {$DirVar}U = translate({$DirVar});
+   do  @@I = 1 to @@DirMapFrom.0  ;;Note we DON'T exit loop early on match!
+       ;--- See if a match --------------------------------------------------
+       #if  ['<$DBG_MapUserDir>' <> 'N']
+            <$DBG_SAY> 'Does "' || {$DirVar}U || '" begin with "' || @@DirMapFrom.@@I || '"?'
+       #endif
+       if  abbrev({$DirVar}U, @@DirMapFrom.@@I) then
+       do
+           ;--- Have a match (modify the possibly mixed case copy!) ---------
+           {$DirVar}  = @@DirMapTo.@@I || substr({$DirVar}, length(@@DirMapFrom.@@I)+1)
+           {$DirVar}U = translate({$DirVar});
+           #if  ['<$DBG_MapUserDir>' <> 'N']
+                <$DBG_INC>
+                <$DBG_SAY> 'YES! Translated to "' || {$DirVar}U || '"';
+                <$DBG_DEC>
+           #endif
+       end;
+   end;
+   #if  ['<$DBG_MapUserDir>' <> 'N']
+        <$DBG_DEC>
+   #endif
+#DefineRexx
+
+
+
+#NextId UNLOCK "DIRMAP.MMH"
+

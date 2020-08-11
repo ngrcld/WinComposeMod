@@ -1,0 +1,175 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ICON.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.12  $
+;          $Date:   23 Jun 2007 18:18:48  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Icon.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "Icon.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_ICON_DOCO         Y                          ;;Y/N = Add to documentation (under "BINARY" section)
+#define? ICON_RANDOMISH_REXXEXP    '<$ProductVersion>'        ;;Each version of the MSI uses differnt icon names to work around windows icon caching bugs
+#define? ICON_PRODUCTICON_COMMENT  This is the product's icon (in add/remove applet).
+
+
+;----------------------------------------------------------------------------
+;--- ADD ICON ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Icon
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Do some basic processing (checks that file exists) ------------------
+   #evaluate ^^ ^<$Rexx4Icon {$?}>^
+
+   ;--- Add the icon into the binary table ----------------------------------
+   <$Table "Icon">
+       <$Row Data="<??@@IconFile>" Name=^<??@@Key>^>
+   <$/Table>
+
+   ;--- User want this as a product icon? -----------------------------------
+   #if  [@@Product = 'Y']
+        ;--- Set up as Add/Remove icon --------------------------------------
+        <$Property "ARPPRODUCTICON" Value=^<??@@Key>^>
+
+        ;--- New MSIVAL2 tools doesn't produce "icon bloat" messages, but older does (play safe) ---
+        <$MsiValFilter "<??@@Key>" Comment=^Microsoft bug in the validation. Ignore any messages mentioning this product icon's key (ICE36 "Icon Bloat" warning).^>
+   #endif
+
+   ;--- Get an MD5 hash for the doco ----------------------------------------
+   <??@@VbsMd5><?RestartLine>
+
+   ;--- Check Parameters ----------------------------------------------------
+   {$!:#1,KEY,PRODUCT,DOCO,COMMENT}
+#)
+#DefineRexx 'Rexx4Icon'
+   ;--- Get the full filename -----------------------------------------------
+   @@File     = '{$#1}';
+   @@IconFile = FindFile(@@File);
+   if  @@IconFile = '' then
+       error('The icon file "' || @@File || '" does not exist!');
+   call AddInputFileToDependancyList @@IconFile;
+
+   ;--- What did the user say the key was? ----------------------------------
+   @@Key = strip('{$Key=^^}');
+
+   ;--- Get icon comment ----------------------------------------------------
+   {$Comment='' $$RxVar:@@Comment};
+   if   @@Comment = '' then
+        @@Comment = RxFileComment.RxFileCommentCnt;   ;;Any block comment?
+
+   ;--- Product icon? -------------------------------------------------------
+   @@Product = translate('{$Product=^N^}');
+   if   @@Product = 'Y' & @@Key = '' then
+   do
+        ;--- Give it a randomish name ---------------------------------------
+        @@Key = '@ProductIcon';
+
+        ;--- Add to the comment ---------------------------------------------
+        if  @@Comment <> '' then @@Comment = ' ' || @@Comment;
+        @@Comment = "<$ICON_PRODUCTICON_COMMENT>" || @@Comment;
+   end;
+
+   ;--- Work out a key ------------------------------------------------------
+   if  left(@@Key, 1) = '@' then
+   do
+        ;--- User wants to generate a "random" name and store under an ALIAS ---
+        @@Alias = substr(@@Key, 2);
+        <$@@GenerateRandomishKey>
+        @@SaveUnder = '@@IconAlias_' || c2x(@@Alias);
+        if  symbol(@@SaveUnder) = 'VAR' then
+            error('The icon alias "' || @@Alias || '" has already been used!');
+        else
+            call value @@SaveUnder, @@Key;
+   end;
+   else
+   do
+        ;--- Not a random name (has to be predictable!) ---------------------
+        if  @@Key = '' then
+           @@Key = FilePart('n', @@File);   ;;File shortname in the case that the user supplied!
+       <$Rexx2CheckMsiId IdVar="@@Key" What="icon rowkey">     ;;Validate the row's key
+   end;
+
+   ;--- Add to Binary report ------------------------------------------------
+   @@VbsMd5 = '';
+   if  '{$Doco='<$DEFAULT_ICON_DOCO>'}' <> 'N' then
+   do
+       @@Table   = 'Icon';
+       <$BINARY_Rexx2AddToBinaryReport VBS='@@VBSMD5' TABLE='@@Table' ROWKEY='@@Key' FILENAME='@@IconFile' COMMENT='@@Comment'>
+   end;
+#DefineRexx
+#DefineRexx 'Rexx2GetIconKeyGivenAlias'
+    ;--- This is not used by this module but other users --------------------
+    @@Alias     = {$AliasVar};
+    @@SaveUnder = '@@IconAlias_' || c2x(@@Alias);
+    @@C         = '';                           ;;Any code we need to generate
+    if  symbol(@@SaveUnder) = 'VAR' then
+        {$KeyVar} = value(@@SaveUnder);
+    else
+    do
+        ;--- Did not find an alias, see if a file of this name exists? ------
+        @@IconFile = FindFile(@@Alias);
+        if  @@IconFile = '' then
+        do
+            ;--- Not a file, so abort ---------------------------------------
+            error('The icon alias "@' || @@Alias || '" is unknown (and its not a file either)!');
+        end;
+        else
+        do
+            ;--- Create a filename based alias ------------------------------
+            @@Alias     = 'IconFile=' || translate(@@IconFile);
+            @@SaveUnder = '@@IconAlias_' || c2x(@@Alias);
+
+            ;--- Now see if we can find it keyed by filename! ---------------
+            if  symbol(@@SaveUnder) = 'VAR' then
+                {$KeyVar} = value(@@SaveUnder);         ;;We have seen this before
+            else
+            do
+                ;--- 1st time so generate a "randomish" "Icon" table key ----
+                @@File = @@IconFile;
+                <$@@GenerateRandomishKey>;
+
+                ;--- Remember for the next time! ----------------------------
+                call value @@SaveUnder, @@Key;
+
+                ;--- Found a file, need to add to icon table ----------------
+                @@C =       '<' || '$Icon'
+                @@C = @@C || ' "'         || @@File    || '"'       ;;The file name
+                @@C = @@C || ' Key="'     || @@Key     || '"'       ;;The key we worked out above
+                @@C = @@C || ' Comment=`' || {$CmtVar} || '`'       ;;The comment we were passed
+                @@C = @@C || '>'
+
+                ;--- Return the key to the caller ---------------------------
+                {$KeyVar} = @@Key;
+            end;
+        end;
+    end
+    {$CodeVar} = @@C;
+#DefineRexx
+#DefineRexx '@@GenerateRandomishKey'
+    ;--- Generates a "randomish" key ----------------------------------------
+    @@Randomish = <$ICON_RANDOMISH_REXXEXP>;
+    @@FileSn = FilePart('N', @@File);   ;;File shortname in the case that the user supplied!
+    @@FileB  = FilePart('B', @@FileSn);
+    @@FileE  = FilePart('E', @@FileSn);
+    if  translate(@@FileE) <> "EXE" & translate(@@FileE) <> "DLL" then
+        @@FileE = @@FileE || ".exe"
+    @@Key = @@FileB || "." || @@Randomish || '.' || @@FileE;
+    <$Rexx2FixMsiId IDVAR="@@Key">
+#DefineRexx
+
+
+#NextId UNLOCK "Icon.MMH"

@@ -1,0 +1,493 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   PLATFORM.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.12  $
+;          $Date:   11 Aug 2017 10:06:06  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Platform.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- User may not want... ---------------------------------------------------
+;----------------------------------------------------------------------------
+#ifdef PLATFORM_DONT_WANT
+   ;--- User not interested in this! ----------------------------------------
+   #define PLATFORM_COPY_OUTPUT_TO_PLATFORM_DIR
+   #eof 1
+#endif
+#NextId
+#NextId LOCK "PLATFORM.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS: "PLATFORM DEFINITION" -----------------------------------------
+;--- TO DISABLE set "PLATFORM_DEFINITION_ROOT" to empty ---------------------
+;----------------------------------------------------------------------------
+#define? PLATFORM_DEFINITION_ROOT          <??*MAKEMSI_PLATFORM_ROOT?>  ;;"Root of platform definition"
+#define? PLATFORM_DEFINITION_TEMPLATE      {Root}{PlatDir}{ProductName}\{MmModeDir}
+#define? PLATFORM_DEFINITION_RENAME_FILES  N                            ;;Rename files on duplicate (assuming KEEP_FILES=Y)
+#define? PLATFORM_DEFINITION_KEEP_FILES    N                            ;;Y/N - Keep files in destination dir (otherwise all cleared)
+#define? PLATFORM_DEFINITION_KEEP_SUBDIR   Y                            ;;Y/N - Remove subdirectories under destination
+#define? PLATFORM_COPY_EXTRA_MSI_FILES_TO_PLATFORM_DIRECTORIES N
+#define? PLATFORM_COPYING_MSG \
+         call INFO 'Updating ' || @@PlatNme.0 || ' Platform Definition directories...'
+#define? PLATFORM_COPYING_DIR_MSG \
+         call INFO '-> ' || @@DstDir || '"'
+#( ';'
+   ;--- List of semi-colon separated files to be exported -------------------
+   #define? PLATFORM_EXPORT_THESE_FILES
+
+   ;--- Export the following files ------------------------------------------
+   <$MSI_MSINAME>
+   <$MSI_HTMLNAME>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS: "PLATFORM LOGGING" --------------------------------------------
+;----------------------------------------------------------------------------
+#define? PLATFORM_LOG_MAX_LOGSIZE_KBYTES    100
+#(  ';'
+    ;--- Default list of logs in platform directories -----------------------
+    #define PLATFORM_DEFAULT_LOG_FILES
+
+    ;--- "{Root}" frequently on network share -------------------------------
+    {Root}ALL.LOG                           ;;All products all platforms
+    {Root}{ProductName}.LOG                 ;;Single Product any platform
+    {Root}{PlatDir}ALL4PLATFORM.LOG         ;;All products for a specific platform
+
+#)
+#define? PLATFORM_LOG_FILES   <$PLATFORM_DEFAULT_LOG_FILES>  ;;One or more file templates seperated by ";" (empty=no logging)
+#define? PLATFORM_LOG_BEFORE_BUILDING_LINE_REXX_EXPRESSION
+#(
+    ;--- Rexx expression which builds the line(s) to be logged --------------
+    #define? PLATFORM_LOG_LINE_REXX_EXPRESSION
+    '<?CompileTime:%a%_%b%_%d%_%Y>'
+    || '09'x
+    || '<?CompileTime:%T>'
+    || '09'x
+    || '<$MAKEMSI_COMPUTERNAME>'
+    || '09'x
+    || '<$MAKEMSI_USERNAME>'
+    || '09'x
+    || '<$MmMode>'
+    || '09'x
+    || '<$ProductVersion>'
+    || '09'x
+    || '<$ProdInfo.ProductName>'
+#)
+
+;----------------------------------------------------------------------------
+;--- Global Initialization --------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx ''
+   ;--- General Variables ---------------------------------------------------
+   @@Finished  = 'N'
+   @@Count     = 0
+   @@MaxWidth  = 0
+   @@PlatNme.0 = 0               ;;Number of export directories (0 = won't export)
+
+   ;--- Take care of the export root directory ------------------------------
+   @@ExpRootDir = '<$PLATFORM_DEFINITION_ROOT>';             ;;"" = no export
+   if  @@ExpRootDir <> '' & right(@@ExpRootDir, 1) <> '\' then
+       @@ExpRootDir = @@ExpRootDir || '\'
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Define the PLATFORM macro ----------------------------------------------
+;----------------------------------------------------------------------------
+#define Platform  \
+        #evaluate ^^ ^<$Rexx4Platform {$?}>^
+#DefineRexx 'Rexx4Platform'
+   ;--- Make sure user hasn't "closed" updates ------------------------------
+   if  @@Finished = 'Y' then
+       error('You are no longer allowed to define platforms for this build.');
+
+   ;--- Get passed parameters -----------------------------------------------
+   @@PlatName = translate('{$#1}');
+   {$Desc $$RxVar:@@PlatDesc};
+   @@Contains = translate('{$Contains=^^}');  ;;Required if defining a group
+   @@PlatExpDir  = '{$PlatDir=^^}';           ;;Relative directory where stuff exported
+   if  @@PlatExpDir = '' then
+       @@PlatExpDir = @@PlatDesc;             ;;Default to simply using the description.
+   else
+       @@PlatExpDir = ReplaceString(@@PlatExpDir, '{?}', @@PlatDesc); ;;Allow user to use "{?}" for "description"
+   if  @@PlatExpDir <> '' & right(@@PlatExpDir, 1) <> '\' then
+       @@PlatExpDir = @@PlatExpDir || '\';
+
+   ;--- Only groups are allowed blank descriptions --------------------------
+   if  @@Contains = '' & @@PlatDesc = '' then
+       Error('The platform "' || @@PlatName || '" doesn''t have a description.');
+
+   ;--- Want array containing this info for error reporting -----------------
+   @@Count  = @@Count + 1
+   @@ErrNames.@@Count = @@PlatName
+   @@ErrDesc.@@Count  = @@PlatDesc
+   if  length(@@PlatName) > @@MaxWidth then
+       @@MaxWidth = length(@@PlatName);
+
+   ;--- Remember details (keyed access) -------------------------------------
+   call value "@@PLATDESC_"     || c2x(@@PlatName), @@PlatDesc;    ;;If it exists the platform does (doubles as a flag)
+   call value "@@PLATEXPDIR_"   || c2x(@@PlatName), @@PlatExpDir;
+   call value "@@PLATCONTAINS_" || c2x(@@PlatName), @@Contains;
+
+   ;--- Validate parms ------------------------------------------------------
+   {$!}
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Expand PLATFORM groups and create "pretty" "install on" list -----------
+;----------------------------------------------------------------------------
+#define  @@Flag4NoDescWanted '~'     ;;Simple constant
+#define? PlatformProcessing \
+         #evaluate ^^ ^<$Rexx4PlatformProcessing>^
+#DefineRexx 'Rexx4PlatformProcessing'
+   ;--- Make sure user hasn't tried this twice ------------------------------
+   if  @@Finished = 'N' then
+       @@Finished = 'Y';
+   else
+       error('You can only use this macro once!');
+
+   ;--- Expand any group definitions (put descriptions into arrays) ---------
+   @@MsiList       = MacroGet('<$VER_PRODINFO_PREFIX>INSTALLED');
+   @@PlatList      = '';            ;;List of platforms (all groups expanded)
+   @@PrettyCnt     = 0;             ;;List of where installed (uses group descriptions)
+   do  while @@MsiList <> ""
+       ;--- Get next platform entity ----------------------------------------
+       parse var @@MsiList @@OnePlat @@MsiList;
+       @@OnePlat = translate(@@OnePlat);
+
+       ;--- Want to use the description? ------------------------------------
+       if  left(@@OnePlat, 1) <> <$@@Flag4NoDescWanted> then
+           @@WantDesc = 'Y'
+       else
+       do
+           ;--- Use the groups description instead --------------------------
+           @@WantDesc = 'N'
+           @@OnePlat  = substr(@@OnePlat, 2);
+       end;
+
+       ;--- Looks OK? -------------------------------------------------------
+       if  symbol("@@PLATDESC_" || c2x(@@OnePlat)) <> 'VAR' then
+       do
+           ;--- Not valid so report -----------------------------------------
+           call say 'VALID PLATFORMS'
+           call say '~~~~~~~~~~~~~~~'
+           do @@I = 1 to @@Count
+               call say left(@@ErrNames.@@I, @@MaxWidth) || ' : ' || @@ErrDesc.@@I;
+           end;
+           call say ''
+           error('Platform "' || @@OnePlat || '" from your VER file is not valid!', 'See above list for valid choices...')
+       end;
+
+       ;--- Record the description (if wanted) ------------------------------
+       @@ItemDesc           = value("@@PLATDESC_" || c2x(@@OnePlat));
+       if  @@WantDesc = 'Y' then
+       do
+           ;--- Save Description --------------------------------------------
+           if  @@ItemDesc <> '' then
+           do
+               ;--- Groups can have blank descriptions ----------------------
+               @@PrettyCnt          = @@PrettyCnt     + 1;
+               @@Pretty.@@PrettyCnt = value("@@PLATDESC_" || c2x(@@OnePlat));
+           end;
+       end;
+
+       ;--- Is this a group? ------------------------------------------------
+       @@Contains = value("@@PLATCONTAINS_" || c2x(@@OnePlat));
+       if  @@Contains = '' then
+       do
+           ;--- NOT A GROUP -------------------------------------------------
+           @@PlatList = @@PlatList || ' ' || @@OnePlat
+
+           ;--- Not a group so add to list of "platform definition" directories ---
+           <$UpdateExpDirArray>
+       end;
+       else
+       do
+           ;--- We will use the groups description (mark items within the group) ---
+           @@GroupDesc = value("@@PLATDESC_" || c2x(@@OnePlat));
+           if @@GroupDesc <> '' then
+           do
+               ;--- We have a group description so don't want individual ones! ---
+               @@Before   = @@Contains;
+               @@Contains = '';
+               do  while @@Before <> ""
+                   ;--- Get platform ----------------------------------------
+                   parse var @@Before @@OnePlat @@Before;
+
+                   ;--- Add a marker ----------------------------------------
+                   @@OnePlat = <$@@Flag4NoDescWanted> || @@OnePlat;
+
+                   ;--- Recombine -------------------------------------------
+                   @@Contains = strip(@@Contains || ' ' || @@OnePlat);
+               end;
+           end
+
+           ;--- Add to list for more processing (next pass) -----------------
+           @@MsiList = @@Contains || ' ' || @@MsiList;
+       end;
+   end;
+   @@MsiList = space(@@PlatList)
+
+   ;--- Create pretty "installed on" text -----------------------------------
+   @@PrettyText = 'SUPPORTED on ';
+   @@PrettyHtml = 'SUPPORTED on:<p><ol>';
+   do  @@Index = 1 to @@PrettyCnt
+       ;--- Get the description -----------------------------------------
+       @@PlatDesc = @@Pretty.@@Index;
+
+       ;--- Add to the list ---------------------------------------------
+       if  @@Index = 1 then
+           @@Del = '';
+       else
+       do
+           if  @@Index = @@PrettyCnt then
+               @@Del = " and ";
+           else
+               @@Del = ", ";
+       end;
+       @@PrettyText = @@PrettyText || @@Del  || @@PlatDesc;
+       @@PrettyHtml = @@PrettyHtml || '<li>' || @@PlatDesc;
+   end;
+   @@PrettyText = @@PrettyText || '.'
+   @@PrettyHtml = @@PrettyHtml || '</ol>'
+
+   ;--- Set up the pretty format of the text --------------------------------
+   call MacroSet "PLATFORM_LIST_GROUPS_EXPANDED",  @@MsiList;
+   call MacroSet "PLATFORM_MsiSupportedWhere",     @@PrettyText;
+   call MacroSet "PLATFORM_MsiSupportedWhereHtml", @@PrettyHtml;
+#DefineRexx
+#DefineRexx 'UpdateExpDirArray'
+   if  @@ExpRootDir <> '' then
+   do
+       ;--- We do wish to export ------------------------------------
+       @@Cnt           = @@PlatNme.0 + 1;
+       @@PlatNme.@@Cnt = @@OnePlat
+       @@PlatNme.0     = @@Cnt;
+   end;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Code to update the "platform definition" directories -------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define PLATFORM_COPY_OUTPUT_TO_PLATFORM_DIR
+   #ifndef PLATFORM_DIRECTORY_DISABLE_UPDATE
+       ;--- User has not disabled -------------------------------------------
+       #if [@@PlatNme.0 <> 0]
+           ;--- User want to export -----------------------------------------
+           #evaluate ^^ ^<$@@Rexx2UpdateThePlatformDefinition>^
+       #endif
+   #endif
+#)
+#DefineRexx '@@Rexx2UpdateThePlatformDefinition'
+   ;--- Work though each supported platforms export directory ---------------
+   #if  ['<$DBG_PLATFORM>' <> 'N']
+        <$DBG_SAY> 'Exporting to PLATFORM DEFINITION directories'
+        <$DBG_INC>
+   #endif
+   <$PLATFORM_COPYING_MSG>;
+   @@TmpFile  = RexGetTmpFileName('PE?????.TMP');
+   do  @@i = 1 to @@PlatNme.0
+       ;--- Build the name of the destination directory ---------------------
+       @PlatName  = @@PlatNme.@@i;
+       @@Template = '<$PLATFORM_DEFINITION_TEMPLATE>';
+       @@DstDir = ReplaceString(@@Template, '{Root}',        @@ExpRootDir);
+       @@DstDir = ReplaceString(@@DstDir,   '{PlatName}',    @PlatName);
+       @@DstDir = ReplaceString(@@DstDir,   '{PlatDir}',     value("@@PLATEXPDIR_" || c2x(@PlatName)));
+       @@DstDir = ReplaceString(@@DstDir,   '{ProductName}', '<$ProdInfo.ProductName>');
+       @@DstDir = ReplaceString(@@DstDir,   '{MmModeDir}',   '<$MMMODE_PLATFORM_RELDIR>');
+       <$PLATFORM_COPYING_DIR_MSG>;
+       #if  ['<$DBG_PLATFORM>' <> 'N']
+            <$DBG_SAY> 'Exporting to: "' || @@DstDir || '"'
+            <$DBG_INC>
+       #endif
+
+       ;--- Make sure the directory exists ----------------------------------
+       ;;call Making @@DstDir;
+       call MakeDirectoryTree @@DstDir, 'Y'
+
+       ;--- Remove any SUB-DIRECTORIES! -------------------------------------
+       if  '<$PLATFORM_DEFINITION_KEEP_SUBDIR>' = 'N' then
+       do
+           ;--- User wishes subdirectories removed --------------------------
+           #ifdef IsNT
+               #if  ['<$DBG_PLATFORM>' <> 'N']
+                    <$DBG_SAY> 'Removing all subdirectories in "' || @@DstDir || '"'
+               #endif
+               call Dirs4Mask @@DstDir || '*.*', '@@Dirs';
+               do  @@di = 1 to @@Dirs.0
+                   @@Cmd = 'rd "' || @@Dirs.@@di || '" /S /Q >"' || @@TmpFile || '" <$Stderr2Out>';
+                   call AddressCmd '<$cmd.exe> /c ' || @@Cmd, @@TmpFile;
+               end;
+           #endif
+       end;
+
+       ;--- Delete all current? ---------------------------------------------
+       if  '<$PLATFORM_DEFINITION_KEEP_FILES>' = 'N' then
+       do
+           ;--- Delete all existing files in the destination directory ------
+           @@Cmd = 'echo Y | del "' || @@DstDir || '*.*" >"' || @@TmpFile || '" <$Stderr2Out>';
+           call AddressCmd '<$cmd.exe> /c ' || @@Cmd, @@TmpFile;
+       end;
+       else
+       do
+           ;--- Sort files by age remove any older than a certain age? ------
+       end;
+
+       ;--- Work though list of files to be copied to this directory --------
+       @@SrcList = '<$PLATFORM_EXPORT_THESE_FILES>'
+       do  while @@SrcList <> ''
+           ;--- Get next source file ----------------------------------------
+           parse var @@SrcList @@SrcFile ';' @@SrcList;
+           if  @@SrcFile = '' then
+               iterate;                ;;Ignore mistakes etc
+
+           ;--- Work out the name of the destination file -------------------
+           @@DestFile = @@DstDir || FilePart('n', @@SrcFile);
+
+           ;--- If the file already exists, rename it (add timestamp to its name) ---
+           if  FileQueryExists(@@DestFile) <> "" then
+           do
+               ;--- The file exists -----------------------------------------
+               if  '<$PLATFORM_DEFINITION_RENAME_FILES>' = 'N' then
+               do
+                   #if  ['<$DBG_PLATFORM>' <> 'N']
+                        <$DBG_SAY> 'We will overwrite "' || @@DestFile || '"'
+                   #endif
+               end
+               else
+               do
+                   ;--- Rename (don't overwrite) the file -------------------
+                   #if  ['<$DBG_PLATFORM>' <> 'N']
+                        <$DBG_SAY> 'We will rename the existing "' || @@DestFile || '" file'
+                   #endif
+                   @@Cmd =          'ren "' || @@DestFile || '" '
+                   @@Cmd = @@Cmd || '"' || FilePart('w', FilePart('n',@@DestFile)) || ' (' || GetFileTimeStamp(@@DestFile) || ').' || FilePart('e',@@DestFile) || '" '
+                   @@Cmd = @@Cmd || '>"' || @@TmpFile || '" <$Stderr2Out>';
+                   call AddressCmd '<$cmd.exe> /c ' || @@Cmd, @@TmpFile;
+               end;
+           end;
+
+           ;--- Now perform the copy ----------------------------------------
+           call FileCopy @@SrcFile, @@DestFile;
+       end;
+
+       ;--- Copy any extra files? -------------------------------------------
+       #if  ['<$PLATFORM_COPY_EXTRA_MSI_FILES_TO_PLATFORM_DIRECTORIES>' <> 'N']
+            <$Rexx2CopyMsiExtraFiles MsiDirExp=^@@DstDir^>
+       #endif
+
+       ;--- Do any logging for this platform etc ----------------------------
+       <$@@Rexx2Log>;
+
+       ;--- End of this destination directory -------------------------------
+       <$DBG_DEC>;
+   end;
+   <$DBG_DEC>
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Log the make -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx '@@Rexx2Log'
+    ;--- Limit log size? ----------------------------------------------------
+    parse value '<$PLATFORM_LOG_MAX_LOGSIZE_KBYTES>' with @@MaxLogK ',' @@ShortenedLogK;
+    if  @@MaxLogK <> '' then
+    do
+        ;--- We do wish to limit the log size -------------------------------
+        @@MaxLog = @@MaxLogK * 1024;         ;;Max log size in bytes
+        if  @@ShortenedLogK = '' then
+            @@ShortenedLog = (@@MaxLog * 3) % 4;    ;;Default is 3/4 max size
+        else
+        do
+            ;--- Covert to bytes (make sure not too big) --------------------
+            @@ShortenedLog = @@ShortenedLogK * 1024;
+            if  @@ShortenedLog >= @@MaxLog then
+                error('Invalid values supplied in the macro "PLATFORM_LOG_MAX_LOGSIZE_KBYTES"!');
+        end;
+    end;
+
+    ;--- Build the line we wish to log --------------------------------------
+    <$PLATFORM_LOG_BEFORE_BUILDING_LINE_REXX_EXPRESSION>
+    @@LogThis = <$PLATFORM_LOG_LINE_REXX_EXPRESSION>;
+
+    ;--- Write to all the requested logs ------------------------------------
+    if  @@LogThis <> '' then
+    do
+        ;--- Get list of all log templates ("" = no logging) ----------------
+        @@AllLogs =  '<$PLATFORM_LOG_FILES>'
+        do  while @@AllLogs <> ''
+            ;--- Get next log file name -------------------------------------
+            parse var @@AllLogs @@LogFile ';' @@AllLogs;
+            @@LogFile = strip(@@LogFile);
+            if  @@LogFile = '' then
+                iterate;
+
+            ;--- Replace standard codes -------------------------------------
+            @@LogFile = ReplaceString(@@LogFile,   '{Root}',        @@ExpRootDir);
+            @@LogFile = ReplaceString(@@LogFile,   '{PlatName}',    @PlatName);
+            @@LogFile = ReplaceString(@@LogFile,   '{PlatDir}',     value("@@PLATEXPDIR_" || c2x(@PlatName)));
+            @@LogFile = ReplaceString(@@LogFile,   '{ProductName}', '<$ProdInfo.ProductName>');
+            @@LogFile = ReplaceString(@@LogFile,   '{MmModeDir}',   '<$MMMODE_PLATFORM_RELDIR>');
+
+            ;--- Only write to search log file once! ------------------------
+            @@FlagKey = "@@LogOnce_" || c2x(translate(@@LogFile));
+            if  symbol(@@FlagKey) <> "VAR" then
+            do
+                ;--- Make sure the directory exists -------------------------
+                call MakeDirectoryTree FilePart('L', @@LogFile), 'Y';
+
+                ;--- Do we care how long the log gets? ----------------------
+                if  @@MaxLogK <> '' then
+                do
+                    ;--- Yes, does the file exist? --------------------------
+                    if  FileQueryExists(@@LogFile) <> '' then
+                    do
+                        ;--- File exists, is it too long? -------------------
+                        @@FileSize = FileQuerySize(@@LogFile);
+                        if  @@FileSize > @@MaxLog then
+                        do
+                            ;--- File is too long, so keep last bit ---------
+                            @@Start = @@FileSize - @@ShortenedLog;
+                            @@Ignore = charin(@@LogFile, @@Start, 1);
+                            @@RestOfLine = LineIn(@@LogFile)
+                            @@Keep = charin(@@LogFile, @@Start, @@MaxLog);
+                            call FileClose   @@LogFile;
+                            call FileDelete  @@LogFile;
+                            call FileCharOut @@LogFile, @@Keep;
+                            call FileClose   @@LogFile;
+                        end;
+                    end;
+                end;
+
+                ;--- Update the log file (append to end) --------------------
+                call lineout @@LogFile, @@LogThis;
+                call FileClose @@LogFile;
+
+                ;--- Flag that this file has been written to ----------------
+                call value @@FlagKey, '';
+            end;
+        end;
+    end;
+#DefineRexx
+
+
+
+
+#NextId UNLOCK "PLATFORM.MMH"
+

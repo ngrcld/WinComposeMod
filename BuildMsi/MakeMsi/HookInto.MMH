@@ -1,0 +1,80 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   HOOKINTO.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.1  $
+;          $Date:   16 Aug 2008 13:44:00  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/HookInto.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;                   Holds small general purpose "utilities" and definitions.
+;----------------------------------------------------------------------------
+
+;--- Only process the header once (allow user to include many times) --------
+#ifdef HookInto
+    ;--- Already included ---------------------------------------------------
+    #eof 1
+#endif
+
+
+;--- Start header -----------------------------------------------------------
+#NextId PUSH
+#NextId
+#NextId LOCK "HOOKINTO.MMH"
+
+
+
+;--- Define main macro ------------------------------------------------------
+#(
+    #define HookInto
+
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}                ;;Don't expect any keywords!
+    {$!:#1,BEFORE,AFTER}        ;;BEFORE,AFTER parameters specify names of MACROS
+
+    #evaluate ^^ ^<$@@Rexx4HookInto {$?}>^
+#)
+
+;--- Define main processing -------------------------------------------------
+#DefineRexx '@@Rexx4HookInto'
+    ;--- Get the value of the current hook ----------------------------------
+    if  defined('{$#1}') = 'N' then
+        @@Hook = '';
+    else
+        @@Hook = MacroGet('{$#1}');
+
+    ;--- Work out what the user wants to add --------------------------------
+    @@Before = '{$Before=^^}';
+    @@After  = '{$After=^^}';
+    if  @@Before <> '' then
+    do
+        if  defined(@@Before, "I") = 'N' then
+            call error 'The BEFORE parameter specified a non-existant macro of "' || @@Before || '"';
+        else
+            @@Before = '<' || '$' || @@Before || '>';   ;;Replace with a reference to the macro
+    end;
+    if  @@After <> '' then
+    do
+        if  defined(@@After, "I") = 'N' then
+            call error 'The AFTER parameter specified a non-existant macro of "' || @@After || '"';
+        else
+            @@After = '<' || '$' || @@After || '>';   ;;Replace with a reference to the macro
+    end;
+    if  @@Before = '' & @@After = '' then
+        call error 'Neither the BEFORE or AFTER parameters specified macro names!'
+
+    ;--- New Contents is ----------------------------------------------------
+    @@New = @@Before || @@Hook || @@After;
+
+    ;--- Save in macro ------------------------------------------------------
+    call MacroSet '{$#1}', @@New, "Y";      ;;Allow redefine
+#DefineRexx
+
+
+#NextId UNLOCK "HOOKINTO.MMH"
+#NextId POP

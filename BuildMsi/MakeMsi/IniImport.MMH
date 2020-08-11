@@ -1,0 +1,254 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   INIIMPORT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   10 Aug 2005 18:43:36  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/IniImport.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;--- Create namespace -------------------------------------------------------
+#NextId
+#NextId LOCK "INIIMPORT.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? INIIMPORT_REXXCODE_FOR_FILE_LINE_MANIPULATION
+#define? INIIMPORT_TRANSLATIONS_DATA_STRUCTURE          INIIMPORT
+#define? DEFAULT_INIIMPORT_SPECIALFOLDER_TRANSLATIONS   Y
+
+
+;----------------------------------------------------------------------------
+;--- HOOKS PARAMETERS
+;--- ~~~~~~~~~~~~~~~~
+;--- SectionVar      = Name of rexx variable containing Section Name (you can change)
+;--- WantVar         = Name of rexx variable, initially containing "Y", set to "N" if unwanted.
+;--- MsiFormattedVar = Name of rexx variable, initially containing "N", set to "Y" if you use MSI formatting.
+;--- KeyVar          = Name of rexx variable, contains INI KEY's NAME (you can change)
+;--- ValueVar        = Name of rexx variable, contains INI KEY's VALUE (you can change)
+;----------------------------------------------------------------------------
+#define? INIIMPORT_HOOK_SECTION        ;;Uses SectionVar, WantVar, MsiFormattedVar
+#define? INIIMPORT_HOOK_KEYVALUE       ;;Uses SectionVar, WantVar, MsiFormattedVar, KeyVar, ValueVar
+
+
+
+;----------------------------------------------------------------------------
+;--- IMPORT INI FILE --------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define IniImport
+   <$UpdateMmLocation>
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!KEYWORDS}                               ;;Don't Expect any keywords!
+   {$!:#1,IniFile,IniDir,How,ApplyDefinitions,SpecialFolderTranslations}
+
+   ;--- Perform initialization of folder translations -----------------------
+   <$IMPORTTRANS_INITIALIZATION>
+
+   ;--- Do the work ---------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4IniImport {$?}>^
+   #{  FOR @@I = 1 to @@VbsCnt
+       <??@@Vbs.@@I><?RestartLine>
+   #}
+#)
+#DefineRexx '@@Rexx4IniImport'
+    ;--- Want SpecialFolderTranslations? ------------------------------------
+    @@SfTranslations = translate('{$SpecialFolderTranslations=^<$DEFAULT_INIIMPORT_SPECIALFOLDER_TRANSLATIONS>^}');
+
+    ;--- How parameter supplied? --------------------------------------------
+    @@How = '{$How=^^}';
+
+    ;--- File exists? -------------------------------------------------------
+    @@IniFile = '{$#1}';
+    if  FileQueryExists(@@IniFile) = '' then
+        error('The INI file "' || @@IniFile || '" could not be found!')
+    call AddInputFileToDependancyList @@IniFile;
+    call Reading @@IniFile;
+
+    ;--- How do we wish to generate the output ------------------------------
+    @@ApplyDefinitions = translate('{$ApplyDefinitions="Y"}');
+    if  @@ApplyDefinitions <> 'N' then
+    do
+        ;--- Direct import into MAKEMSI (user will not "see" output ---------
+        @@MR = '<' || '$';              ;;(M)acro (R)replace chars
+        @@NL = d2c(10);                 ;;(N)ew (L)ine codes
+        @@Hash = '#';
+        @@Ind1 = ' '
+        @@Ind2 = ' '
+    end;
+    else
+    do
+        ;--- Output will be generated in viewable form (not used by MAKEMSI) ---
+        @@MR = '<?x3C>' || '$';         ;;Human wants to view/taylor
+        @@NL = '<?NewLine>';
+        @@Hash = '<?Hash>';
+        @@Ind1 = copies(' ', 4)
+        @@Ind2 = @@Ind1 || @@Ind1
+    end;
+
+    ;--- User will see the output? -------------------------------------------
+    @@VbsCnt = 0
+    if  @@ApplyDefinitions = 'N' then
+    do
+        ;--- Yes, output comments -------------------------------------------
+        @@V = ''
+        @@V = @@V || ';###<?NewLine>'
+        @@V = @@V || ';### Imported: "' || @@IniFile || '"<?NewLine>'
+        @@V = @@V || ';###     Time: <?CompileTime><?NewLine>'
+        @@V = @@V || ';###<?NewLine><?NewLine>'
+        @@VbsCnt       = @@VbsCnt + 1
+        @@Vbs.@@VbsCnt = @@V;
+    end;
+
+    ;--- Now import the rest of the file -------------------------------------
+    @@IniSection        = ''              ;;The current section
+    @@IniSectionStarted = 'N'
+    @@IniSectionOutput  = ''              ;;The section thats been output (we don't generate until actually needed)
+    @@Entries           = 0;              ;;Keep count
+    @@LineCnt    = 1;
+    do  while lines(@@IniFile) <> 0
+        ;--- Read the next line ---------------------------------------------
+        @@V        = ''
+        @@ThisLine = strip(linein(@@IniFile));
+        @@LineCnt  = @@LineCnt + 1;
+        ;call say 'Line #' || @@LineCnt ||': ' || @@ThisLine
+
+        ;--- Don't care about blank or comment lines ------------------------
+        if  @@ThisLine = '' then
+            iterate;
+        if  left(@@ThisLine, 1) = ';' then
+            iterate;
+        <$INIIMPORT_REXXCODE_FOR_FILE_LINE_MANIPULATION LineVar="@@ThisLine">;   ;;Allow user to handle tabs etc if they wish
+        if  pos('09'x, @@ThisLine) then
+            error('Line #' || @@LineCnt ||' contains tabs (not supported): ', "   " || @@ThisLine);
+
+        ;--- Take care of any EOF char in the file --------------------------
+        if  pos('1A'x, @@ThisLine) <> 0 then
+            leave;
+
+        ;--- [Section] line? ------------------------------------------------
+        @@ThisLine = strip(@@ThisLine)
+        if  left(@@ThisLine, 1) = '[' & right(@@ThisLine, 1) = ']' then
+        do
+            ;--- Found a new section (complete any old) ---------------------
+            if  @@IniSectionStarted = 'Y' then
+            do
+                ;--- Need to end the section first --------------------------
+                @@IniSectionStarted = 'N';
+                @@V = @@V || @@Ind1 || @@Mr || '/IniSection>' || @@NL;
+            end;
+
+            ;--- Now call a hook to let user manipulate or Filter sections ---
+            @@WantThisSection = 'Y';
+            @@MsiFormatted    = 'N';
+            @@IniSection      = substr(@@ThisLine, 2, length(@@ThisLine)-2);
+            <$INIIMPORT_HOOK_SECTION SectionVar=^@@IniSection^ WantVar="@@WantThisSection" MsiFormattedVar="@@MsiFormatted">
+
+            ;--- Need "MSI formatted" version -------------------------------
+            @@IniSectionMsiFmt = @@IniSection;           ;;"escape" any special MSI characters
+            if  @@MsiFormatted = 'N' then
+            do
+                ;--- User did not say not to do MSI formatting... -----------
+                <$NotMsiFmt InVar="@@IniSectionMsiFmt">
+            end;
+        end;
+        else
+        do
+            ;--- We must have found a section by now... ---------------------
+            if   @@IniSection = '' then
+                error('Missing [section] at line #' || @@LineCnt || ': ' || @@ThisLine);
+
+            ;--- Hooks can filter out complete sections ---------------------
+            if  @@WantThisSection = 'Y' then
+            do
+                ;--- Split up the line ---------------------------------------
+                parse var @@ThisLine @@KeyName '=' @@KeyValue;
+
+                ;--- User can filter out specific Values --------------------
+                @@WantThisKey  = 'Y';
+                @@MsiFormatted = 'N';
+                <$INIIMPORT_HOOK_KEYVALUE SectionVar=^@@IniSection^ WantVar="@@WantThisKey" KeyVar=^@@KeyName^ ValueVar=^@@KeyValue^ MsiFormattedVar="@@MsiFormatted">
+                if  @@WantThisKey <> 'N' then
+                do
+                    ;--- Want this key/value, do we need to generate a section? ---
+                    if   @@IniSection <> @@IniSectionOutput then
+                    do
+                        ;--- Generate section -------------------------------
+                        @@Entries = @@Entries + 1;
+                        if  @@Entries = 1 then
+                        do
+                            ;--- Need to output INI header ------------------
+                            @@V = @@V || @@Mr || 'IniFile "{$IniFile}" DIR="{$IniDir}">' || @@NL;
+                        end;
+                        if  @@Entries <> 1 then
+                            @@V = @@V || @@NL;
+                        @@V = @@V || @@Ind1 || @@Mr || 'IniSection "' || @@IniSectionMsiFmt || '">' || @@NL;
+                        @@IniSectionStarted = 'Y';
+                        @@KeyNameWidth      = 0;
+                        @@IniSectionOutput  = @@IniSection;
+                    end;
+
+                    ;--- Now escape chars as per MSI rules ------------------
+                    if  @@MsiFormatted = 'N' then
+                    do
+                        ;--- User did not say not to do MSI formatting... ---
+                        <$NotMsiFmt InVar="@@KeyName">
+                        <$NotMsiFmt InVar="@@KeyValue">
+                    end;
+                    if  @@SfTranslations <> 'N' then
+                    do
+                        <$ImportTranslationMake VAR="@@KeyName">
+                        <$ImportTranslationMake VAR="@@KeyValue">
+                    end;
+
+                    ;--- Output the value -----------------------------------
+                    @@Use     = QuoteIt(@@KeyName)
+                    @@UseName = @@Use || @@KeyName || @@Use
+                    if   @@Use <> '"' & @@Use <> "'" then
+                        @@UseName = "=" || @@UseName
+                    if  length(@@UseName) > @@KeyNameWidth then
+                        @@KeyNameWidth = length(@@UseName);
+                    if  length(@@UseName) < @@KeyNameWidth then
+                        @@UseName = left(@@UseName, @@KeyNameWidth);        ;;PAD with spaces
+                    @@UseValue = Quoted(@@KeyValue);
+                    @@V = @@V || @@Ind2 || @@Mr || 'Ini ' || @@UseName || ' Value=' || @@UseValue
+                    if  @@How <> '' then
+                        @@V = @@V || ' HOW=^' || @@How || '^'
+                    @@V = @@V || '>' || @@NL;
+                end;
+            end;
+       end
+
+       ;--- Save info -------------------------------------------------------
+       if   @@V <> '' then
+       do
+           @@VbsCnt       = @@VbsCnt + 1;
+           @@Vbs.@@VbsCnt = @@V;
+       end;
+    end;
+    call FileClose @@IniFile;
+    call Reading
+
+    ;--- Need to complete INI entries ----------------------------------------
+    @@V = '';
+    if  @@IniSectionStarted = 'Y' then
+        @@V = @@V  || @@Ind1 || @@Mr || '/IniSection>' || @@NL; ;;End section
+    if  @@Entries <> 0 then
+        @@V = @@V  || @@Mr || '/IniFile>' || @@NL;
+    if   @@V <> '' then
+    do
+        @@VbsCnt       = @@VbsCnt + 1;
+        @@Vbs.@@VbsCnt = @@V;
+    end;
+#DefineRexx
+
+#NextId UNLOCK "INIIMPORT.MMH"

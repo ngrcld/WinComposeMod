@@ -1,0 +1,431 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FILES.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.32  $
+;          $Date:   07 Jun 2018 17:01:04  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Files.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "FILES.MMH"
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_FILESEXCLUDE_NO_MATCHES_OK N
+#define? DEFAULT_FILES_NO_MATCHES_OK        N
+#define? DEFAULT_FILES_REMOVE               N         ;;Don't remove files by default!
+
+
+;----------------------------------------------------------------------------
+;--- CLEAR EXCLUDE LIST -----------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar RxExListCategory  = '@@EL_'         ;;Exclude list prefix
+#( ''
+   ;--- Clear an exclude list -----------------------------------------------
+   #define FilesExcludeClear
+   #evaluate ^^ ^<$Rexx4FilesExcludeClear {$?}>^
+#)
+#DefineRexx 'Rexx4FilesExcludeClear'
+   ;--- Work out where to store info ----------------------------------------
+   @@ExName = '{$EXLIST}';
+   <$List.Rexx.Clear CategoryVar="RxExListCategory" NameVar="@@ExName">;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- ADD TO EXCLUDE LIST ----------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+    #define FilesExclude
+
+    ;--- Validate passed parameters -----------------------------------------
+    {$!KEYWORDS}                              ;;Don't Expect any keywords!
+    {$!:#1,EXLIST,SUBDIR,NONEOK,FILTER}
+
+    ;--- Add all files matching mask to the exclude list --------------------
+    #evaluate ^^ ^<$@@Rexx4FilesExclude {$?}>^
+#)
+#define @@EmptyExcludeFilter                 ;;This used if user didn't supply one
+#DefineRexx '@@Rexx4FilesExclude'
+    ;--- Get passed parameters ----------------------------------------------
+    {$#1 $$RxVar:@@Masks}
+    @@SubDir  = translate("{$SubDir=^N^}");
+    if  @@SubDir <> 'N' & @@SubDir <> 'Y' then
+        error('Expected "N" or "Y" for the "SubDir" parameter, got "' || @@SubDir || '"');
+
+   ;--- Load stem with complete list of source files ------------------------
+   @@SrcDir      = '.';                     ;;Start with default dir = current dir
+   do  until @@Masks = ''
+       ;--- Split of next mask ----------------------------------------------
+       parse var @@Masks @@Mask ';' @@Masks;
+       @@Mask = strip(@@Mask);
+       if   @@Mask = '' then
+            iterate;
+
+       ;--- The mask must not be a directory! -------------------------------
+       if   right(@@Mask,1) = '\' | DirQueryExists(@@Mask) <> '' then
+            error('Expected a file mask but got the directory:',, '    ' || @@Mask);
+
+       ;--- Work out what directory to use for this mask --------------------
+       @@MaskDir  = FilePart('S', @@Mask);
+       @@MaskName = FilePart('N', @@Mask);
+       if  @@MaskDir = '' then
+           @@MaskDir = @@SrcDir    ;;Don't have previous, use current dir
+       else
+           @@SrcDir = @@MaskDir;   ;;Remember the last used directory as default for following masks
+       @@Mask = @@MaskDir  || '\' || @@MaskName;
+
+       ;--- Now get list of files matching this mask ------------------------
+       @@Files.0 = 0;
+       call Files4Mask @@Mask, "@@Files", @@SubDir;
+       if  @@Files.0 = 0 then
+       do
+           ;--- Did not find any files, is this OK? -------------------------
+           if  '{$NoneOk=^<$DEFAULT_FILESEXCLUDE_NO_MATCHES_OK>^}' <> 'Y' then
+               Error('No files matched the exclude mask "' || @@Mask || '"!');
+       end;
+       else
+       do
+          ;--- Allow the user to FILTER the results -------------------------
+          @@DC = 0;
+          do @@SI = 1 to @@Files.0
+             ;--- Want to filter out? ---------------------------------------
+             @@File    = @@Files.@@SI;
+             @@Exclude = 'Y';
+             <${$FILTER=^@@EmptyExcludeFilter^} Exclude="@@Exclude" FILE="@@FILE">
+             @@Exclude = translate(@@Exclude);
+
+             ;--- Add this one to the list ----------------------------------
+             if @@Exclude = 'Y' then
+             do
+                @@DC          = @@DC + 1;
+                @@FilesF.@@DC = @@File;
+             end;
+             else
+             do
+                ;--- Look for mistake! --------------------------------------
+                if  @@Exclude <> 'N' then
+                    error('The EXCLUDE filter passed back "' || @@Exclude || '", only "Y" or "N" is supported!');
+             end;
+          end;
+          @@FilesF.0 = @@DC;
+
+          ;--- The files are in a stem variable, add to exclude list --------
+          <$Rexx2AddFileStemToExludeList EXLIST=^{$EXLIST}^ FILESTEM="@@FilesF">
+       end;
+   end;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- COMMON Macros ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'Rexx2AddFileStemToExludeList' ;;Files command also adds using this macro!
+   ;--- Get Handle ----------------------------------------------------------
+   @@ExName = '{$EXLIST}';
+   <$List.Rexx.GetHandle HandleVar="@@ExHandle" CategoryVar="RxExListCategory" NameVar="@@ExName">;
+
+   ;--- Read file stem and add all entries to the exclude list --------------
+   do  @@Index = 1 to {$FILESTEM}.0
+       ;--- Add this file ---------------------------------------------------
+       @@ThisFile = translate({$FILESTEM}.@@Index);
+       <$List.Rexx.AddToListGivenHandle HandleVar="@@ExHandle" ItemVar="@@ThisFile">
+   end
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Files (Add files matching wildcard) ------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Files
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Build code to add files ---------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4Files {$?}>^
+   #{ for @@Index = 1 to @@VbsCnt
+      <??@@Vbs.@@Index><?RestartLine>
+   #}
+
+   ;--- Go back a level (if "Rexx4FILES" turned it on) ----------------------
+   #if  ['<$DBG_ROW_PARMS>' <> 'N']
+        #evaluate ^^ ^<$DBG_DEC>^
+   #endif
+
+   ;--- Check Parameters ----------------------------------------------------
+   {$!:#1,DestDir,SubDir,KeyFile,Component,Attributes,CopyAttributes,ExList,KeyCase,Hash,Comment,Feature,Doco,NoneOK,Remove,SelfReg,ACCESS,Date,Time,Options4Component,OptionMakeRemoveDirs,Cabinet}
+#)
+#DefineRexx '@@Rexx4Files'
+   ;--- Generate debug info ---------------------------------------------
+   {$#1 $$RxVar:@@Masks}
+
+   #if  ['<$DBG_ROW_PARMS>' <> 'N']
+        <$DBG_SAY> '$Files(MASK): ' || @@Masks
+        <$DBG_INC>
+   #endif
+
+   ;--- Need to know if we have specific component or creating them ---------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- It is valid to be outside of a component! -----------------------
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+   @@FileParm = 'Component=' || Quoted(@@Component);     ;;Want to pass through
+
+   ;--- Take care of "File" parameters which we simply pass through ---------
+   if  '{$Feature=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Feature={$Feature $$AQ}'
+   if  '{$Comment=^^ $$IsPassed}' = 'Y' then
+   do
+       {$Comment $$RxVar:@@Comment}
+       @@FileParm = @@FileParm || ' Comment=' || Quoted(@@Comment);
+   end
+;**    [CommentBlockStart     (12 December 2005 20:42:36, Dennis)
+;**+----------------------------------------------------------------------
+;**|   if  '{$Options4Component=^^ $$IsPassed}' = 'Y' then
+;**|       @@FileParm = @@FileParm || ' Options4Component={$Options4Component $$AQ}'
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (12 December 2005 20:42:36, Dennis)
+   if  '{$Options4Component=^^ $$IsPassed}' = 'Y' then
+   do
+       {$Options4Component $$RxVar:@@CompOpt}
+       @@FileParm = @@FileParm || ' Options4Component=' || Quoted(@@CompOpt);
+   end
+   if  '{$Access=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Access={$Access $$AQ}'
+   if  '{$Attributes=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Attributes={$Attributes $$AQ}'
+   if  '{$CopyAttributes=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' CopyAttributes={$CopyAttributes $$AQ}'
+   if  '{$KeyCase=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' KeyCase={$KeyCase $$AQ}'
+   if  '{$Hash=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Hash={$Hash $$AQ}'
+   if  '{$SelfReg=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' SelfReg={$SelfReg $$AQ}'
+   if  '{$Doco=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Doco={$Doco $$AQ}'
+   if  '{$Date=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Date={$Date $$AQ}'
+   if  '{$Time=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Time={$Time $$AQ}'
+   if  '{$Cabinet=^^ $$IsPassed}' = 'Y' then
+       @@FileParm = @@FileParm || ' Cabinet={$Cabinet $$AQ}'
+
+   ;--- Processing Subdirectories? ------------------------------------------
+   @@TreeMode = translate('{$SubDir=^^}');
+   if  @@TreeMode = '' then
+       @@SubDir = 'N';
+   else
+   do
+       ;--- We will process subdirectories, how? ----------------------------
+       @@SubDir = 'Y';
+       if  pos('|' || @@TreeMode || '|', '|FLAT|TREE|') = 0 then
+           error('There is no subdirectory processing mode of  "' || @@TreeMode || '"!');
+       if  @@Component <> '' then
+       do
+           ;--- User not allowing automatic creation of components ----------
+           if  @@TreeMode = 'TREE' then
+               error('You are trying to add files for multiple directories to a', 'single component ("' || @@Component || '").', '', 'Either allow the "files" command to automaticlly create components', 'or remove the "TREE" value!');
+       end;
+   end;
+
+   ;--- Processing Exclude list? --------------------------------------------
+   @@ExName = '{$EXLIST=^^}';
+   if   @@ExName = '' then
+        @@ExHandle4Files = '';          ;;No exclude list!
+   else
+   do
+        <$List.Rexx.GetHandle HandleVar="@@ExHandle4Files" CategoryVar="RxExListCategory" NameVar="@@ExName">;
+   end;
+
+   ;--- Load stem with complete list of source files ------------------------
+   @@MaskList    = @@Masks;                 ;;Keep for error message
+   @@VbsCnt      = 0;
+   @@SrcFilesCnt = 0;
+   @@SrcDir      = '';
+   @@SrcDirFull  = ''
+   do  until @@Masks = ''
+       ;--- Split of next mask ----------------------------------------------
+       parse var @@Masks @@Mask ';' @@Masks;
+                         @@Mask = strip(@@Mask);
+       if   @@Mask = '' then
+            iterate;
+
+       ;--- The mask must not be a directory! -------------------------------
+       if   right(@@Mask,1) = '\' | DirQueryExists(@@Mask) <> '' then
+            error('Expected a file mask but got the directory:',, '    ' || @@Mask);
+
+       ;--- Remove any drive/path (make sure dir exists) --------------------
+       @@MaskDir  = FilePart('S', @@Mask);
+       @@MaskName = FilePart('N', @@Mask);
+       if  @@MaskDir = '' then
+       do
+           ;--- No mask directory, use previous if available ----------------
+           if  @@SrcDir = '' then
+               @@MaskDir = '.'         ;;Don't have previous, use current dir
+           else
+               @@MaskDir = @@SrcDir    ;;Don't have previous, use current dir
+       end;
+       @@FullMaskDir = DirQueryExists(@@MaskDir);
+       if  @@FullMaskDir = '' then
+           error('Could not find the directory "' || @@MaskDir || '"!');
+
+       ;--- Now handle this directory ---------------------------------------
+       if  @@SrcDir = '' then
+       do
+           @@SrcDir     = @@MaskDir;
+           @@SrcDirFull = @@FullMaskDir;     ;;Needed for TREE mode
+       end;
+       else
+       do
+           ;--- Not the first time ------------------------------------------
+           if  translate(@@SrcDirFull) <> translate(@@FullMaskDir) then
+           do
+               ;--- OK, unless in "TREE" mode -------------------------------
+               if  @@TreeMode = 'TREE' then
+                   error('All file masks must refer to the same directory when in "TREE" mode!', 'Failed on mask "' || @@Mask || '"');
+           end;
+       end;
+
+       ;--- Now get list of files matching this mask ------------------------
+       @@Mask = @@MaskDir  || '\' || @@MaskName;
+       @@Files.0 = 0;
+       call Files4Mask @@Mask, "@@Files", @@SubDir;
+       if  @@Files.0 = 0 then
+       do
+           ;--- No files found, is this alright? ----------------------------
+           if  '{$NoneOk=^<$DEFAULT_FILES_NO_MATCHES_OK>^}' <> 'Y' then
+               error('No files matched the include mask "' || @@Mask || '"!');
+       end;
+       else
+       do
+           ;--- Add to source file array ------------------------------------
+           do  @@Index = 1 to @@Files.0
+               ;--- Move the file -------------------------------------------
+               @@SrcFilesCnt            = @@SrcFilesCnt + 1;
+               @@SrcFiles.@@SrcFilesCnt = @@Files.@@Index;
+           end;
+       end;
+   end;
+   @@SrcFiles.0 = @@SrcFilesCnt;
+
+   ;--- The user might wish a specific file to be the "KeyPath" -------------
+   @@KeyFile = translate('{$KeyFile=^^}');
+   if  @@KeyFile <> '' then
+   do
+       ;--- Only valid if adding to a single component! ---------------------
+       if  @@Component = '' then
+           error('You can only specify a keyfile if adding to a single component!');
+   end;
+
+   ;--- Process each source file --------------------------------------------
+   do  @@Index = 1 to @@SrcFiles.0
+       ;--- Have exclude list? ----------------------------------------------
+       if  @@ExHandle4Files <> '' then
+       do
+           ;--- We have a list, see if file in it! --------------------------
+           @@Look4 = translate(@@SrcFiles.@@Index);
+           <$List.Rexx.IsInListGivenHandle HandleVar=^@@ExHandle4Files^ AnswerVar=^@@IsExcluded^ ItemVar="@@Look4">;
+           if  @@IsExcluded = 'Y' then
+               iterate;                    ;;This file is not wanted!
+
+           ;--- Add this file to the exclude list ---------------------------
+           <$List.Rexx.AddToListGivenHandle HandleVar=^@@ExHandle4Files^ ItemVar="@@Look4">;
+       end;
+
+       ;--- Get full filename (does user wish SHORTNAME in constant case?) --
+       @@SrcFileFull = @@SrcFiles.@@Index;
+
+       ;--- Want subdir files placed in subdirs? ----------------------------
+       if  @@TreeMode <> 'TREE' then
+           @@RelName = FilePart('name', @@SrcFileFull);  ;;FLAT (drop subdirectory bit)
+       else
+           @@RelName = substr(@@SrcFileFull, length(@@SrcDirFull)+1+1);
+
+       ;--- Got a keypath to setup? -----------------------------------------
+       @@V       = '';
+       @@KeyPath = "";
+       if  @@KeyFile <> '' then
+       do
+           ;--- "*" means use ANY file (so use first found) -----------------
+           if  @@KeyFile = '*' then
+               @@KeyFile = translate(@@RelName);   ;;Use this file
+
+           ;--- Does this file match the keypath? ---------------------------
+           if  @@KeyFile = translate(@@RelName) then
+           do
+               ;--- We have found the component's keypath -------------------
+               @@KeyPath = 'KeyPath=^Y^ ';
+               @@KeyFile = '';             ;;Don't look any more!
+           end;
+       end;
+
+       ;--- What will the destination be? -----------------------------------
+       @@DestDir  = '{$DestDir=^^}';
+       if  @@Component <> '' then
+       do
+           ;--- Adding to a specific component ------------------------------
+           @@DestParm = '';
+
+           ;--- No make sure a destination directory wasn't specified! ------
+           if  @@DestDir <> '' then
+               <$RxDieAsDestinationDirNotRequiredForFileCmd DestDirExp="@@DestDir" ComponentExp="@@Component">;
+       end;
+       else
+       do
+           ;--- Creating components, we must know the destination directory ---
+           if  @@DestDir = '' then
+               error('To be able to create components we need to be passed the directory (in the "DESTDIR" parameter)');
+           if  pos('\', @@DestDir) = 0 then
+           do
+                ;--- No '\' so assume dir key or property -------------------
+                if  left(@@DestDir, 1) <> '[' then
+                    @@DestDir = '[' || @@DestDir || ']';
+           end;
+
+           ;--- Be careful about "c:\" etc ----------------------------------
+           if   right(@@DestDir, 1) = '\' then
+                @@DestDir = left(@@DestDir, length(@@DestDir)-1);
+
+           ;--- Set up the "FILE" parameter ---------------------------------
+           @@DestParm = 'Destination=' || Quoted(@@DestDir || '\' || @@RelName) || ' ';
+       end;
+
+       ;--- We will use the "File" macro to generate the VBS ----------------
+       @@V =        '<' || '$File '
+       @@V = @@V || '       Source="' || @@SrcFileFull || '" '
+       @@V = @@V || '       Remove=^{$Remove="<$DEFAULT_FILES_REMOVE>"}^ '
+       @@V = @@V || @@DestParm
+       @@V = @@V || @@KeyPath
+       @@V = @@V || @@FileParm
+       @@V = @@V || '><?NewLine>'
+
+       ;--- Add entry to array ----------------------------------------------
+       @@VbsCnt       = @@VbsCnt + 1
+       @@vbs.@@VbsCnt = @@V
+   end;
+
+   ;--- We must not still have a keyfile to apply ---------------------------
+   if  @@KeyFile <> '' then
+       error('Did not find the KeyFile "{$KeyFile}"', 'Checks masks "' || @@MaskList || '"');
+#DefineRexx
+
+
+
+#NextId UNLOCK "FILES.MMH"
+
+
+

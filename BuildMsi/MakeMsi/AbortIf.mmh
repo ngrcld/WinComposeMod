@@ -1,0 +1,124 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ABORTIF.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.14  $
+;          $Date:   20 Feb 2010 18:12:42  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/AbortIf.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "ABORTIF.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_ABORTIF_SEQTABLE          InstallExecuteSequence
+#define? DEFAULT_ABORTIF_SEQ               ValidateProductID-
+#define? ABORTIF_PREFIX                    AbortIfCa
+#define? ABORTIFCA_DEFAULT_TYPE_ATTRIBUTES
+
+
+#RexxVar @@AbortifKeyCnt       = 0
+#( '<?NewLine>'
+   #define AbortIf
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Just a LaunchCondition? ---------------------------------------------
+   #if ['{$Seq=^^ $$IsPassed}' = 'N']
+       ;--- Just add as a launch condition ----------------------------------
+       <$Table "LaunchCondition">
+       #(
+           <$Row
+                 Condition=^not ({$Condition})^ ;;Invert condition (to fail if false)
+               Description=^{$Message}^         ;;Error Message
+           >
+       #)
+       <$/Table>
+   #elseif
+       ;--- Setup as a scheduled custom action, perform initialization ------
+       #evaluate ^^ ^<$@@Rexx4AbortIfWithSequence {$?ResetUsed}{$?}>^
+
+       ;--- Create the custom entry -----------------------------------------
+       <$Table "CustomAction">
+           #if [@@TypeEx = '']
+               #(
+                   <$Row
+                       Action="<??@@Key>"
+                        *Type="<??@@Type>"
+                       Target=^{$Message}^     ;;Error Message
+                   >
+               #)
+           #elseif
+               #(
+                   <$Row
+                       Action="<??@@Key>"
+                        *Type="<??@@Type>"
+                *ExtendedType="<??@@TypeEx>"
+                       Target=^{$Message}^     ;;Error Message
+                   >
+               #)
+           #endif
+       <$/Table>
+
+       ;--- Invoke the custom action ----------------------------------------
+       #if  [@@SeqTables = '']
+            #error ^No sequence tables were specified!^
+       #endif
+       #{ SET "SeqTable={ }<??@@SeqTables>"
+           ;--- Install in the specified table ------------------------------
+           SeqNo = <$@@SeqExpression "<??SET_SeqTable>"> ;;Set the VBS variable "SeqNo"
+           <$TABLE "<??SET_SeqTable>">
+           #(
+               <$Row
+                      Action=`<??@@Key>`             ;;CA Key
+                   Condition=`{$Condition}`          ;;Execute under what condition?
+                   *Sequence="SeqNo"                 ;;Set up property when?
+               >
+           #)
+           <$/TABLE>
+       #}
+   #endif
+#)
+
+#DefineRexx '@@Rexx4AbortIfWithSequence' NoPack
+   ;--- Get space separated list of table names --------------------------------
+   @@SeqTables = '{$SeqTable=^<$DEFAULT_ABORTIF_SEQTABLE>^}';
+   <$Rexx2ConvertDelimitersToSpaces RxVar="@@SeqTables">
+
+   ;--- Work out the key ----------------------------------------------------
+   @@Key = '{$Key=''}'
+   if   @@Key = '' then
+   do
+       @@AbortifKeyCnt = @@AbortifKeyCnt + 1;
+       if  @@AbortifKeyCnt <= 99 then
+           @@Key = '<$ABORTIF_PREFIX>' || right(@@AbortifKeyCnt, 3, '0');
+       else
+           @@Key = '<$ABORTIF_PREFIX>' || @@AbortifKeyCnt;
+   end;
+
+   ;--- What sequence number ------------------------------------------------
+   @@Seq = '{$Seq=^^}';
+   if   @@Seq = '' then
+        @@Seq = '<$DEFAULT_ABORTIF_SEQ>';
+   <$SeqNumberRexx2CreateSequenceNumberExpression SEQ="@@Seq" Macro="@@SeqExpression" Number="1">;
+
+   ;--- What type? ----------------------------------------------------------
+   @@Attributes     = '<$CATYPE_DISPLAY_ERROR_AND_ABORT>';
+   @@TypeAttributes = 'IMMEDIATE <$ABORTIFCA_DEFAULT_TYPE_ATTRIBUTES> {$Type=^^}';
+   <$CaType.Rexx2ProcessCaAttributes {$?} TypeVar=^@@Type^ TypeExVar=^@@TypeEx^ AttributeVar=^@@Attributes^ TypeAttributesVar=^@@TypeAttributes^>
+#DefineRexx
+
+
+#NextId UNLOCK "ABORTIF.MMH"
+
+

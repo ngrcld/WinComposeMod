@@ -10,7 +10,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>WinCompose</RootNamespace>
     <AssemblyName>WinCompose</AssemblyName>
-    <TargetName>wincompose</TargetName>
+    <TargetName>WinCompose</TargetName>
     <StartupObject>WinCompose.Program</StartupObject>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>

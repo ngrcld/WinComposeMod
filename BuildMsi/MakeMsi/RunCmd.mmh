@@ -1,0 +1,294 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   RUNCMD.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.14  $
+;          $Date:   24 Mar 2015 18:35:26  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/RunCmd.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "RUNCMD.MMH"
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4Doco-RunCmd]---
+#define? DEFAULT_RUNCMD_COMMAND
+#define? DEFAULT_RUNCMD_KEEPINDENT      Y
+#define? DEFAULT_RUNCMD_NEXTID          Y          ;;"@@" etc will be converted
+#define? RUNCMD_CAD_SYMBOL_START        (*         ;;(*CadSymbolName*)
+#define? RUNCMD_CAD_SYMBOL_END          *)         ;;(*CadSymbolName*)
+#define? RUNCMD_FROM_SOURCE_FILE \
+         <$SourceFile FileName="{$FileName}" Html="Y"> ;;Add to HTML report
+#define? RUNCMD_SEQUENCE_NUMBER         DuplicateFiles-InstallFinalize
+;---[4Doco-RunCmd]---
+
+
+;----------------------------------------------------------------------------
+;--- Set up some SQL aliases ------------------------------------------------
+;----------------------------------------------------------------------------
+;;;---[SqlAlias-UsedInDoco]---
+#define Sql  <$RunCmd  {$?} ALIAS="SQL">
+#define /Sql <$/RunCmd {$?} ALIAS="/SQL">
+;;;---[SqlAlias-UsedInDoco]---
+
+;----------------------------------------------------------------------------
+;--- Indicates the start of a VBS custom action Script ----------------------
+;----------------------------------------------------------------------------
+#RexxVar @@RUNCMDNesting = 0
+#RexxVar @@RunCmd     = ''
+#RexxVar @@RunCmdCount   = 0
+#RexxVar @@Binary     = ""
+#( '<?NewLine>'
+   ;--- Define macro to create VBS and add it to the binary table -----------
+   #define RunCmd
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Nesting validation --------------------------------------------------
+   #PUSH "RUNCMD"
+   #RexxVar @@RUNCMDNesting + 1
+   #if [@@RUNCMDNesting <> 1]
+       #error ^You can't nest the "{$Alias=^RUNCMD^}" macro!^
+   #endif
+
+   ;--- Do stuff... ---------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4RUNCMD {$?ResetUsed}{$?}>^
+   #if [@@TypeEx <> '']
+       #error ^'ExtendedType' attributes not yet supported on this command. Let me know if you have a good reason...^
+   #endif
+
+   ;--- Start the VBSCRIPT --------------------------------------------------
+   <$VbsCa Binary="<??@@BinaryKey>" DATA="<??@@Data>">
+   <?NewLine><?NewLine>
+   #if [@@SnailFileMode = 'Y']
+       #define+ @@ContentsVar  SnailFileLines
+   #elseif
+       #define+ @@ContentsVar  ExtraCmdLineParms
+   #endif
+
+   dim <$@@ContentsVar> : <$@@ContentsVar> = ""
+   '********************************
+   '*** START USER SUPPLIED FILE ***
+   '********************************
+   #if [@@Nextid = 'N']
+       #NextId PUSH
+       #NextId OFF
+   #endif
+   #option PUSH LeaveBlankLines=ON <??@@OptionKeepIndent>
+   #RexxVar   @@BlankVbs = ''
+   #( ''
+       #if ['{$File=^^}' = '']
+           ;--- No file to process ------------------------------------------
+           #transform @@RUNCMD_TRANSFORM    ;;Need to do this in any case
+       #elseif
+           ;--- Add the RUNCMD file to HTML report by default ---------------
+           <$RUNCMD_FROM_SOURCE_FILE FileName=^{$File=^^}^>
+
+           ;--- Include the file and end the "block" ------------------------
+           #transform @@RUNCMD_TRANSFORM
+           #include "{$File=^^}"
+           <$/RunCmd>
+       #endif
+   #)
+
+   ;--- Validate ------------------------------------------------------------
+   {$!:COMMAND,FILE,@,CONDITION,SEQ,KEEPINDENT,DATA,TYPE,RC0,SYNC,ROLLBACK,COMMIT,DEFERRED,IMPERSONATE,ALIAS,NEXTID,RcOk}
+#)
+#DefineRexx '@@Rexx4RUNCMD' NoPack
+   ;--- Keep Count and Create Binary Key ------------------------------------
+   @@RunCmdCount  = @@RunCmdCount + 1;
+   @@AliasS       = '{$Alias=^RUNCMD^}';
+   @@BinaryKey    = @@AliasS || @@RunCmdCount || '.vbs';
+   @@SnailFileMode = translate('{$@='Y'}');
+
+   ;--- Any Custom Action Data? ---------------------------------------------
+   @@Data = "{$Data=^^}"
+
+   ;--- User provided sequence info? ----------------------------------------
+   @@Seq = '{$Seq=^<$RUNCMD_SEQUENCE_NUMBER>^}';
+
+   ;--- Work out the Custom Action Type -------------------------------------
+   @@Attributes  = '<$CATYPE_VBSCRIPT_IN_BINARY_TABLE>'
+   @@TypeAttributes = '{$Type=^^}';
+   <$CaType.Rexx2ProcessCaAttributes {$?} TypeVar=^@@Type^ TypeExVar=^@@TypeEx^ AttributeVar=^@@Attributes^ TypeAttributesVar=^@@TypeAttributes^>
+   @@Type = '+0x' || substr(@@Type, 3);      ;;Convert "&H????" to "+0x????"
+   @@Type = '-0xFFFFFF ' || @@Type;          ;;Reset all existing bits
+
+   ;--- "apply" under what conditions? --------------------------------------
+   {$Condition=^<$CONDITION_INSTALL_ONLY>^ $$RxVar:@@Condition}
+
+   ;--- Want nextid codes changed in file text? -----------------------------
+   @@Nextid = '{$NextId=^<$DEFAULT_RUNCMD_NEXTID>^ $$upper}';
+
+   ;--- What is a successful return code? -----------------------------------
+   {$RcOk=^?=0^ $$RxVar:@@RcOkBefore}
+   if   @@RcOkBefore = "" then
+        @@RcOk = ""
+   else
+   do
+       ;--- Allow integer or expression -------------------------------------
+       if   datatype(@@RcOkBefore, 'W') = 1 then
+            @@RcOk = "RunCmdRc = " || @@RcOkBefore     ;;User supplied OK return code
+       else
+       do
+           ;--- Replace "?" with the relevant VBS variable ------------------
+           @@RcOk = ReplaceString(@@RcOkBefore, "?", "RunCmdRc");
+           if   @@RcOk = @@RcOkBefore then
+                error('The "RcOk" parameter should supply an integer or include "?" to represent the', 'return code in an VB expression which indicates success.');
+       end;
+   end;
+
+   ;--- Remember the command to be executed ---------------------------------
+   {$Command=^<$DEFAULT_RUNCMD_COMMAND>^ $$RxVar:@@RunCmd}
+   if  @@RunCmd  = '' then
+       error('The {$Alias} "command" parameter was not supplied!');
+   @@RunCmd = ReplaceString(@@RunCmd, '"', '""');
+
+   ;--- User want to remove/keep indent? ------------------------------------
+   if  translate('{$KeepIndent="<$DEFAULT_RUNCMD_KEEPINDENT>"}') = 'N' then
+       @@OptionKeepIndent='';
+   else
+       @@OptionKeepIndent='KeepIndent=ON';
+#DefineRexx
+#DefineRexx '@@RUNCMD_TRANSFORM'        ;;Output VBSCRIPT line(s)
+   if pos('00'x, FileLine) <> 0 then
+      error('The {$Alias} "command" doesn''t support Unicode files!');
+   if   FileLine = "" & @@SnailFileMode <> 'Y' then
+        FileLine = "";          ;;No need for "" on command line!
+   else
+   do
+        ;--- Blank lines may be significant in the file... ------------------
+        FileLine = ReplaceString(FileLine, '"', '""')
+        FileLine = 'AddParmOrFileLine4RunCmd(' || '"' || FileLine || '")'
+   end;
+#DefineRexx
+
+
+
+
+;----------------------------------------------------------------------------
+;--- End VBS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Define macro to create VBS and add it to the binary table -----------
+   #define /RUNCMD
+
+   ;--- Nesting validation --------------------------------------------------
+   #RexxVar @@RUNCMDNesting - 1
+   #if [@@RUNCMDNesting <> 0]
+       #error ^The /{$Alias=^RUNCMD^} command used outside of an {$Alias} block!^
+   #endif
+   #POP "RUNCMD"
+
+   ;--- End VBS -------------------------------------------------------------
+   #transform
+   #option POP
+   #if [@@Nextid = 'N']
+       #NextId POP
+   #endif
+   <?NewLine>               ;;Needs to be here!!!
+   '******************************
+   '*** END USER SUPPLIED FILE ***
+   '******************************
+   <?NewLine>
+   <$VbsCaEntry "Execute<??@@AliasS>">
+       ;--- Get Command line ------------------------------------------------
+       dim TheCmd : TheCmd = "<??@@RunCmd>"
+       CaDebug 0, "Initial command line is : " & TheCmd
+
+       ;--- Do what with file details? --------------------------------------
+       #if [@@SnailFileMode = 'Y']
+           ;--- Create a Temporary file for the RUNCMD ----------------------
+           CaDebug 0, "Need to create a temporary file..."
+           dim oFS       : set oFS   = CreateObject("Scripting.FileSystemObject")
+           dim TmpFile   : TmpFile   = oFS.GetSpecialFolder(TemporaryFolder) & "\TMP_<??@@RunCmdCount>.<??@@AliasS>"
+           dim RunCmdStream : set RunCmdStream = oFs.CreateTextFile(TmpFile, true)
+           RunCmdStream.writeline VbsCaCadReplace(<$@@ContentsVar>, "<$RUNCMD_CAD_SYMBOL_START>", "<$RUNCMD_CAD_SYMBOL_END>")
+           RunCmdStream.close()
+       #elseif
+           ;--- Add supplied switches to the end of the command line --------
+           CaDebug 0, "Need to add to the command line..."
+           if   <$@@ContentsVar> <> "" then
+                TheCmd = TheCmd & " " & <$@@ContentsVar>
+           end if
+       #endif
+
+       ;--- Replace any properties in the command line ----------------------
+       TheCmd = VbsCaCadReplace(TheCmd, "<$RUNCMD_CAD_SYMBOL_START>", "<$RUNCMD_CAD_SYMBOL_END>")
+       CaDebug 0, "New command line is : " & TheCmd
+
+       ;--- Execute the RUNCMD command -----------------------------------------
+       #if [@@SnailFileMode = 'Y']
+           ;--- Adjust the reference to the Temporary file for the RUNCMD ---
+           CaDebug 0, "There must be a ""{?}"" symbol to replace..."
+           dim NewCmd : NewCmd = replace(TheCmd, "{?}", TmpFile)
+           if  NewCmd = TheCmd then
+               ;--- "{?}" must be specified in the command ----------------------
+               VbsCaRaiseError "<??@@BinaryKey> - Execute<??@@AliasS>()", "The <??@@AliasS> command does not refer to ""{?}"" (the file)!"
+           end if
+           TheCmd = NewCmd
+           CaDebug 0, "New command line is : " & TheCmd
+       #endif
+       CaDebug 0, "Executing the command..."
+       dim RunCmdRc : RunCmdRc = VbsCaRunSync(TheCmd, 0, "")
+
+       ;--- Delete the temporary file ---------------------------------------
+       #if  [@@SnailFileMode = 'Y']
+            oFS.DeleteFile TmpFile
+       #endif
+
+       ;--- Raise an error if the RUNCMD command failed ------------------------
+       #if  [@@RcOk = '']          ;;Blank means don't check
+            CaDebug 0, "We have been configured not to care about the return code..."
+       #elseif
+            ;--- We want to check the return code ---------------------------
+            CaDebug 0, "We are checking the return code (we have been configured to care)..."
+            if  not <??@@RcOk> then
+                VbsCaRaiseError "<??@@BinaryKey> - ApplyRunCmd()", "{$Alias} command failed with return code " & RunCmdRc
+            end if
+            CaDebug 0, "Return code was OK..."
+       #endif
+       CaDebug 0, "All done..."
+   <$/VbsCaEntry>
+
+
+   ;============================================================================
+   sub AddParmOrFileLine4RunCmd(ByVal Line)
+   ;============================================================================
+        #if [@@SnailFileMode = 'Y']
+            ;--- File contents ----------------------------------------------
+            <$@@ContentsVar> = <$@@ContentsVar> & Line & vbCRLF
+        #else
+            ;--- Command line parameters ------------------------------------
+            Line = trim(Line)
+            if  Line <> "" then
+                ;--- Make sure we seperate with spaces ----------------------
+                if  <$@@ContentsVar> <> "" then
+                    <$@@ContentsVar> = <$@@ContentsVar> & " "
+                end if
+
+                ;--- Add this parameter -------------------------------------
+                <$@@ContentsVar> = <$@@ContentsVar> & Line    ;;Actually command line parameters...
+            end if
+        #endif
+   end sub
+   <$/VbsCa>
+
+   ;--- Set up the VBS ------------------------------------------------------
+   <$VbsCaSetup Binary="<??@@BinaryKey>" Entry="Execute<??@@AliasS>" Seq="<??@@Seq>" CONDITION=^<??@@Condition>^ TYPE=^<??@@Type>^ DATA="<??@@Data>">
+
+   ;--- Check parameter usage -----------------------------------------------
+   {$!}
+#)
+
+
+#NextId UNLOCK "RUNCMD.MMH"
+
+

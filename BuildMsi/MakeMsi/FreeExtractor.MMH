@@ -1,0 +1,229 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FreeExtractor.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   15 Sep 2007 18:31:14  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/FreeExtractor.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+; This headet is NOT automatically included by MAKEMSI however you can
+; #include it yourself to indicate that you want to build an EXE from
+; the generated MSI using the open source tool "FreeExtractor", available
+; from "http://www.disoriented.com/FreeExtractor/".
+;
+; You also need to put the "MakeSFX.EXE" tool into a directory where MAKEMSI
+; can find it (such as a directory in the "PATH"). The download I tested with
+; was:
+;       MakeSFX.exe - Optional Command Line Version, v1.44 (30 kb)
+;
+; The tool creates an EXE from a ZIP file and then launches a program/file,
+; a limitation in this tool means that the MSI needs to be launched from a
+; batch file and this will briefly flash up a "black window".
+;
+; All options are set via macros prior to the inclusion of this header file.
+;
+; One reason for using this is that the generated product can be significantly
+; smaller (TryMe.MSI of 152K versus TryMe.EXE of 83K) and also that it may
+; be bundling many files (this not yet supported).
+;
+; No command line switches are supported, it is simply a matter of letting
+; the install start and copying the extracted files elsewhere.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "FreeExtractor.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Constants --------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define VERSION_FREEEXTRACTOR                07.251
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? EXE_FULL_EXE_NAME                              <$MSI_MSINAME $$FilePart:withoutextn>.EXE         ;;Name and location of EXE being created
+#define? EXE_ICON                                                                                         ;;If non-blank name of 2,238 byte, 32x32, 256 color icon
+#define? EXE_BUILD_WHICH_HOOK                           ONEXIT_AFTER_MSI_BUILT_AND_VALIDATED              ;;When will we create the EXE?
+#define? EXE_MAKESFX.EXE_EXTRACT_PATH_ROOT              %Temp%                                            ;;Relative paths are relative to the runtime EXE dir
+#define? EXE_MAKESFX.EXE_EXTRACT_PATH_REL2ROOT          MSI2EXE\<$ProdInfo.ProductName>\<$ProductVersion> ;;Try to prevent possible overlap!!!
+#define? EXE_MAKESFX.EXE_EXTRACT_PATH_KNOWN_BUGGY_CHARS ()                                                ;;Cause EXE to fail to successfully start lancher
+#define? EXE_TMP_DIR                                    <$MAKEMSI_OTHER_DIR>\MAKESFX.EXE                  ;;Want "working"  or "intermediate" files to go here
+#define? EXE_INSTALL_LAUNCHER_NAME                      INSTALL.BAT                                       ;;Name of the launcher we need to overomelimitations in "FreeExtractor"
+#define? EXE_EXTRA_FILES                                                                                  ;;List of zero or more files (delimitered by ";" etc)
+#define? EXE_ZIPOPTIONS                                 -8 -o -j                                          ;;Zip options
+#define? EXE_STORE                                      .zip;.cab                                         ;;Already compressed and/or time consuming (-9 must not be used or this will have no effect)
+#( '<?NewLine>'
+    #define EXE_LAUNCHER_FILE_CONTENTS
+
+    ;--- Just invoke msi and exit -------------------------------------------
+    @cls
+    @start "" "<$MSI_MSINAME $$FilePart:NAME>"
+    @exit
+#)
+#if ['<$EXE_ICON $$ISBlank>' = 'Y']
+    #define @@EXE_MAKESFX.EXE_SWITCHES_EXEICON       ;;Do nothing (use default icon)
+#elseif
+    #define @@EXE_MAKESFX.EXE_SWITCHES_EXEICON       /ICON="<$EXE_ICON>"
+#endif
+#( ' '
+    #define? EXE_MAKESFX.EXE_SWITCHES_MAIN
+
+    /zip="<$EXE_FULL_ZIPFILE_NAME>"                          ;;Name of ZIP containing files
+    /SFX="<$EXE_FULL_EXE_NAME>"                              ;;Name of EXE to build
+    /EXEC="$targetdir$\<$EXE_INSTALL_LAUNCHER_NAME>"         ;;What 'launcher" does the EXE execute?
+    /defaultpath="<??@@EXE_MAKESFX.EXE_EXTRACT_PATH>"        ;;MakeSFX.EXE bug(s) restrict allowable character set
+#)
+#( ' '
+    #define? EXE_MAKESFX.EXE_SWITCHES_GUI
+
+    /autoextract                                            ;;Automatically extract the imbedded (and zipped) files (/NoGui must also be used)
+    /nogui                                                  ;;No GUI presented to users
+    /overwrite                                              ;;Ovrwrite any files at the "defaultpath" location
+#)
+#( ' '
+    #define? EXE_MAKESFX.EXE_SWITCHES_DEBUG
+
+   ;/openexplorerwindow                                     ;;Open explorer at extracted location
+#)
+#define? EXE_FULL_ZIPFILE_NAME            <$EXE_TMP_DIR>\ExeContents.zip
+#define? EXE_FULL_LAUNCHER_NAME           <$EXE_TMP_DIR>\<$EXE_INSTALL_LAUNCHER_NAME>
+#define? EXE_FULL_MAKESFX.EXE_OUTPUT_NAME <$EXE_TMP_DIR>\BuildExe.txt
+#define? EXE_MESSAGE_INITIALIZATION       Scheduling EXE build using FreeExtractor (version <$VERSION_FREEEXTRACTOR>)
+#define? EXE_MESSAGE_STARTING             Building EXE from generated MSI (using FreeExtractor)
+#define? EXE_MESSAGE_CREATING_ZIP         Creating the ZIP for imbedding in the EXE
+#define? EXE_MESSAGE_CREATING_EXE         Now creating EXE from the zip
+#define? EXE_MESSAGE_ENDING               EXE successfully generated.
+
+
+;----------------------------------------------------------------------------
+;--- INITIALIZATION (scheduling etc) ----------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx ''
+    ;--- Remove any preexisting EXE from a previous build -------------------
+    call FileDelete '<$EXE_FULL_EXE_NAME>';
+#DefineRexx
+#define @@FreeExtractorExe  MakeSfx.exe
+<$GetFullBuildTimeFileName RcVar="@@FullMakeSfxExeName" Macro="EXE_MAKESFX.EXE" File="<$@@FreeExtractorExe>" MustExist="N">
+#if [@@FullMakeSfxExeName = '']
+    ;--- Report error -------------------------------------------------------
+    #error ^Could not find "<$@@FreeExtractorExe>"!{NL}Please download from "http://www.disoriented.com/FreeExtractor/"^
+#endif
+#(
+    ;--- Code we wish to execute early in build (but after logging locations known) ---
+    #define @@BuildExe
+
+    ;--- Intro --------------------------------------------------------------
+    #if ['<$EXE_MESSAGE_STARTING $$ISBLANK>' = 'N']
+        #info ^<$EXE_MESSAGE_STARTING>^
+    #endif
+
+    ;--- Build the launcher -------------------------------------------------
+    #output "<$EXE_FULL_LAUNCHER_NAME>" ASIS
+            <$EXE_LAUNCHER_FILE_CONTENTS>
+    #output
+
+    ;--- Build the zip file which will be imbedded in the EXE ---------------
+    #evaluate ^^ ^<$@@BuildZipForExe>^
+
+    ;--- Now Build the EXE --------------------------------------------------
+    #evaluate ^^ ^<$@@MakeExtractPathSafeFromMakeSfxExeBug>^
+    #evaluate ^^ ^<$@@BuildExeFromZip>^
+
+        #if ['<$EXE_MESSAGE_ENDING $$ISBLANK>' = 'N']
+        #info ^<$EXE_MESSAGE_ENDING>^
+    #endif
+
+#)
+#if ['<$EXE_MESSAGE_INITIALIZATION $$ISBLANK>' = 'N']
+    #info ^<$EXE_MESSAGE_INITIALIZATION>^
+#endif
+<$HookInto "<$EXE_BUILD_WHICH_HOOK>" Before="@@BuildExe">
+
+
+;----------------------------------------------------------------------------
+;--- Working Macros ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx '@@BuildZipForExe'
+    @@ZipDir = '<$EXE_TMP_DIR>';
+    call MakeDirectoryTree @@ZipDir;
+    @@TmpZipFile = '<$EXE_FULL_ZIPFILE_NAME>'
+    @@Sample.1 = '<$EXE_TMP_DIR>\<$EXE_INSTALL_LAUNCHER_NAME>';
+    @@Sample.2 = '<$MSI_MSINAME>';
+    @@Cnt      = 2;
+    @@SemiDelListOrig = '<$EXE_EXTRA_FILES>';
+    <$Rexx2ConvertDelimiters RxVar="@@SemiDelListOrig" ToDelChar=";">
+    @@SemiDelList = @@SemiDelListOrig;
+    do  while @@SemiDelList <> ''
+        ;--- Get next file ignore "empty" files -----------------------------
+        parse var @@SemiDelList @@OneFile ';' @@SemiDelList;
+        @@OneFile = strip(@@OneFile);                                  ;;Remove any leading or trailing spaces (if required user should double quote)
+        if  @@OneFile <> '' then
+        do
+            ;--- Allow value to be quoted (allows for spaces etc) -----------
+            if  left(@@OneFile, 1) = '"' then
+               @@OneFile = substr(@@OneFile, 2, length(@@OneFile)-2);  ;;Remove leading and trailing double quotes.
+
+            ;--- Now lets check file existance here (will be checked later but better error message possible here!) ---
+            if  FileQueryExists(@@OneFile) = '' then
+            do
+            #(
+                call error 'The file "' || @@OneFile || '" doesn''t exist!'
+                          ,
+                          ,'This "extra" file was specified by the "EXE_EXTRA_FILES" macro which contained:'
+                          ,
+                          ,@@SemiDelListOrig
+            #)
+            end;
+
+            ;--- File exists so add to the list -----------------------------
+            @@Cnt          = @@Cnt + 1;
+            @@Sample.@@Cnt = @@OneFile;
+        end;
+    end;
+    @@Sample.0 = @@Cnt;
+    <$RexxZipUpFiles List="@@Sample" ZipFileExp=^@@TmpZipFile^ InfoMsgExp=^'<$EXE_MESSAGE_CREATING_ZIP>'^ ZipOptions=^<$EXE_ZIPOPTIONS>^ Store=^<$EXE_STORE>^>
+#DefineRexx
+#DefineRexx '@@MakeExtractPathSafeFromMakeSfxExeBug'
+    @@RelPath  = '<$EXE_MAKESFX.EXE_EXTRACT_PATH_REL2ROOT>';
+    @@BadChars = '<$EXE_MAKESFX.EXE_EXTRACT_PATH_KNOWN_BUGGY_CHARS>';
+    @@RelPath  = translate(@@RelPath,, @@BadChars, '_');
+    @@EXE_MAKESFX.EXE_EXTRACT_PATH = '<$EXE_MAKESFX.EXE_EXTRACT_PATH_ROOT $$DEL:\>' || @@RelPath;
+#DefineRexx
+#DefineRexx '@@BuildExeFromZip'
+    @@Msg = '<$EXE_MESSAGE_CREATING_EXE>';
+    if  @@Msg <> '' then
+        call Info @@Msg;
+    @@Exe    = '<$EXE_FULL_EXE_NAME>';
+    @@Output = '<$EXE_FULL_MAKESFX.EXE_OUTPUT_NAME>';
+    call FileDelete @@Exe;
+    @@Cmd = '"<??@@FullMakeSfxExeName>" <$EXE_MAKESFX.EXE_SWITCHES_MAIN><$@@EXE_MAKESFX.EXE_SWITCHES_EXEICON $$SPCPLUS><$EXE_MAKESFX.EXE_SWITCHES_GUI $$SPCPLUS><$EXE_MAKESFX.EXE_SWITCHES_DEBUG $$SPCPLUS>';
+    call FileDelete @@Output;
+    call LineOut    @@Output, copies('#', 78)
+    call LineOut    @@Output, @@Cmd;
+    call LineOut    @@Output, copies('#', 78)
+    call LineOut    @@Output, ''
+    call LineOut    @@Output, ''
+    call FileClose  @@Output;
+    @@Cmd = @@Cmd || ' >>"' || @@Output || '" <$Stderr2Out>';
+    @@Cmd = 'cmd.exe /c "' || @@Cmd || '"';          ;;Windows crap...
+    call AddressCmd @@Cmd, '<$EXE_FULL_MAKESFX.EXE_OUTPUT_NAME>';
+    if  FileQueryExists(@@Exe) = '' then
+    do
+        <$RexxDebugViewFile FileVar="@@Output">;
+        call error 'The EXE file "' || @@Exe || '" wasn''t created!';
+    end;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Make sure we record details about this header --------------------------
+;----------------------------------------------------------------------------
+<$SourceFile Version="<$VERSION_FREEEXTRACTOR>">
+
+
+
+#NextId UNLOCK "FreeExtractor.MMH"

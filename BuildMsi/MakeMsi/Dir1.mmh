@@ -1,0 +1,314 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DIR1.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.28  $
+;          $Date:   03 Apr 2018 13:04:42  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Dir1.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "DIR1.MMH"
+
+
+;--- Options ----------------------------------------------------------------
+#define? DEFAULT_DIR1_PARENT   ProgramFilesFolder
+#define? DEFAULT_DIR1_ACCESS
+
+
+
+;----------------------------------------------------------------------------
+;--- Define a single directory ----------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Directory
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:KEY,PARENT,DIR,VALUE,CHANGE,PRIMARYFOLDER,ACCESS,ASIS,CONDITIONAL}
+
+   ;--- See if this defines a "System Folder" for delayed creation ----------
+   #RexxVar '@@Conditional' = '{$CONDITIONAL=^N^}'
+   #if ['<??@@Conditional $$UPPER>' <> 'N']
+       ;--- We want to conditionally create the key (how?) ------------------
+       #if ['<??@@Conditional $$UPPER>' = 'Y']
+           ;--- Simple creation using passed parameters ---------------------
+           #define DirKeyCreatedOnDemand.{$KEY $$c2x}  \
+                   <$Directory {$?ResetUsed}{$CONDITIONAL $$IGNORE}{$?}>
+       #elseif
+           ;--- Neither "N" or "Y" was passed, so must be name of macro to create the key ---
+           #evaluate ^DirKeyCreatedOnDemand.{$KEY $$c2x}^ ^'<' || '$' || @@Conditional || '>'^
+       #endif
+   #elseif
+       ;--- We are NOW building a directory so update details ---------------
+       <$UpdateMmLocation>
+
+       ;--- Does the parent need defining (standard key)? -------------------
+       #if  ['{$PARENT='??' $$IsPassed}' = 'Y']
+            <$DirectoryKeyRequired "{$PARENT}">
+       #endif
+
+       ;--- We are of course modifying the "Directory" table! ---------------
+       <$TABLE "Directory">
+
+       ;--- What type of directory entry is this ----------------------------
+       #if ['{$VALUE=^^}' = '']
+           ;--- Simple directory entry --------------------------------------
+           <$Directory_SIMPLE_NOVALUE {$?ResetUsed}{$?}>
+       #elseif
+           ;--- Create "template" directory entry ---------------------------
+           <$Directory_VALUE_VIA_PROPERTY {$?ResetUsed}{$?}>
+       #endif
+
+       ;--- Finished changing "Directory" table -----------------------------
+       <$/TABLE>
+
+       ;--- Do other stuff --------------------------------------------------
+       #DefineRexx ''
+           ;--- Handle The "CHANGE" parameter -------------------------------
+           @@DirKey = '{$Key}';
+           <$DIR_Rexx2UpdateFeatureDir DirKeyVar="@@DirKey" ResultVar='@@FeatCode' {$?}>;
+
+           ;--- Handle the "ACCESS" parameter -------------------------------
+           @@Access = '{$Access=^<$DEFAULT_DIR1_ACCESS>^}';
+           if   @@Access = '' then;
+                @@AccessCode = '';
+           else;
+           do;
+                ;--- User wants to adjust permissions -----------------------
+                @@KeyVar = '{$Key}';
+                <$RexxToSetAccess AliasVar="@@Access" TableVar="@@CreateFolderTable" KeyVar="@@KeyVar" ResultVar="@@AccessCode">;
+           end;
+       #DefineRexx
+       <??@@FeatCode><?RestartLine>
+       <??@@AccessCode><?RestartLine>
+
+       ;--- Handle InstallLocation parameter --------------------------------
+       <$DirHandlePrimaryFolderParameter {$?} KEY=^{$Key}^>
+   #endif
+#)
+#RexxVar @@CreateFolderTable  = 'CreateFolder'
+#(
+   #define Directory_SIMPLE_NOVALUE
+
+   ;--- Add directory row ---------------------------------------------------
+   #RexxVar @@Dir = '{$Dir}'                ;;Don't die if dir contains a single quote!
+   ;#if left(@@Dir, 1) = '{' & right(@@Dir, 1) = '}'
+   #if  ['{$ASIS='N' $$upper}' = 'Y']
+       ;--- Don't want it adjusted! -----------------------------------------
+       <$Row
+                   Directory="{$Key}"
+           Directory_Parent="{$Parent=^<$DEFAULT_DIR1_PARENT>^}"
+           ;     DefaultDir=^<?=substr('{$Dir}', 2, length('{$Dir}')-2)>^
+                 DefaultDir=^{$Dir}^
+       >
+   #elseif
+       ;--- Normal ----------------------------------------------------------
+       <$Row
+                   Directory="{$Key}"
+           Directory_Parent="{$Parent=^<$DEFAULT_DIR1_PARENT>^}"
+                   *DefaultDir=^MakeSfnLfn("{$Parent}", "{$Dir $$DQx2}")^
+       >
+   #endif
+#)
+#( ''
+   #define Directory_VALUE_VIA_PROPERTY
+
+   ;--- Add "template" directory row ----------------------------------------
+   <$DirectoryKeyRequired "TARGETDIR">
+   #(
+       <$Row
+                   Directory="{$Key}"
+            Directory_Parent="TARGETDIR" ;;Value doesn't matter
+                  DefaultDir=^SEE_PROP.TBL|See Property - {$Key}^
+       >
+   #)
+
+   ;--- Now Set the value for the above entry! ------------------------------
+   <$Property "{$Key}" VALUE="{$Value}">
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- A key is required as a parent, is it marked as create on demand? ------
+;----------------------------------------------------------------------------
+#(
+    ;--- We need "KEY" (if its predefined as conditional then create it -----
+    #define DirectoryKeyRequired
+
+    ;--- Predefined as install on demand? -----------------------------------
+    #ifdef DirKeyCreatedOnDemand.{$#1 $$c2x}
+        ;--- Yes so use the macro to correctly define it --------------------
+        #DefineRexx ''
+            ;--- This way works if #1 contains or is a macro reference! --------
+            #if ['<$DBG_DIRECTORY>' <> 'N']
+                <$DBG_SAY> 'Conditional directory "{$#1}" has been demanded!'
+            #endif
+            @@ParentCreationCode = MacroGet("DirKeyCreatedOnDemand.{$#1 $$c2x}");
+            call MacroUndef 'DirKeyCreatedOnDemand.{$#1 $$c2x}';   ;;Only do once!!!!
+        #DefineRexx
+        <??@@ParentCreationCode><?RestartLine>
+    #endif
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- VB literals ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define Dir1VbVariables
+
+   dim oDir1ParentShort  : set oDir1ParentShort = MkObject("Scripting.Dictionary")
+   dim Need83BaseDir, oNeed83BaseDir
+   Need83NameStart()
+#)
+
+
+;----------------------------------------------------------------------------
+;--- VB functions -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DIR1_MakeSfnLfn_VALIDATE_GENERATED_SHORTNAME N
+#( '<?NewLine>'
+   #define Dir1VbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   function MakeSfnLfn(ByVal ParentDirKey, ByVal PassedSpec)
+   '=========================================================================
+       ;--- May already have the shortname attached -------------------------
+       if  instr(1, PassedSpec, "|", 1) <> 0 then
+           ;--- Already contains short and long specs -----------------------
+           MakeSfnLfn = PassedSpec
+       else
+           ;--- Get an 8.3 name ---------------------------------------------
+           dim EightThree : EightThree = Need83Name(ParentDirKey, PassedSpec)
+
+           ;--- If 8.3 name is not equal to long name then we need to specify both ---
+           if   EightThree = PassedSpec then
+                MakeSfnLfn = EightThree
+           else
+                MakeSfnLfn = EightThree & "|" & PassedSpec
+           end if
+
+           ;--- Save information away ---------------------------------------
+           #if  ['<$DIR1_MakeSfnLfn_VALIDATE_GENERATED_SHORTNAME>' = 'Y']
+               dim MemoryKey : MemoryKey = ParentDirKey & "-" & EightThree
+               if   oDir1ParentShort.exists(MemoryKey) then
+                    error("Duplicated shortnames for """ & PassedSpec & """." & vbCRLF & "Duplicates one for """ & oDir1ParentShort(MemoryKey) & """" & vbCRLF & "These are in the directory ""[" & ParentDirKey & "]""")
+               else
+                    oDir1ParentShort.add MemoryKey, PassedSpec
+               end if
+           #end if
+       end if
+   end function
+
+
+   <?NewLine>
+   '=========================================================================
+   sub Need83NameStart()
+   ;
+   ; Creates a BASE folder, parent folders are build in this folder)
+   '=========================================================================
+        ;--- Create a BASE directory where all parenet keys will be created ---
+        Need83BaseDir = TmpDir & "\MM83-<?=time('s')>"
+        if  not ofs.FolderExists(Need83BaseDir) Then
+            set oNeed83BaseDir = oFS.CreateFolder(Need83BaseDir)
+        end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub Need83NameEnd()
+   ;
+   ; Creates a BASE folder, parent folders are build in this folder)
+   '=========================================================================
+        ;--- Remove the whole directory tree (we have finished) -------------
+        on error resume next
+        oNeed83BaseDir.Delete()
+        set oNeed83BaseDir = Nothing
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   function Need83Name(ByVal ParentDirKey, ByVal LongName)
+   ;
+   ; Creates a directory with the long filename and then asks Windows what
+   ; its short file name is.
+   ;
+   ; Traps on error.
+   '=========================================================================
+        ;--- Must not have a path! ------------------------------------------
+        dim ErrPrefix : ErrPrefix = "We were asked to generate a 8.3 formatted name" & vbCRLF & "FOR: `" & LongName & "`" & vbCRLF & vbCRLF
+        if  instr(LongName, "\") <> 0 or instr(LongName, ":") <> 0 then
+            Error ErrPrefix & "Drive letters or paths are not supported (a "":"" or ""\"" was detected)."
+        end if
+
+        ;--- Create parent directory if required ----------------------------
+        on error resume next
+        dim EN, ET
+        dim ParentDir : ParentDir = Need83BaseDir & "\" & ParentDirKey
+        if  not oFS.FolderExists(ParentDir) then
+            ;--- Create it as it doesn't already exist ----------------------
+            oFS.CreateFolder ParentDir
+            if  err.number <> 0 then
+                Error ErrPrefix & "We failed creating the parent directory of """ & ParentDirKey & """" & ErrDetails()
+            end if
+        end if
+
+        ;--- Now create the long file ---------------------------------------
+        dim LongFolder : LongFolder    = ParentDir & "\" & LongName
+        dim o83Folder
+        if  oFS.FolderExists(LongFolder) then
+           set o83Folder = oFS.GetFolder(LongFolder)
+           if   err.number <> 0 then
+                Error ErrPrefix & "GetFolder() failed on an existing folder of """ & LongFolder & """" & ErrDetails()
+           end if
+        else
+           set o83Folder = oFS.CreateFolder(LongFolder)
+           if   err.number <> 0 then
+                Error ErrPrefix & "The name probably contains invalid characters" & ErrDetails()
+           end if
+       end if
+       on error goto 0
+
+        ;--- Now get the 8.3 name Windows assigned it -----------------------
+        Need83Name = ShortName(o83Folder, true)
+
+        ;--- Clean up -------------------------------------------------------
+        set o83Folder  = Nothing
+    end function
+#)
+
+
+;--- Called to map a directory key to a feature -----------------------------
+#DefineRexx 'DIR_Rexx2UpdateFeatureDir'
+   @@Feature4Dir = '{$Change=^^}';
+   {$ResultVar}  = ""
+   <$Rexx2ResolveFeatureName FeatVar="@@Feature4Dir">;
+   if  @@Feature4Dir <> "" then
+   do
+       ;--- User did specify a feature! -------------------------------------
+       {$ResultVar} = {$ResultVar} || '<' || '$Table "Feature">'
+       {$ResultVar} = {$ResultVar} || '<' ||    "$Row @Where=^`Feature` = '" || @@Feature4Dir || "'^"
+       {$ResultVar} = {$ResultVar} ||           " @OK=^=1^"
+       {$ResultVar} = {$ResultVar} ||           " Directory_=^" || {$DirKeyVar} || "^"
+       {$ResultVar} = {$ResultVar} || '>'
+       {$ResultVar} = {$ResultVar} || '<' || "$/Table>"
+   end;
+#DefineRexx
+
+
+#NextId UNLOCK "DIR1.MMH"
+
+

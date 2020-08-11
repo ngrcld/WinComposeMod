@@ -1,0 +1,54 @@
+;--- Testing....  don't use!
+#NextId
+
+
+
+
+#RexxVar @@LoopLevel = 0
+#(
+    #define Loop
+
+    ;--- Handle increase in nesting -----------------------------------------
+    #RexxVar @@LoopLevel + 1
+    #push    "Loop Macro"
+    #info    ^><??@@LoopLevel>^
+
+    ;--- Open the file ------------------------------------------------------
+    #RexxVar @@LoopFile.@@LoopLevel = 'out\Loop-<??@@LoopLevel>.TMP'
+    #output "<??@@LoopFile.@@LoopLevel>" ASIS
+
+    ;--- start the loop -----------------------------------------------------
+    <?Hash>{ {$#1}
+
+#info "psh"
+    #option push replace=OFF
+    ;#AutoTagState  +     {$STATE=''}
+    ;#AutoTag       OFF
+    ;#AsIs          OFF
+#)
+
+
+#(
+    #define /Loop
+
+    ;--- Handle decrease in nesting -----------------------------------------
+    #pop     "Loop Macro"
+    #info    ^<<??@@LoopLevel>^
+
+    ;--- Restore original state ---------------------------------------------
+    ;#AutoTagState  -
+#info "pop"
+    #option        POP
+
+    ;--- End loop -----------------------------------------------------------
+    <?Hash>}
+
+    ;--- Finish the the file ------------------------------------------------
+    #output
+
+    ;--- Now include it -----------------------------------------------------
+    #include "<??@@LoopFile.@@LoopLevel>"
+
+    ;--- Now decrement the loop counter -------------------------------------
+    #RexxVar @@LoopLevel - 1
+#)

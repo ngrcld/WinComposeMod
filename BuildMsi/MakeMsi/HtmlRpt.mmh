@@ -1,0 +1,582 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   HTMLRPT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.34  $
+;          $Date:   30 Mar 2019 09:21:56  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/HtmlRpt.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;                   This header is only included after MSI generation etc
+;                   so that processing is only performed if everything is
+;                   OK (why waste time)...
+;----------------------------------------------------------------------------
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? HTMLRPT_DATETIME_FORMAT           %# %b %Y %X    ;;Used when formatting file date/times
+#define? HTMLRPT_SHOW_EMPTY_REPORTS        N              ;;Show empty registry report if no registry etc?
+#define? HTMLRPT_HEADING_DEFAULT_CONTRACTS Y
+#define? HTMLRPT_IN_HEAD_SECTION
+#define? HTML_SYMBOL_TICK                  &#x2713;
+#define? HTML_SYMBOL_CROSS                 &#x2717;
+#define? HTMLRPT_TT                        <?Space>title='{$#1 $$SQx2}'   ;;Generate Tooltips by default
+
+
+;----------------------------------------------------------------------------
+;--- HTA Specific OPTIONS ---------------------------------------------------
+;----------------------------------------------------------------------------
+#define? HTMLRPT_HTA_SINGLEINSTANCE      no
+#define? HTMLRPT_HTA_CONTEXTMENU         yes
+#define? HTMLRPT_HTA_SCROLL              auto
+#define? HTMLRPT_HTA_WINDOWSTATE         normal
+#define? HTMLRPT_HTA_CAPTION             yes
+#define? HTMLRPT_HTA_MAXIMIZE            yes
+#define? HTMLRPT_HTA_MINIMIZE            yes
+#define? HTMLRPT_HTA_SHOWINTASKBAR       yes
+#define? HTMLRPT_HTA_OTHER_ATTRIBUTES           ;;Any other HTA attribute/value pairs?
+
+
+
+;----------------------------------------------------------------------------
+;--- Load and configure HTMLPRE.IH ------------------------------------------
+;----------------------------------------------------------------------------
+#define? HTMLPRE_COLOR          black
+#define? HTMLPRE_STYLE_OTHER
+#include "HTMLPRE.IH"
+
+;----------------------------------------------------------------------------
+;--- Include other HTML related headers -------------------------------------
+;----------------------------------------------------------------------------
+#include "FileInfo.MMH"  ;;Extract HTML info for file report
+#include "HtmlSumm.MMH"  ;;Summary report
+#include "HTMLSORT.MMH"  ;;Code for sort buttons on start of tables
+#include "HTMLDIR.MMH"   ;;Directory listing code
+#include "HTMLMSITABLE.MMH" ;;Dumps MSI Tables
+#include "AUTOTAG.MMH"   ;;Sets up autotagging of source
+
+
+;----------------------------------------------------------------------------
+;--- Create namespace -------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "HTMLRPT.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- GENERATE HTML ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define _GenerateHtmlReport
+
+   ;--- Is this a HTA? ------------------------------------------------------
+   #if  translate(FilePart('E', '<$MSI_HTMLNAME>')) = "HTA"
+        #define? HTMLRPT_IS_HTA Y
+   #elseif
+        #define? HTMLRPT_IS_HTA N
+   #endif
+
+   ;--- Start the HTML ------------------------------------------------------
+   #evaluate ^^ ^<$DBG_SAY> 'HTML report - STARTING: ' || time()^
+   #output "<$MSI_HTMLNAME>" ASIS
+   <$HTMLRPT_START>
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$HTMLRPT_GENERATE_BUTTONS_ALONG_TOP>
+
+   ;--- Generate the guts ---------------------------------------------------
+   <$HTMLRPT_GENERATE_REPORTS>
+
+   ;--- Want a disclaimer? --------------------------------------------------
+   <$HTMLRPT_DISCLAIMER>
+
+   ;--- End HTML report -----------------------------------------------------
+   <$HTMLRPT_END>
+   #output
+   #evaluate ^^ ^<$DBG_SAY> 'HTML report - FINISHED: ' || time()^
+#)
+
+
+;--- STYLE ------------------------------------------------------------------
+#define? HTMLRPT_STYLE_BACKGROUND_COLOR  \
+         <?Hash>fff7a6
+#define? HTMLRPT_STYLE_FONT              \
+         font-size:9pt;font-family:"Comic Sans MS","Verdana","Arial","Helvetica";
+#define? HTMLRPT_STYLE_INPUT             \
+         INPUT {cursor: hand}
+#( '<?NewLine>'
+   #define? HTMLRPT_STYLE_PRE
+   PRE
+   {
+       font-size:9pt;
+       background-color: #ffffc6;
+       color:black;
+       display:block;
+       white-space:
+       pre;border:1px solid #800000;
+       padding:5
+   }
+#)
+#( ';'
+   #define? HTMLRPT_STYLE_VerifyPleaseWait
+   text-align:center
+    font-size:200%
+        color:green
+#)
+#define  H1NoButton                      H1NoButton
+#define  H1ButtonExpandedClassName       H1ButtonE
+#define  H1ButtonCollapsedClassName      H1ButtonC
+#(
+   #define HTMLRPT_STYLE_HEADING_NO_CONTRACT
+   .<$H1NoButton>
+   {
+       background: lightblue;
+       text-align: center;
+       width: 100%;
+       font-style : italic;
+   }
+#)
+#(
+   #define? HTMLRPT_STYLE_HEADING_CONTRACTED
+   .<$H1ButtonCollapsedClassName>
+   {
+       background: <$HTMLRPT_STYLE_HEADING_CONTRACTED_background>;
+       text-align: center;
+       width: 100%;
+       cursor: hand;
+       border : outset;
+   }
+#)
+#(
+   #define? HTMLRPT_STYLE_HEADING_EXPANDED
+   .<$H1ButtonExpandedClassName>
+   {
+       background: <$HTMLRPT_STYLE_HEADING_EXPANDED_background>;
+       text-align: center;
+       width: 100%;
+       cursor: hand;
+       border : outset;
+   }
+#)
+#define? HTMLRPT_STYLE_VALUES_KEY         color:purple
+#define? HTMLRPT_STYLE_VALUES_VALUE       color:green
+#define? HTMLRPT_STYLE_VALUES_VALUE_ERROR color:red
+#( '<?NewLine>'
+   #define? HTMLRPT_STYLE
+   <STYLE TYPE="text/css">
+   <!--
+       BODY
+       {
+           <$HTMLRPT_STYLE_FONT>
+           background:<$HTMLRPT_STYLE_BACKGROUND_COLOR>;
+       }
+       TD
+       {
+           <$HTMLRPT_STYLE_FONT>
+       }
+       <$HTMLRPT_STYLE_PRE>
+       <$FILE_STYLES>
+       <$REGISTRY_STYLES>
+       <$BINARY_STYLES>
+       <$HTMLDIR_STYLES>
+       .DirKey          {color:green}
+       .DirKeyMapped    {color:olive}
+       .MmCmtName       {<$HTMLRPT_STYLE_VALUES_KEY>}
+       .MmCmtValue      {<$HTMLRPT_STYLE_VALUES_VALUE>}
+       .MmCmtValueError {<$HTMLRPT_STYLE_VALUES_VALUE_ERROR>}
+
+       .VerifyPleaseWait {<$HTMLRPT_STYLE_VerifyPleaseWait>}
+       <$HTMLRPT_STYLE_HEADING_NO_CONTRACT>
+       <$HTMLRPT_STYLE_HEADING_CONTRACTED>
+       <$HTMLRPT_STYLE_HEADING_EXPANDED>
+       <$HTMLRPT_STYLE_INPUT>
+       <$TableSortStyles>
+   -->
+   </STYLE>
+#)
+
+;--- Head section used if HTA -----------------------------------------------
+#( '<?NewLine>'
+    #define? HTMLRPT_HTA:APPLICATION
+    <?NewLine>
+    <!--- HTML APPLICATION (can be renamed to ".htm" etc) --->
+    <HTA:APPLICATION
+         ID="oMakeMsiReport"
+         APPLICATIONNAME="<$HTMLRPT_TITLE>"
+         SCROLL="<$HTMLRPT_HTA_SCROLL>"
+         SINGLEINSTANCE="<$HTMLRPT_HTA_SINGLEINSTANCE>"
+         WINDOWSTATE="<$HTMLRPT_HTA_WINDOWSTATE>"
+         ContextMenu="<$HTMLRPT_HTA_CONTEXTMENU>"
+         CAPTION="<$HTMLRPT_HTA_CAPTION>"
+         maximizeButton="<$HTMLRPT_HTA_MAXIMIZE>"
+         minimizeButton="<$HTMLRPT_HTA_MINIMIZE>"
+         SHOWINTASKBAR="<$HTMLRPT_HTA_SHOWINTASKBAR>"
+         <$HTMLRPT_HTA_OTHER_ATTRIBUTES>
+    >
+    <?NewLine>
+#)
+
+
+;--- Start HTML report ------------------------------------------------------
+#define? HTMLRPT_PRODUCT_NAME     <$ProdInfo.ProductName>
+#define? HTMLRPT_PRODUCT_VERSION  <$ProductVersion>
+#define? HTMLRPT_TITLE            <$HTMLRPT_PRODUCT_NAME> v<$HTMLRPT_PRODUCT_VERSION>
+#define? HTMLRPT_UNDER_TITLE
+#define? HTMLRPT_FOOTER_UNDER_TIME
+#( '<?NewLine>'
+   #define? HTMLRPT_START
+   <HTML>
+   <!--- This HTML was automatically generated by MAKEMSI at <?CompileTime> --->
+   <HEAD>
+       #if  ['<$HTMLRPT_IS_HTA>' = 'Y']
+            <$HTMLRPT_HTA:APPLICATION>
+            <?NewLine><?NewLine>
+       #endif
+       <TITLE><$HTMLRPT_TITLE></TITLE>
+       <?NewLine><?NewLine>
+       <$HTMLRPT_STYLE>
+       <?NewLine><?NewLine>
+       <$HTMLRPT_IN_HEAD_SECTION>
+   </HEAD>
+   <BODY>
+       <TABLE BORDER=0 BGCOLOR="red" WIDTH="100%" CELLPADDING=2 CELLSPACING=0><TR><TD ALIGN="CENTER">
+       <FONT SIZE="+3" COLOR="white">
+              <$HTMLRPT_TITLE>
+       </FONT></TD></TR></TABLE>
+       <$HTMLRPT_UNDER_TITLE>
+       <$TableSortJavaScript>
+       <$HTMLRPT_SCRIPT_INITIALIZATION>
+       <P>
+#)
+#(
+    #define? HTMLRPT_END_COMMENTS_MAKEMSI_LINK_OR_TEXT
+    "<a href="<$MAKEMSI_HOMEPAGE>" target="_blank"
+        Title="Visit Homepage! MAKEMSI can create or update MSI Installers,
+               merge modules, CUB validations or any Windows Installer
+               databases.">MAKEMSI</a>"
+#)
+#( '<?NewLine>'
+   #define? HTMLRPT_END_COMMENTS_ABOVE_FOOTER
+   <$SUNDRY_HTMLRPT_HR>
+   <P><i>This HTML page along with the <$MAKEMSI_UPDATING_WHAT_TEXT>
+   it documents was automatically generated
+   using the freeware
+   <$HTMLRPT_END_COMMENTS_MAKEMSI_LINK_OR_TEXT>
+   tool (version <$MAKEMSI_VERSION>).
+   No Windows Installer skills are required to rebuild new
+   versions of existing MSI files and you can do so
+   while having your morning "cuppa".
+   Given the automated build process and its extensive error
+   handling MAKEMSI reliably builds MSIs, any bugs in the
+   generated installer are not only consistant but likely to be
+   in your script and can be fixed
+   (it may help to think of a compiler, the source can be
+   incorrect but the result is consistant and can be tested and
+   fixed if required).
+   No human need remember the correct procedure for creating a
+   reliable standard package as these rules/procedures can be
+   inbuilt.
+
+   <p>The creation of new installers can frequently be simplified
+   to a small trivial number of lines as often most MSIs
+   created by any particular author (or team of) are very similar
+   (particularly in a corporate environment).
+   For example I have helped a team set up two line scripts for
+   their many J2EE server installs (built via automated ANT processes).
+   Yet another team has a set of about 40 two line scripts
+   to build their workstation RIS packages.
+   This meant that these teams don't need any skills to create
+   new packages!
+   It also means that the installer's logic can be incrementally
+   improved (if required) in one single location and any future
+   builds will automatically pick up these improvements.
+
+   <p>Even if you can't reduce all installers this way, MAKEMSI
+   encourages reuse and any huge (or miniscule) fragments of
+   common logic can be centralised
+   ("fragments" can take parameters and make decisions).
+   </i>
+#)
+#(
+   #define? HTMLRPT_FOOTER_CREATED_AT_TEXT
+   Created at <?CompileTime>
+#)
+#( '<?NewLine>'
+   #define? HTMLRPT_END
+       <$HTMLRPT_END_COMMENTS_ABOVE_FOOTER>
+       <P>
+       <$SUNDRY_HTMLRPT_HR>
+       <CENTER>
+            <$HTMLRPT_FOOTER_CREATED_AT_TEXT>
+            <$HTMLRPT_FOOTER_UNDER_TIME>
+       </CENTER>
+
+       ;--- Set up any File verification information ------------------------
+       <?NewLine><?NewLine>
+       <script LANGUAGE="VBSCRIPT">
+            <?NewLine><?NewLine>
+            ;==============================================
+            sub SetUpAnyFilesToBeValidated()
+            ;==============================================
+                if FilesCnt = 0 then
+                    <$FILE_SET_UP_FILE_VERIFICATION>
+                    <$HTMLDIR_SET_UP_FILE_VERIFICATION>
+                end if
+            end sub
+       </script>
+       <?NewLine><?NewLine>
+   </BODY>
+   </HTML>
+#)
+#( '<?NewLine>'
+   #define HTMLRPT_SCRIPT_INITIALIZATION
+
+   <?NewLine>
+   <script LANGUAGE="VBSCRIPT">
+       public ProductCode : ProductCode = "<$VBSRET.GUID.ProductCode>"
+       public PackageCode : PackageCode = "<$VBSRET.GUID.PackageCode>"
+       public UpgradeCode : UpgradeCode = "<$UpgradeCodeValue>"
+       const msiInstallStateBadConfig  = -6
+       const msiInstallStateUnknown    = -1
+       const msiInstallStateAdvertised =  1
+       const msiInstallStateAbsent     =  2
+       const msiInstallStateDefault    =  5
+       <$FILE_SCRIPT_INIT>
+
+                   <?NewLine><?NewLine>
+            ;==============================================
+            sub HeadingStateExpanded(oButton, oDiv)
+            ;==============================================
+                ;--- Set to Opposite state then swap! -----------------------
+                oDiv.style.display = "none"
+                HeadingExpandContract oButton, oDiv  ;;None -> Block
+            end sub
+
+            <?NewLine><?NewLine>
+            ;==============================================
+            sub HeadingStateContracted(oButton, oDiv)
+            ;==============================================
+                ;--- Set to Opposite state then swap! -----------------------
+                oDiv.style.display = "block"
+                HeadingExpandContract oButton, oDiv  ;;Block -> None
+            end sub
+
+            <?NewLine><?NewLine>
+            ;==============================================
+            sub HeadingExpandContract(oButton, oDiv)
+            ;==============================================
+                on error resume next
+                dim Title
+                if  ucase(oDiv.style.display) <> "NONE" then
+                    ;--- Make contracted ------------------------------------
+                    oDiv.style.display = "none"
+                    oButton.className = "<$H1ButtonCollapsedClassName>"
+                    Title             = "<??@@TitleC>"
+                else
+                    ;--- Expand ---------------------------------------------
+                    oDiv.style.display = "block"
+                    oButton.className = "<$H1ButtonExpandedClassName>"
+                    Title             = "<??@@TitleE>"
+                end if
+
+                ;--- IE Bug? does not handle "&quot;" etc -------------------
+                Title = Replace(Title, "<$@@TitleDQ>",  """")
+                Title = Replace(Title, "<$@@TitleSQ>",  "'")
+                oButton.title = Title
+            end sub
+   </script>
+   <?NewLine>
+#)
+
+
+;--- Generate buttons -------------------------------------------------------
+#( ''
+   #define? BUTTON2
+   <?NewLine>
+   <!--- BUTTON2: {$Text} (count <?={$CNT}>) --->
+   #if [{$CNT} <> 0]
+        <?NewLine>
+        <script LANGUAGE="JavaScript">
+           document.write("<input name='UPDATE' type='button' value='{$Text}' onClick='document.location=\"#{$#1}\"' TITLE='{$TT=^There are <??{$CNT}> entries in the report.^}' STYLE='{$style=^^}'>");
+        </script>
+        <?NewLine>
+        <NoScript>
+           &nbsp;<a href='#{$#1}' TITLE='{$TT=^There are <??{$CNT}> entries in the report.^}'>[{$Text}]</a>&nbsp;
+        </NoScript>
+        <?NewLine>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? HTMLRPT_GENERATE_BUTTONS_ALONG_TOP
+   <$HTMLRPT_BUTTONS_START>
+       <$HTMLSUMM_BUTTON>
+       <$MSIEXTRA_BUTTON>
+       <$FILE_BUTTON>
+       <$BINARY_BUTTON>
+       <$MERGEMOD_BUTTON>
+       <$REGISTRY_BUTTON_FOR_REGISTRY>
+       <$ENVIRON_BUTTON_FOR_ENVIRONMENT>
+       <$INI_BUTTON>
+       <$SHORTCUT_BUTTON>
+       <$HTMLMSITABLE_MSITABLE_BUTTONS>
+       <$VER_BUTTON_FOR_CHANGE_HISTORY>
+       <$VALID_BUTTON_FOR_MSIVALFILTER>
+       <$SRCCODE_BUTTON_FOR_SOURCE_CODE>
+   <$HTMLRPT_BUTTONS_END>
+   <$HTMLRPT_AFTER_BUTTONS_ALONG_TOP>
+#)
+#define? HTMLRPT_BUTTONS_START      <center>
+#define? HTMLRPT_BUTTONS_END        </center>
+#( '<?NewLine>'
+   #define? HTMLRPT_AFTER_BUTTONS_ALONG_TOP
+   <noscript>
+        <center>
+        <p><i>Please note that the browser (or you) has disabled scripting!
+        Product information button,
+        file verification button,
+        table column sorting,
+        and section contraction+expansion are unavailable...</i>
+        </center>
+   </noscript>
+#)
+
+;--- Generate reports -------------------------------------------------------
+#( '<?NewLine>'
+   #define? HTMLRPT_GENERATE_REPORTS
+   <center>
+       <$HTMLSUMM_REPORT>
+       <$MSIEXTRA_REPORT>
+       <$FILE_REPORT>
+       <$BINARY_REPORT>
+       <$MERGEMOD_REPORT>
+       <$REGISTRY_REPORT_FOR_REGISTRY>
+       <$ENVIRON_REPORT_FOR_ENVIRONMENT>
+       <$INI_REPORT>
+       <$SHORTCUT_REPORT>
+       <$HTMLMSITABLE_MSITABLE_REPORT>
+       <$VER_REPORT_FOR_CHANGE_HISTORY>
+       <$VALID_REPORT_FOR_MSIVALFILTER>
+   </center>
+       <$SRCCODE_REPORT_FOR_SOURCE_CODE>
+       <$/HTMLRPT_HEADING Finished="Y">
+#)
+
+
+;----------------------------------------------------------------------------
+;--- HEADING ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? HTMLRPT_H1ButtonCollapsedTitle              Click to "expand" this section (it is currently contracted to reduce space and won't show up if the report is printed).
+#define? HTMLRPT_H1ButtonExpandedTitle               Click to "contract" this section (to take up much less space or if you wish to print a report without this section).
+#define? HTMLRPT_STYLE_HEADING_CONTRACTED_background #D1C8EE    ;;"buttonface" gives a grey button look
+#define? HTMLRPT_STYLE_HEADING_EXPANDED_background   lightblue
+#RexxVar @@TitleC  = ^<$HTMLRPT_H1ButtonCollapsedTitle>^
+#RexxVar @@TitleE  = ^<$HTMLRPT_H1ButtonExpandedTitle>^
+#define @@TitleDQ  &quot;
+#define @@TitleSQ  &#39;
+#DefineRexx ''
+    @@TitleC = ReplaceString(@@TitleC, '"', '<$@@TitleDQ>')
+    @@TitleC = ReplaceString(@@TitleC, "'", "<$@@TitleSQ>")
+    @@TitleE = ReplaceString(@@TitleE, '"', '<$@@TitleDQ>')
+    @@TitleE = ReplaceString(@@TitleE, "'", "<$@@TitleSQ>")
+#DefineRexx
+#RexxVar @@HeadingCnt         = 0
+#RexxVar @@HeadingEndRequired = 'N'
+#(
+    #define? HTMLRPT_HEADING
+    {$!:TEXT,EXPANDED,CONTRACTS,VBSTR}
+
+    ;--- Finish previous division -------------------------------------------
+    #if translate('{$CONTRACTS=^<$HTMLRPT_HEADING_DEFAULT_CONTRACTS>^}') = 'N'
+        <span title='Clicking this heading doesn't do anything!'><CENTER><H1 class='<$H1NoButton>'>{$Text}</H1></CENTER></span>
+        #RexxVar @@HeadingEndRequired = 'N'
+    #elseif
+        ;--- Any previous heading to finish off? ----------------------------
+        <$/HTMLRPT_HEADING>
+
+        ;--- Output Heading and new division (OK if scripting disabled) -----
+        #RexxVar @@HeadingCnt + 1
+        <span onclick='VBSCRIPT:HeadingExpandContract H1_<??@@HeadingCnt>, HTMLRPT_HEADING_<??@@HeadingCnt>' title='Scripting is disabled, sections can not be contracted or expanded!'>
+              <CENTER><H1 id='H1_<??@@HeadingCnt>' class='<$H1NoButton>'>{$Text}</H1></CENTER>
+        </span>
+        <div ID='HTMLRPT_HEADING_<??@@HeadingCnt>' style='display:block'>
+
+        ;--- START OF SCRIPT ------------------------------------------------
+        #if ['{$VBSTR="N"}' = 'Y']
+            ;--- Work around VB bug/feature ---------------------------------
+            <" & "script LANGUAGE='VBSCRIPT'>
+        #else
+            <script LANGUAGE='VBSCRIPT'>
+        #endif
+
+        ;--- The script code ------------------------------------------------
+        #if ['{$EXPANDED="Y" $$UPPER}' = 'N']
+            ;--- Start COMPRESSED ---------------------------------------
+            HeadingStateContracted H1_<??@@HeadingCnt>, HTMLRPT_HEADING_<??@@HeadingCnt>
+        #elseif
+            ;--- Start EXPANDED -----------------------------------------
+            HeadingStateExpanded H1_<??@@HeadingCnt>, HTMLRPT_HEADING_<??@@HeadingCnt>
+        #endif
+
+        ;--- END OF SCRIPT --------------------------------------------------
+        #if ['{$VBSTR="N"}' = 'Y']
+            ;--- Work around VB bug/feature ---------------------------------
+            <" & "/script>
+        #else
+            </script>
+        #endif
+
+        #RexxVar @@HeadingEndRequired = 'Y'
+    #endif
+#)
+#(
+    ;--- Finish previous division -------------------------------------------
+    #define? /HTMLRPT_HEADING
+    #if [@@HeadingEndRequired = 'Y']
+        #RexxVar @@HeadingEndRequired = 'N'
+        </div>
+    #end if
+#)
+
+
+
+
+#(
+   #define? HTMLRPT_TABLE_LOOK_AND_FEEL
+
+   Border='1' BORDERCOLOR='navy'
+   CELLPADDING='3' cellspacing='0'
+   <$TblSortAttributesForTable>
+#)
+#( ' '
+   #define? HTMLRPT_DISCLAIMER
+#)
+#define HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE \
+        TITLE="Click on Column heading to sort by that column!"
+#(
+    #define HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW
+
+    #if [{$PREFIX}MmLocation = '']
+        ;--- No tooltip unless user specified something specific ------------
+        #if ['{$After=^^}' <> '']
+            TITLE="{$After}"
+        #endif
+    #elseif
+        ;--- Have normal location tooltip, user want to add to it? ----------
+        #if ['{$After=^^}' = '']
+            TITLE="Defined at <??{$PREFIX}MmLocation>"
+        #elseif
+            TITLE="Defined at <??{$PREFIX}MmLocation>&#10;&#10;{$After}"
+        #endif
+    #endif
+#)
+
+
+#NextId UNLOCK "HTMLRPT.MMH"

@@ -1,0 +1,95 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DIRECTORYCOMPRESS.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.1  $
+;          $Date:   10 Aug 2005 18:43:34  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DirCompress.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "DIRECTORYCOMPRESS"
+
+
+
+;----------------------------------------------------------------------------
+;--- MACRO: DirectoryCompress -----------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@Count = 0
+#(
+    #define DirectoryCompress
+
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}             ;;Don't Expect any keywords!
+    {$!:#1,CONDITION}        ;;List all valid parameters
+
+    ;--- Now set up the semicolon list of items to be compressed ------------
+    #RexxVar @@Count + 1
+    #define+ @@Data    @@CompressThese<??@@Count>
+    #data "<$@@Data>"
+       "DIRLIST" "{$#1}"                              ;;semicolon delimitered list of directories (can be mask)
+    #data
+
+    ;--- The first time it is used we wish to generate the VBS --------------
+    #ifndef @@AlreadyGeneratedDirectoryCompressionScript
+        ;--- Once only! -----------------------------------------------------
+        #define @@AlreadyGeneratedDirectoryCompressionScript
+
+        ;--- Generate the script --------------------------------------------
+        <$VbsCa Binary="DirectoryCompress.vbs" data="<$@@Data>">
+        #(  '<?NewLine>'
+            <$VbsCaEntry "Install">
+                ;--- List list of directories -------------------------------
+                dim Dirs : Dirs = split(VbsCaCadGet("DIRLIST"), ";")
+
+                ;--- Compress each Directory --------------------------------
+                dim i
+                for i = 0 to ubound(Dirs)
+                    CompressDir Dirs(i)
+                next
+            <$/VbsCaEntry>
+
+            <?NewLine>
+            '==================
+            sub CompressDir(ByVal What)      ;;Ignore errors (won't kill use if compression fails)
+            '==================
+                ;--- Remove leading and trailing whitespace and exit if empty (be nice) ---
+                on error resume next
+                What = trim(What)
+                if  What = "" then
+                    exit sub
+                end if
+
+                ;--- Compress the directory ---------------------------------
+                dim Cmd, Rc
+                if  right(What, 1) = "\" then
+                    ;--- If directory which ends in a slash then append "." so "compact.exe" will not fail ---
+                    What = What & "."
+                end if
+                CaDebug 1, "Compressing: " & What
+                Cmd = "compact.exe ""/s:" & What & """ /C /I"
+                Rc  = VbsCaRunSync(Cmd, 0, "")
+            end sub
+        <$/VbsCa>
+        #)
+    #endif
+
+    ;--- Now sequence this command (after all files installed & dirs created) ---
+    #if ['{$CONDITION=^^}' = '']
+        #define+ @@CONDITION <$CONDITION_EXCEPT_UNINSTALL>
+    #else
+        #define+ @@CONDITION {$CONDITION} and <$CONDITION_EXCEPT_UNINSTALL>
+    #endif
+    <$VbsCaSetup Binary="DirectoryCompress.vbs" Entry="Install" Seq=^DuplicateFiles-^ data="<$@@Data>" CONDITION=^<$@@CONDITION>^ Key="CompressThese<??@@Count>">
+#)
+
+
+
+#NextId UNLOCK "DIRECTORYCOMPRESS"
+
+

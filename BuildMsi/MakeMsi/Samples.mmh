@@ -1,0 +1,179 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SAMPLES.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.9  $
+;          $Date:   16 Feb 2018 16:53:44  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Samples.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "SAMPLES.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4Doco-SamplesOptions]---
+;--- TURN OFF SAMPLES BY DEFINING "SAMPLES_DIRECTORY" AS EMPTY --------------
+#define? SAMPLES_DIRECTORY             <??*MakeMsi_SAMPLES?>  ;;Destination directory (where samples copied)
+#define? SAMPLES_REXXCODE_JUST_BEFORE_COPY                    ;;Would allow you to alter the name of the file in the samples dir etc.
+#define? SAMPLES_REXXCODE_TWEEK_DEST_DIR                      ;;You may wish to create a samples tree to take care of name clashes etc.
+#define? SAMPLES_COPYING_MSG \
+         call INFO 'Updating samples directory (' || {$CountVar} || ' files)...'
+#define? SAMPLES_REXXCODE_INCLUDE_OR_EXCLUDE_FILE             ;;Filename in "@@SampleFN", return "KeepSample" (Y/N): Enables definition of extra user inclusion/exclusion code (the rexx code should execute "iterate" to exclude a file)
+         #( ','                                               ;;Only used if "SAMPLES_REXXCODE_INCLUDE_OR_EXCLUDE_FILE" is blank
+               ;--- Only these extensions are "samples" ---------------------------------
+               #define? SAMPLES_THESE_EXTENSIONS_ONLY
+               MM                   ;;MAKEMSI Script
+               VER                  ;;MAKEMSI Version File
+               MMH                  ;;MAKEMSI header file
+               H                    ;;Generic header file
+               FLT                  ;;MAKEMSI Validation Filter
+
+               ;--- Hook to make it easy to add to the list -----------------------------
+               <$SAMPLES_EXTRA_EXTENSIONS>
+        #)
+        #define? SAMPLES_EXTRA_EXTENSIONS
+;---[4Doco-SamplesOptions]---
+
+
+
+;----------------------------------------------------------------------------
+;--- The code ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define? SAMPLE_COPY_SAMPLES_TO_SAMPLE_DIR
+   ;--- User has not disabled -----------------------------------------------
+   #if ['<$SAMPLES_DIRECTORY>' <> '']
+       ;--- User wants samples updated --------------------------------------
+       #evaluate ^^ ^<$@@Rexx2UpdateTheSamplesDirectory>^
+   #endif
+#)
+#DefineRexx 'RxGetListOfSourceFiles'        ;;Prior to AUG 2017 it was misleadingly named "RxGetListOfSampleFiles"
+    ;--- Get location of the MAKEMSI install directory ----------------------
+    #if ['<$DBG_SAMPLES>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_SAY> "RxGetListOfSourceFiles macro - start";
+       <$DBG_INC>
+    #endif
+    @@MmDir     = GetEnv("MAKEMSI_DIR");      ;;Installed by "MAKEMSI.MM"
+    if  @@MmDir = '' then
+        @@MmDir = FilePart('L', FindFile("SAMPLES.MMH"));
+    @@MmDir     = translate(@@MmDir);
+    if  right(@@MmDir, 1) <> '\' then
+        @@MmDir = @@MmDir || '\';
+    #if ['<$DBG_SAMPLES>' <> 'N']
+       <$DBG_SAY> "The MAKEMSI directory is: " || @@MmDir;
+    #endif
+
+    ;--- Build requested array ----------------------------------------------
+    @@SampleCnt = 0
+    do  @@i = 1 to GetDependancyInfo('INPUT')
+        ;--- Not all input dependancies are for files! ------------------
+        @@File = GetDependancyInfo('INPUT', @@i);
+        #if ['<$DBG_SAMPLES>' <> 'N']
+            <$DBG_SAY> "Looking at: " || @@File;
+        #endif
+        if  left(@@File, 1) = '*' then
+            iterate;
+
+        ;--- Ignore MAKEMSI headers (if in tree, its assumed to be a "standard" file) ---
+        @@FileDir = translate(FilePart('L', FileQueryExists(@@File)));
+        #if ['<$DBG_SAMPLES>' <> 'N']
+            <$DBG_INC>
+            <$DBG_SAY> "The files directory is: " || @@FileDir;
+            <$DBG_DEC>
+        #endif
+        if  left(@@FileDir, length(@@MmDir)) == @@MmDir then
+            iterate;
+
+        ;--- Perform any user exclusions ------------------------------------
+        #if ['<$SAMPLES_REXXCODE_INCLUDE_OR_EXCLUDE_FILE $$IsBlank>' = 'N']
+            SampleFN   = @@File
+            KeepSample = "Y"
+                       <$SAMPLES_REXXCODE_INCLUDE_OR_EXCLUDE_FILE>
+            if KeepSample = "N" then
+               iterate;
+        #else
+            ;--- Does this file have one of the extensions wanted for samples? ---
+            #if ['<$SAMPLES_THESE_EXTENSIONS_ONLY $$IsBlank>' = 'N']
+                ;--- Don't want all extensions, so see if in the list -----------
+                @@Ext = translate(FilePart('e', @@File));
+                if  pos(',' ||  @@Ext || ',', translate(',<$SAMPLES_THESE_EXTENSIONS_ONLY>,')) = 0 then
+                    iterate;
+            #endif
+        #endif
+
+        ;--- Add the file to the list ---------------------------------------
+        #if ['<$DBG_SAMPLES>' <> 'N']
+            <$DBG_INC "2">
+                <$DBG_SAY> 'It is a sample!';
+            <$DBG_DEC "2">
+        #endif
+        @@SampleCnt                = @@SampleCnt + 1;
+        {$ResultArray}.@@SampleCnt = @@File;
+    end;
+    {$ResultArray}.0 = @@SampleCnt;
+    #if ['<$DBG_SAMPLES>' <> 'N']
+        <$DBG_SAY> "RxGetListOfSourceFiles macro - end - Found " || @@SampleCnt || ' samples';
+        <$DBG_DEC>
+    #endif
+#DefineRexx
+#DefineRexx '@@Rexx2UpdateTheSamplesDirectory'
+   #if ['<$DBG_SAMPLES>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_SAY> "Copying files to the samples directory...";
+       <$DBG_INC>
+   #endif
+
+   ;--- Make sure the samples directory exists ------------------------------
+   @@SampleDir = '<$SAMPLES_DIRECTORY>';     ;;User configured value (assuming they wish to do this)
+   <$SAMPLES_REXXCODE_TWEEK_DEST_DIR>
+   call MakeDirectoryTree @@SampleDir, 'Y'
+
+   ;--- Get list of sample files --------------------------------------------
+   <$RxGetListOfSourceFiles ResultArray="@@Sample">;
+
+   ;--- Process the list of samples -----------------------------------------
+   #if ['<$DBG_SAMPLES>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_SAY> "Now have list of samples so copy the files...";
+       <$DBG_INC>
+   #endif
+   <$SAMPLES_COPYING_MSG CountVar='@@Sample.0'>;
+   do  @@i = 1 to @@Sample.0
+       ;--- Get the filename ------------------------------------------------
+       @@File = @@Sample.@@i;
+
+       ;--- Provide user hook for file name changing/manipulation -----------
+       @@DestFile = @@SampleDir || '\' || FilePart('n', @@File);
+       <$SAMPLES_REXXCODE_JUST_BEFORE_COPY>
+
+       ;--- Copy the file to the sample directory ---------------------------
+       #if ['<$DBG_SAMPLES>' <> 'N']
+           <$DBG_SAY> 'Processing sample "' || @@File || '"';
+       #endif
+       call Making @@DestFile;
+       call FileCopy @@File, @@DestFile;
+
+       ;--- Now update the timestamp on the destination file ----------------
+       call lineout @@DestFile, "";      ;;Poor man's "touch"!
+       call FileClose @@DestFile;
+   end;
+   #if ['<$DBG_SAMPLES>' <> 'N']
+       <$DBG_DEC>
+       <$DBG_DEC>
+   #endif
+#DefineRexx
+
+
+#NextId UNLOCK "SAMPLES.MMH"
+

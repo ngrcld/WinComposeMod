@@ -1,0 +1,152 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SUMMARY.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.5  $
+;          $Date:   10 Aug 2007 17:25:22  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/summary.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "Summary.MMH"
+
+
+
+;--- Constants to place into VBS --------------------------------------------
+#( '<?NewLine>'
+   #define SummaryVbsConstants
+
+   <?NewLine>
+   const PID_CODEPAGE     = 1
+   const PID_TITLE        = 2
+   const PID_SUBJECT      = 3
+   const PID_AUTHOR       = 4
+   const PID_KEYWORDS     = 5
+   const PID_COMMENTS     = 6
+   const PID_TEMPLATE     = 7
+   const PID_LASTAUTHOR   = 8
+   const PID_REVNUMBER    = 9
+   const PID_PACKAGECODE  = 9          ;;Alias
+   const PID_EDITTIME     = 10
+   const PID_LASTPRINTED  = 11
+   const PID_CREATE_DTM   = 12
+   const PID_LASTSAVE_DTM = 13
+   const PID_PAGECOUNT    = 14
+   const PID_MsiSchema    = 14         ;;Alias
+   const PID_WORDCOUNT    = 15
+   const PID_SourceType   = 15         ;;Alias
+   const PID_CHARCOUNT    = 16
+   const PID_APPNAME      = 18
+   const PID_SECURITY     = 19
+
+   ;--- PID_WORDCOUNT values ------------------------------------------------
+   <?NewLine>
+   const msidbSumInfoSourceTypeSFN        = &H01   ;;Source uses short filenames
+   const msidbSumInfoSourceTypeCompressed = &H02   ;;Source is compressed
+   const msidbSumInfoSourceTypeAdminImage = &H04   ;;Source is an admin image
+   const msidbSumInfoSourceTypeLUAPackage = &H08   ;;Elevated privileges are not required to install this package (Vista or Windows Installer 4.0+) - (LUAAware)
+
+   ;--- PID_SECURITY values (not ORCA has been using wrong values - BUG) ----
+   <?NewLine>
+   const PidSecurityNoRestriction       = 0
+   const PidSecurityReadOnlyRecommended = 2
+   const PidSecurityReadOnlyEnforced    = 4
+#)
+
+;----------------------------------------------------------------------------
+;--- Define SUMMARY ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@SummaryCnt = 0
+#RexxVar @@PID_CODEPAGE     = i1
+#RexxVar @@PID_TITLE        = s2
+#RexxVar @@PID_SUBJECT      = s3
+#RexxVar @@PID_AUTHOR       = s4
+#RexxVar @@PID_KEYWORDS     = s5
+#RexxVar @@PID_COMMENTS     = s6
+#RexxVar @@PID_TEMPLATE     = s7
+#RexxVar @@PID_LASTAUTHOR   = s8
+#RexxVar @@PID_REVNUMBER    = s9
+#RexxVar @@PID_PACKAGECODE  = s9
+#RexxVar @@PID_EDITTIME     = t10
+#RexxVar @@PID_LASTPRINTED  = t11
+#RexxVar @@PID_CREATE_DTM   = t12
+#RexxVar @@PID_LASTSAVE_DTM = t13
+#RexxVar @@PID_PAGECOUNT    = i14
+#RexxVar @@PID_MsiSchema    = i14
+#RexxVar @@PID_WORDCOUNT    = i15
+#RexxVar @@PID_SourceType   = i15
+#RexxVar @@PID_CHARCOUNT    = i16
+#RexxVar @@PID_APPNAME      = s18
+#RexxVar @@PID_SECURITY     = i19
+#define? SUMMARY_USER_DEFINITIONS
+<$SUMMARY_USER_DEFINITIONS>            ;;Allow user to extend
+#( ''
+   #define Summary
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Remember details ----------------------------------------------------
+   #evaluate ^^ ^<$Rexx4Summary {$?}>^
+   <??@@Vbs>
+#)
+#DefineRexx 'Rexx4Summary'
+   ;--- Get ID from a name --------------------------------------------------
+   @@VbConst = 'PID_{$#1}'
+   @@Key     = '@@' || @@VbConst;
+   if  symbol(@@Key) <> 'VAR' then
+       error('There is no summary property named "{$#1}"');
+
+   ;--- How was the value passed? -------------------------------------------
+   if  '{$*Value=^^ $$IsPassed}' = 'Y' then
+   do
+       ;--- Expression ------------------------------------------------------
+       @@Literal  = 'N';
+       {$*Value='' $$RxVar:@@Value}
+   end;
+   else
+   do
+       ;--- Literal ---------------------------------------------------------
+       @@Literal  = 'Y';
+       {$Value='' $$RxVar:@@Value}
+   end;
+
+   ;--- Get ID/Information --------------------------------------------------
+   @@Info = value(@@Key)
+   @@Type = left(@@Info, 1)
+   @@ID   = substr(@@Info, 2)
+   @@Locn = GetInputFileNameAndLine();
+   select
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+       when @@Type = 's' then
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+       do
+           ;--- Must quote literal strings ----------------------------------
+           if  @@Literal  = 'Y' then
+               @@Value = '"' || ReplaceString(@@Value, '"', '""') || '"'
+       end;
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+       when @@Type = 'i' then
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+           nop         ;;Integer - OK as is
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+       when @@Type = 't' then
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+           nop         ;;TIME - OK as is
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+       otherwise
+       /*%%%%%%%%%%%%%%%%%%%%%%%%*/
+           error('The summary field "{$#1}" uses a currently unsupported type of "' || @@Type || '"');
+   end;
+
+   ;--- Save the information ------------------------------------------------
+   @@Vbs = 'SummaryItem ' || @@VbConst || ', ' || @@Value || '<?NewLine>'
+#DefineRexx
+
+
+#NextId UNLOCK "Summary.MMH"

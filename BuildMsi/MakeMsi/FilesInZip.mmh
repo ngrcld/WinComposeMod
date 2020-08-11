@@ -1,0 +1,182 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FilesInZip.mmh
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   16 Nov 2017 11:28:30  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/FilesInZip.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2017
+;                   All rights reserved.
+;      MORE INFO
+;      ~~~~~~~~~
+;
+;      <$FilesInZip ZipFile=^Stuff.zip^         InstallRootDir="[INSTALLDIR]\Blah">
+;      <$FilesInZip ZipFile=^zips\GraphViz.zip^ INSTALLROOTDIR="[INSTALLDIR]\LargeZip" OnUninstallDeleteRootFolder="Y">
+
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "FilesInZip.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- A cludge/workaround ----------------------------------------------------
+;----------------------------------------------------------------------------
+#evaluate @@ThisMmh   ^'<?InputComponent>'^
+#if [0 = 1]
+    ;------[Include#DataWorkAround]------------------------------
+    #data "FilesInZip"
+       "iunzip.exe"       "[#<$FILESINZIP_UNZIP_EXE_ROWKEY>]"   ;;Full filename of iunzip.exe"
+       "ZipOptions"       ^<$GFIZ_ZipOptions>^                  ;;Default options in "DEFAULT_FILESINZIP_UNZIP_OPTIONS"
+       "file.zip"         "<$GFIZ_ZipFile>"                     ;;full filename of the zip file being unpacked"
+       "INSTALL_ROOT_DIR" '<$GFIZ_InstallRootDir>'              ;;Where the zip file is unzipped to"
+    #data
+    ;------[Include#DataWorkAround]------------------------------
+#endif
+
+
+
+;----------------------------------------------------------------------------
+;--- Options for "FilesInZip" -----------------------------------------------
+;----------------------------------------------------------------------------
+;###[4DocoFilesInZipOptionsAndConstants]###
+#define? FILESINZIP_INSTALL_DIR_KEY_IUNZIP          INSTALLDIR                    ;;Install time location for EXE
+#define? FILESINZIP_INSTALL_DIR_KEY_ZIPS            INSTALLDIR                    ;;Install time location for included zips (not where they get unzipped to)
+#define? FILESINZIP_INSTALL_UNINSTALL_SEQ           <-DuplicateFiles              ;;"<-RemoveFolders" doesn't work!!!!  It leaves the folder behind
+#define? FILESINZIP_INSTALL_CONDITION               <$CONDITION_EXCEPT_UNINSTALL>
+#define? FILESINZIP_UNINSTALL_CONDITION             <$CONDITION_UNINSTALL_ONLY>
+#define? FILESINZIP_INSTALL_ZIP_CONTENTS_LIST       Y                             ;;Logging is great unless your zip is so big it takes excessive time
+#define? FILESINZIP_INSTALL_ZIP_CONTENTS_TEST       Y                             ;;Testing the zip is great (it may excplain a otherwise hard to unzip error) unless your zip is so big it takes excessive time
+#define? FILESINZIP_INSTALL_INSTALL_TYPE            System
+#define? FILESINZIP_INSTALL_UNINSTALL_TYPE          System
+#define? FILESINZIP_UNZIP_EXE_SOURCE                .\IUNZIP.EXE                  ;;By default expect in the current directory
+#define? FILESINZIP_UNZIP_EXE_ROWKEY                iUnZip.exe
+#define? FILESINZIP_UNZIP_OPTION_MARKER_UNPACK_DIR  {UnpackRoot}                  ;;Use "{UnpackRoot}" to represent the install/unpack directory
+#define? FILESINZIP_UNZIP_OPTION_MARKER_ZIP_FILE    {ZipFile}                     ;;Use "{UnpackRoot}" to represent the install/unpack directory
+#define? DEFAULT_FILESINZIP_UNZIP_OPTIONS           -o -d "<$FILESINZIP_UNZIP_OPTION_MARKER_UNPACK_DIR>" "<$FILESINZIP_UNZIP_OPTION_MARKER_ZIP_FILE>"
+;###[4DocoFilesInZipOptionsAndConstants]###
+
+
+#RexxVar  @@ZipCnt = 0
+#(  '<?NewLine>'
+    #define FilesInZip
+
+    ;--- Validate passed parameters -----------------------------------------
+    {$!KEYWORDS}                              ;;Don't Expect any keywords!
+    {$!:InstallRootDir,ZipFile,ZipOptions,OnUninstallDeleteRootFolder}
+    #RexxVar @@ZipCnt + 1
+    <$UpdateMmLocation>
+
+    ;--- Include the info unzip program (ONCE) ------------------------------
+    #ifndef FILESINZIP_UNZIP_EXE_SETUP_DONE
+            <$Component "<$FILESINZIP_UNZIP_EXE_ROWKEY>" Create="Y" Directory_="<$FILESINZIP_INSTALL_DIR_KEY_IUNZIP>">
+               ;--- Add the batch file as the Key Path ----------------------
+               <$File RowKey="<$FILESINZIP_UNZIP_EXE_ROWKEY>" SOURCE="<$FILESINZIP_UNZIP_EXE_SOURCE>" Comment=^Will use for "FilesInZip.mmh"^ KeyPath="Y">
+            <$/Component>
+            #define FILESINZIP_UNZIP_EXE_SETUP_DONE
+    #end if
+
+    ;--- Define the directory to install the zip files into -----------------
+    #if [@@ZipCnt = 1]
+        #define+ @@COMPONENT_COMMAND <$Component "ZipFiles4FilesInZip" Create="Y" Directory_="<$FILESINZIP_INSTALL_DIR_KEY_IUNZIP>">
+        #define+ @@KEYPATH Y
+    #elseif
+        #define+ @@COMPONENT_COMMAND <$Component "ZipFiles4FilesInZip">
+        #define+ @@KEYPATH N
+    #endif
+    <$@@COMPONENT_COMMAND>
+            <$Cabinet "FilesInZip Command">
+                <$File RowKey="FILE.ZIP.<??@@ZipCnt>" SOURCE="{$ZipFile}" Comment=^This is a zip file that will be unpacked at install time"^ KeyPath="<$@@KEYPATH>">
+            <$/Cabinet>
+    <$/Component>
+
+    ;--- define the vbscript ------------------------------------------------
+    #ifndef FILESINZIP_VBS_SETUP_DONE
+            <$VbsCa Binary="FilesInZip.vbs">
+               <$VbsCaEntry "InstallZip">
+                   ZipAddRemove(true)
+               <$/VbsCaEntry>
+               <$VbsCaEntry "RemoveZip">
+                   ZipAddRemove(false)
+               <$/VbsCaEntry>
+
+               '=======================
+               sub ZipAddRemove(AddZip)
+               '=======================
+                   ;--- Get parms and say what we are doing -----------------
+                   on error resume next
+                   CaDebug 0, "ZipAddRemove( INSTALL = " & AddZip & ")"
+                   dim oFS        : set oFS    = CaMkObject("Scripting.FileSystemObject")
+                   dim iZipExe    : iZipExe    = VbsCaCadGet("iunzip.exe")
+                   dim ZipFile    : ZipFile    = VbsCaCadGet("file.zip")
+                   dim InstallDir : InstallDir = VbsCaCadGet("INSTALL_ROOT_DIR")
+                   dim ZipFileSN  : ZipFileSN  = oFS.GetFileName(ZipFile)
+                   dim ZipOptions : ZipOptions = VbsCaCadGet("ZipOptions")
+                   dim Action     : if AddZip then Action = "Installing" else Action = "Removing"
+                   CaDebug 1, Action & ": " & ZipFileSN
+
+                   ;--- Perform the action ----------------------------------
+                   if  right(InstallDir, 1) = "\" then
+                       InstallDir = left(InstallDir, len(InstallDir)-1)
+                   end if
+                   err.clear()
+                   if   AddZip then
+                        ;--- Dump some information --------------------------
+                        CaDebug 2, "Logging any zip comment"
+                        VbsCaRunSync """" & iZipExe & """ -z """ & ZipFile & """", 0, ""
+                        #if ['<$FILESINZIP_INSTALL_ZIP_CONTENTS_LIST $$UPPER>' <> 'N']
+                            CaDebug 2, "Logging the zip file's contents"
+                            VbsCaRunSync """" & iZipExe & """ -v """ & ZipFile & """", 0, ""
+                        #endif
+                        #if ['<$FILESINZIP_INSTALL_ZIP_CONTENTS_TEST $$UPPER>' <> 'N']
+                            CaDebug 2, "Testing the contents of the zip"
+                            VbsCaRunSync """" & iZipExe & """ -t """ & ZipFile & """", 0, ""
+                        #endif
+
+                        ;--- Unpack the zip ---------------------------------
+                        if instr(ZipOptions, "<$FILESINZIP_UNZIP_OPTION_MARKER_UNPACK_DIR>") = 0 or instr(ZipOptions, "<$FILESINZIP_UNZIP_OPTION_MARKER_ZIP_FILE>") = 0 then
+                            on error goto 0
+                            VbsCaRaiseError "[FilesInZip]", "Info UnZip options must include both of the following codes:" & vbCRLF & vbCRLF & " (1) <$FILESINZIP_UNZIP_OPTION_MARKER_UNPACK_DIR>" & vbCRLF & " (2) <$FILESINZIP_UNZIP_OPTION_MARKER_ZIP_FILE>"
+                        else
+                            ZipOptions = replace(ZipOptions, "<$FILESINZIP_UNZIP_OPTION_MARKER_UNPACK_DIR>", InstallDir)
+                            ZipOptions = replace(ZipOptions, "<$FILESINZIP_UNZIP_OPTION_MARKER_ZIP_FILE>",   ZipFile)
+                        end if
+                        dim UnPackRc: UnPackRc = VbsCaRunSync("""" & iZipExe & """ " & ZipOptions, 0, "")
+                        if  UnPackRc <> 0 then
+                            on error goto 0
+                            VbsCaRaiseError "[FilesInZip]", "Unpacking of """ & ZipFileSN & """ failed!" & vbCRLF & vbCRLF & "(iUnZip.exe returned RC = " & UnPackRc & ")"
+                        end if
+                   else
+                        '--- Delete Folder ----------------------------------
+                        CaDebug 2, "Deleting the folder (and all of it's subfolders and files): " & InstallDir
+                        oFS.DeleteFolder InstallDir
+                        if  err.number = 0 then
+                            CaDebug 0, "Successfully removed folder"
+                        else
+                            dim Reason : Reason = ErrDetails()
+                            err.clear()
+                            CaDebug 0, "Failed deleting the folder and/or it's contents" & Reason
+                        end if
+                   end if
+
+                   ;--- All done --------------------------------------------
+                   set oFS = Nothing
+               end sub
+            <$/VbsCa>
+            #define FILESINZIP_VBS_SETUP_DONE
+    #endif
+
+    ;--- Set up the custom action (once per zipfile) ------------------------
+    #define+ GFIZ_ZipFile          [#FILE.ZIP.<??@@ZipCnt>]
+    #define+ GFIZ_ZipOptions       {$ZipOptions=^<$DEFAULT_FILESINZIP_UNZIP_OPTIONS>^}
+    #define+ GFIZ_InstallRootDir   {$InstallRootDir}
+    #include "<$@@ThisMmh>"  "[Include#DataWorkAround]"
+    <$VbsCaSetup KEY="FilesInZip.Install.<??@@ZipCnt>" DATA="FilesInZip" Binary="FilesInZip.vbs" Entry="InstallZip" Seq="InstallFiles-"   CONDITION="<$FILESINZIP_INSTALL_CONDITION>">
+    #if ['{$OnUninstallDeleteRootFolder="N"}' = 'Y']
+        <$VbsCaSetup KEY="FilesInZip.UnInstall.<??@@ZipCnt>" DATA="FilesInZip" Binary="FilesInZip.vbs" Entry="RemoveZip"  Seq="<-RemoveFolders" CONDITION="<$FILESINZIP_UNINSTALL_CONDITION>" >
+    #end if
+#)
+
+
+
+#NextId UNLOCK "FilesInZip.MMH"

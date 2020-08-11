@@ -1,0 +1,186 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MACROCFG.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.4  $
+;          $Date:   16 Aug 2008 13:44:04  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MacroCfg.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;                   Holds small general purpose "utilities" and definitions.
+;----------------------------------------------------------------------------
+
+;--- Only process the header once (allow user to include many times) --------
+#ifdef MACROCFG
+    ;--- Already included ---------------------------------------------------
+    #eof 1
+#endif
+
+
+;--- Start header -----------------------------------------------------------
+#NextId PUSH
+#NextId
+#NextId LOCK "MACROCFG.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- "MacroCfg" command -----------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+    #define MACROCFG
+
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}                ;;Don't expect any keywords!
+    {$!:#1,VALUE,PREEXISTS}
+
+    #evaluate ^^ ^<$@@Rexx4MACROCFG {$?}>^
+#)
+#RexxVar '@@UndefinedFlag'  = '[{ MacroUndefined }]'
+#RexxVar '@@NestedMacroCnt' = 0
+#DefineRexx '@@Rexx4MACROCFG'
+    ;--- Start DEBUG ---------------------------------------------------------
+    <$Rexx4UpdateRxMmLocationOnly>
+    #if  ['<$DBG_MACROCFG>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_SAY> 'MacroCfg("{$#1}")'
+       <$DBG_INC>
+    #endif
+
+    ;--- Save where? --------------------------------------------------------
+    @@MacroName = '{$#1}';
+    @@SaveStack = 'MACROCFG_4_' || @@MacroName
+
+    ;--- See if the macro currently Exists ----------------------------------
+    @@PreExists = '{$PreExists=^^ $$upper}';
+    if  defined(@@MacroName) = 'N' then
+    do
+        ;--- It doesn't so we save this info away ---------------------------
+        @@SavedState = @@UndefinedFlag;
+
+        ;--- Validate if desired --------------------------------------------
+        if @@PreExists = 'Y' then
+           call error 'You have indicated that the macro "' || @@MacroName || '" already exists, but it doesn''t!'
+    end;
+    else
+    do
+        ;--- We will save the macros value ----------------------------------
+        @@SavedState = MacroGet(@@MacroName);
+
+        ;--- Validate if desired --------------------------------------------
+        if @@PreExists = 'N' then
+           call error 'You have indicated that the macro "' || @@MacroName || '" doesn''t already exist, but it does!'
+    end;
+
+    ;--- Save on the stack --------------------------------------------------
+    call StackPush @@SaveStack, @@SavedState;
+
+    ;--- Value being updated (or just saved?) -------------------------------
+    @@Updating = '{$Value=^^ $$IsPassed}';
+    if  @@Updating = 'N' then
+    do
+        #if  ['<$DBG_MACROCFG>' <> 'N']
+            <$DBG_SAY> 'Just saving macro "' || @@MacroName || '", has value: ' || @@SavedState
+        #endif
+    end
+    else
+    do
+        ;--- Get the new value ----------------------------------------------
+        {$Value $$RxVar:@@NewValue}
+
+        ;--- Update the macro (allow redefine) ------------------------------
+        #if  ['<$DBG_MACROCFG>' <> 'N']
+            <$DBG_SAY> 'Updating value of macro "' || @@MacroName || '" to: ' || @@NewValue
+            <$DBG_SAY> '  Original value was: ' || @@SavedState
+        #endif
+        call MacroSet @@MacroName, @@NewValue, "Y";
+    end;
+
+    ;--- Remember the name of this item (default for "/MacroCfg) ------------
+    @@NestedMacroCnt               = @@NestedMacroCnt + 1;
+    @@NestedMacro.@@NestedMacroCnt = @@MacroName
+
+    ;--- Finshed debug ------------------------------------------------------
+    #if  ['<$DBG_MACROCFG>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_DEC>
+    #endif
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- "/MacroCfg" command ----------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+    #define /MACROCFG
+
+    ;--- Validate parameters ------------------------------------------------
+    {$!KEYWORDS}                ;;Don't expect any keywords!
+    {$!:#1}
+
+    ;--- Do most of the work ------------------------------------------------
+    #evaluate ^^ ^<$@@Rexx4/MACROCFG {$?}>^
+
+    ;--- There is no rexx function for undefine -----------------------------
+    #if [@@UndefIt = 'Y']
+        #undef <??@@MacroName>
+    #endif
+#)
+#DefineRexx '@@Rexx4/MACROCFG'
+    ;--- Start DEBUG ---------------------------------------------------------
+    <$Rexx4UpdateRxMmLocationOnly>
+    #if  ['<$DBG_MACROCFG>' <> 'N']
+         <$DBG_NEWLINE>
+         <$DBG_SAY> '/MacroCfg'
+         <$DBG_INC>
+    #endif
+
+    ;--- Get macro name ------------------------------------------------------
+    if  @@NestedMacroCnt = 0 then
+        error('Incorrectly nested "/MacroCfg" command.');
+    @@MacroName      = @@NestedMacro.@@NestedMacroCnt
+    @@NestedMacroCnt = @@NestedMacroCnt - 1;
+    @@SaveStack      = 'MACROCFG_4_' || @@MacroName;
+
+    ;--- Get the value off the stack ----------------------------------------
+    @@OrigState = StackPop(@@SaveStack);
+
+    ;--- Did the user want to valiate what we are restoring? ----------------
+    @@Expected = '{$#1=^^}';
+    if  @@Expected <> '' then
+    do
+        ;--- Yes, so check! -------------------------------------------------
+        if @@MacroName <> @@Expected then
+           call error 'You indicated that you wished to restore the macro "' || @@Expected || '".',,'This is actually restoring the macro "' || @@MacroName || '"!'
+    end;
+
+    ;--- See if the macro originally existed? -------------------------------
+    if  @@SavedState = @@UndefinedFlag then
+    do
+        @@UndefIt    = 'Y';
+        @@ActionText = 'Undefining macro "' || @@MacroName || '"'
+    end;
+    else
+    do
+        @@UndefIt    = 'N';
+        @@ActionText = 'Restoring macro "' || @@MacroName || '" value to: ' || @@OrigState
+        call MacroSet @@MacroName, @@OrigState, "Y";
+    end;
+
+    ;--- Finshed debug ------------------------------------------------------
+    #if  ['<$DBG_MACROCFG>' <> 'N']
+       <$DBG_SAY> @@ActionText
+       <$DBG_NEWLINE>
+       <$DBG_DEC>
+    #endif
+#DefineRexx
+
+
+
+#NextId UNLOCK "MACROCFG.MMH"
+#NextId POP

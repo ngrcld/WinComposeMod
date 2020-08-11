@@ -1,0 +1,823 @@
+;----------------------------------------------------------------------------
+;    MODULE NAME:   DLLCA-C.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.15  $
+;          $Date:   18 Jun 2010 17:50:42  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DllCa-C.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2005
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;
+; * On LINK: -Wl,--add-stdcall-alias
+;            Exports symbols with AND without @4
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- If user hasn't defined the platform SDK dir, see if we can locate it ---
+;----------------------------------------------------------------------------
+;---[Populate-PLATFORM_SDK_DIR]---
+#ifndef PLATFORM_SDK_DIR
+    ;--- Not defined, define some locations to be checked -------------------
+    #(  ';'
+        #define? PLATFORM_SDK_DIR_LOOK_HERE_LIST
+
+       ;<??*ProgramFiles>\Windows Installer 4.5 SDK                          ;;WI 4.5 SDK (can't use SDK buggy, missing required header files)
+        <??*ProgramFiles>\Microsoft Platform SDK                             ;;Seems to be the standard location
+        <??*ProgramFiles>\Microsoft Platform SDK for Windows Server 2003 R2  ;;From Kevin Keane in email dated 2 Jan 2008
+        <??*ProgramFiles>\Microsoft SDKs\Windows\v7.0                        ;;SDK Version 4.5 as per email "guitargeeser" on 17 March 2010
+        <??*ProgramFiles>\Microsoft Platform SDK for Windows XP SP2          ;;Has worked in past (maybe I extracted it here)!
+        <??*ProgramFiles>\Microsoft SDK                                      ;;Has worked in past (maybe I extracted it here)!
+    #)
+    #(  ';'
+        #define? PLATFORM_SDK_DIR_LOOK_FOR_THESE_ENV_VARS_LIST
+
+        ;--- List of SDK env vars provided by Kevin Keane in email dated 2+5 Jan 2008 ---
+        INETSDK
+        MSSdk
+        Bkoffice
+        MSSdk
+        Mstools
+    #)
+
+
+    ;--- User already set it? -----------------------------------------------
+    #ifndef PLATFORM_SDK_DIR
+        ;--- User hasn't set, Loop through the set of possible known locations ---
+        #{  SET "@@Dir={;}<$PLATFORM_SDK_DIR_LOOK_HERE_LIST>"
+            ;--- See if the directory exists --------------------------------
+            #if DirQueryExists('<??SET_@@DIR>') <> ''
+                ;--- The directory exists so update the required definition ---
+                #define PLATFORM_SDK_DIR   <??SET_@@DIR>
+                #break
+            #endif
+        #}
+    #endif
+
+    ;--- Found it in the above loop? ----------------------------------------
+    #ifndef PLATFORM_SDK_DIR
+        ;--- Not found, look through list of env vars that are known to point here (if there exist) ---
+        #{  SET "@@EnvVar={;}<$PLATFORM_SDK_DIR_LOOK_FOR_THESE_ENV_VARS_LIST>"
+            ;--- Check this environment variable ----------------------------
+            #if GetEnv(SET_@@EnvVar) <> ''
+                #evaluate "PLATFORM_SDK_DIR" "GetEnv(SET_@@EnvVar)"
+                #break
+            #endif
+        #}
+
+        ;--- If not found above then assign empty string --------------------
+        #define? PLATFORM_SDK_DIR
+   #endif
+   #info ^SDK: <$PLATFORM_SDK_DIR>^
+#endif
+#define? INSTALLER_SDK_DIR      <$PLATFORM_SDK_DIR> ;;We assume same dir as Platform SDK by default.
+;---[Populate-PLATFORM_SDK_DIR]---
+
+
+;----------------------------------------------------------------------------
+;--- Other Initialization ---------------------------------------------------
+;----------------------------------------------------------------------------
+#define DllCa-C-ERR_MSG
+#if ['<$INSTALLER_SDK_DIR>' = '']
+    ;--- Don't know where the SDK is ----------------------------------------
+    #(
+        #define+ DllCa-C-ERR_MSG
+        Can't build C based DLLs as the macro "INSTALLER_SDK_DIR"
+        is not pointing to the Microsoft Platform SDK directory
+        (and we couldn't locate it).
+    #)
+#elseif
+    ;--- We do know where the SDK, configure include & libary locations -----
+    #define? PLATFORM_SDK_INCLUDE_DIR   <$INSTALLER_SDK_DIR>\include
+    #ifndef  PLATFORM_SDK_LIB_DIR
+        ;--- Note that WI 4.5 has "x86", "x64" & "IA64" subdirectories! -----
+        #if DirQueryExists('<$INSTALLER_SDK_DIR>\lib\x86') = ''
+            ;--- SDK is pre 4.5 (as no "x86" subdirectory) ------------------
+            #define PLATFORM_SDK_LIB_DIR <$INSTALLER_SDK_DIR>\lib
+        #elseif
+            ;--- SDK is 4.5+ ------------------------------------------------
+            #define PLATFORM_SDK_LIB_DIR <$INSTALLER_SDK_DIR>\lib\x86
+        #endif
+    #end if
+
+    ;--- Lets do a Sanity Check ---------------------------------------------
+    #if FileQueryExists('<$PLATFORM_SDK_INCLUDE_DIR>\msi.h') = ''
+        #(
+            #define+ DllCa-C-ERR_MSG
+            Can't build C based DLLs as the macro "PLATFORM_SDK_INCLUDE_DIR"
+            was set to "<$PLATFORM_SDK_INCLUDE_DIR>" but the header file
+            "<$PLATFORM_SDK_INCLUDE_DIR>\msi.h"
+            can't be found!
+        #)
+    #elseif
+        ;--- Include directory OK, look at "lib" ------------------------
+        #if FileQueryExists('<$PLATFORM_SDK_LIB_DIR>\msi.lib') = ''
+            #(
+                #define+ DllCa-C-ERR_MSG
+                Can't build C based DLLs as the macro "PLATFORM_SDK_LIB_DIR"
+                was set to "<$PLATFORM_SDK_LIB_DIR>" but the library file
+                "<$PLATFORM_SDK_LIB_DIR>\msi.lib"
+                can't be found!
+            #)
+        #endif
+    #endif
+#endif
+#if ['<$DllCa-C-ERR_MSG $$IsBlank>' = 'N']
+    ;--- We can't build C/C++ Custom Actions --------------------------------
+    #define DLLCA-C  \
+            #error ^<$DllCa-C-ERR_MSG>^
+    #define /DLLCA-C \
+            #error ^<$DllCa-C-ERR_MSG>^
+    #define DllCaEntry? \
+            #error ^<$DllCa-C-ERR_MSG>^
+    #define DllCaEntry \
+            #error ^<$DllCa-C-ERR_MSG>^
+    #define /DllCaEntry \
+            #error ^<$DllCa-C-ERR_MSG>^
+
+    ;--- Exit header --------------------------------------------------------
+    #eof 1
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- If we get here, configuration looks OK, Create New Namespace -----------
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "DLLCA-C.MMH"
+
+
+;---[4DocoDLLCA-C-RelatedOptions]---
+;----------------------------------------------------------------------------
+;--- General Options --------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_DLLCA-C_DOCO                       Y                   ;;"N" = Don't add to doco
+#define? DEFAULT_DLLCA-C_LANGUAGE                   C                   ;;C/C++
+#define? DLLCA-C_USE_TOOLS                          MINGW               ;;See "DLLCA-C_COMPILE_BATCH_FILE_CONTENTS.MINGW" below
+#define? DLLCA-C_BINARY_COMMENT                     This file generated by the "DLLCA-C" command at <??RxMmLocation>
+#define? DLLCA-C_STACK_BUFFER_SIZE                  1000                ;;Too short and messages may get truncated (buffers can't overflow)
+#define? DLLCA-C_LOG_PREFIX                         <?Space>   DLL(C)-><?Space>  ;;Make logged lines easy to find
+#define? DLLCA-C_SOURCE_EXTN_FOR_C                  .c                  ;;Must be lower case C or compiler thinks its C++
+#define? DLLCA-C_SOURCE_EXTN.FOR_C++                .cpp
+#define? DLLCA-C_COMPRESS_DLL_COMMAND_LINE                              ;;If non-blank then complete UPX.EXE (or other tools) command line less the name of the DLL which will follow... Must return RC=0 if OK (wrap in batch file if required)
+#define? DLLCA-C_BUILD_DLL_OUTPUT_COLOR             {GREEN}             ;;Color of redirected output
+
+
+;----------------------------------------------------------------------------
+;--- Stub Related -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DLLCA-C_STUB_ENTRY_USER                                        ;;User Code (debug loops etc)
+#define? DLLCA-C_STUB_EXIT_USER                                         ;;User Code
+#define? DLLCA-C_USER_FUNCTION_SUFFIX               _                   ;;MAKEMSI creates a logging stub and calls your RENAMED function. This value must be non-empty.
+#(
+    #define? DLLCA-C_STUB_ENTRY_LOG
+    CaDebug(PROGRESS_LOG, "\r\n\r\n>>>> Starting DLL entry point: {$function}() - in \"{$Binary}\" -
+                          version <$ProductVersion> of <$ProdInfo.ProductName>");
+#)
+#(
+    #define? DLLCA-C_STUB_EXIT_LOG
+    CaDebugv(PROGRESS_LOG, "<<<< Finished DLL entry point: {$function}() - RC = %lu\r\n\r\n", {$RcVar});
+#)
+#(  '<?NewLine>'
+    ;--- Not normally overridden --------------------------------------------
+    #define? DLLCA-C_STUB_ENTRY
+    <$DLLCA-C_STUB_ENTRY_LOG  {$?}>
+    <$DLLCA-C_STUB_ENTRY_USER {$?}>
+#)
+#(  '<?NewLine>'
+    ;--- Not normally overridden --------------------------------------------
+    #define? DLLCA-C_STUB_EXIT
+    <$DLLCA-C_STUB_EXIT_USER {$?}>
+    <$DLLCA-C_STUB_EXIT_LOG  {$?}>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Export Decorators ------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DLLCA-C_EXPORT_DECORATORS_PREFIX                               ;;Don't know if ever required (better safe than sorry)
+#define? DLLCA-C_EXPORT_DECORATORS_SUFFIX           @4                  ;;MinGx/GCC adds "@4" to end of name (you can actually configure the linker not to create...)
+
+
+;----------------------------------------------------------------------------
+;--- Constants --------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define  DLLCA_BATCH_LABEL_ERROR_FOUND          ErrorFound
+#define  DLLCA_BATCH_LABEL_OK_FINISH            OkFinish
+#define  DLLCA_BATCH_FILE_ERROR_RC_TEXT_BEFORE  ERROR DETECTED: RC= "
+#define  DLLCA_BATCH_FILE_ERROR_RC_TEXT_AFTER                       "
+
+
+;----------------------------------------------------------------------------
+;--- "MINGW" configuration (used by default) --------------------------------
+;----------------------------------------------------------------------------
+#define? DLLCA-C_MINGW_EXTRA_OPTIONS_COMPILE_KEEP_TEMP  -save-temps                         ;;Keeps preprocessed output (useful when debugging) and even generated assembler code.
+#define? DLLCA_C_MINGW_INCLUDE_DIRECTIVES               -I "<$PLATFORM_SDK_INCLUDE_DIR>"    ;;You can use multiple "-I" stitches in whatever order you wish if you need to.
+#(  '<?NewLine>'
+    ;--- This is the "middle" part of a batch file --------------------------
+    #define? DLLCA-C_COMPILE_BATCH_FILE_CONTENTS.MINGW
+
+    <?NewLine>
+    @rem **** MinGw "BIN" must be in the path ************************************
+    if     "%MAKEMSI_MINGW%" == "" if exist "%HOMEDRIVE%\MinGw\bin\gcc.exe"    set MAKEMSI_MINGW=%HOMEDRIVE%\MinGw
+    if     "%MAKEMSI_MINGW%" == "" if exist "%ProgramFiles%\MinGw\bin\gcc.exe" set MAKEMSI_MINGW=%ProgramFiles%\MinGw
+    if not "%MAKEMSI_MINGW%" == "" set PATH=%PATH%;%MAKEMSI_MINGW%\bin
+
+    <?NewLine>
+    @rem **** Define some Intermediate files *************************************
+    set OutObjFile=%FileBase%.o
+    set OutResFile=%FileBase%(resources).o
+
+    <?NewLine>
+    @rem **** Removing old temporary files ***************************************
+    @del "%OutObjFile%" >nul 2>&1
+    @del "%OutResFile%" >nul 2>&1
+    @del "%DllFile%"    >nul 2>&1
+    <?NewLine>
+
+    @echo *** COMPILING THE SOURCE CODE ***********************************
+    setlocal
+    cd "<$MAKEMSI_DLLCA-C_DIR>"
+    cd /d "<$MAKEMSI_DLLCA-C_DIR>" 2>&1     ;;/d not supported everywhere
+    set GCC_COMPILE_OPTIONS=-c -DBUILD_DLL <$DLLCA-C_MINGW_EXTRA_OPTIONS_COMPILE_KEEP_TEMP> <$DLLCA_C_MINGW_INCLUDE_DIRECTIVES>
+    set Cmd=gcc.exe %GCC_COMPILE_OPTIONS% "%SrcCodeFile%" -o "%OutObjFile%"
+    echo EXEC: %CMD%
+    %CMD%
+    @if errorlevel 1 goto <$DLLCA_BATCH_LABEL_ERROR_FOUND>
+    endlocal
+    <$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_DISPLAY_SEPARATOR>
+
+    <?NewLine>
+    echo WindRes.exe is crap and doesn't handle spaces in filenames > "%OutResFile%"
+    for %%x in ("%SrcRcFile%")  do set  SrcRcFile83=%%~fsx
+    for %%x in ("%OutResFile%") do set OutResFile83=%%~fsx
+    @del "%OutResFile%" >nul 2>&1
+
+    <?NewLine>
+    @echo *** COMPILING RESOURCES *****************************************
+    set Cmd=WindRes.exe -o "%OutResFile%" "%SrcRcFile%"
+    set Cmd=WindRes.exe -i "%SrcRcFile83%" -o "%OutResFile83%"
+    echo EXEC: %CMD%
+    %CMD%
+    @if errorlevel 1 goto <$DLLCA_BATCH_LABEL_ERROR_FOUND>
+    for %%x in ("%OutResFile%") do set OutResFileNP=%%~nxx
+    set CMD=ren "%OutResFile83%" "%OutResFileNP%"
+    echo WORKAROUND: %CMD%
+    @%CMD% > nul
+
+    <$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_DISPLAY_SEPARATOR>
+
+    @echo *** GENERATING THE DLL ******************************************
+    set GCC_LINK_OPTIONS=<$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_GCC_LINK_OPTIONS>
+    set Cmd=gcc.exe -o "%DllFile%" "%OutObjFile%" "%OutResFile%" %GCC_LINK_OPTIONS%
+    echo EXEC: %CMD%
+    %CMD%
+    @if errorlevel 1 goto <$DLLCA_BATCH_LABEL_ERROR_FOUND>
+    <?NewLine>
+#)
+#define? DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_LINK_LIBRARYPATH     <$PLATFORM_SDK_LIB_DIR>\msi.lib
+#define? DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_GCC_LINK_OPTIONS     -shared -mwindows --library-path "<$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_LINK_LIBRARYPATH>"
+
+
+;----------------------------------------------------------------------------
+;--- Resource file (.rc) ----------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DLLCA-C_RESOURCE_FILE
+#define? DLLCA-C_RESOURCE_FILE_StringFileInfo_FILE_VERSION    <$ProductVersion>
+#define? DLLCA-C_RESOURCE_FILE_StringFileInfo_PRODUCT_VERSION <$ProductVersion>
+#define? DLLCA-C_RESOURCE_FILE_StringFileInfo_FILEOS          0x40000
+#define? DLLCA-C_RESOURCE_FILE_StringFileInfo_BLOCK           "040904B0"
+#define? DLLCA-C_RESOURCE_FILE_StringFileInfo_LegalCopyright
+#define? DLLCA-C_RESOURCE_FILE_StringFileInfo_EXTRA_KEYWORD_VALUE_PAIRS
+#DefineRexx '@@ConvertDottedToComma4'
+    ;--- Converts "1.2.003" to "1, 2, 3, 0" etc -----------------------------
+    parse value {$VerDotExp} with @@P1 '.' @@P2 '.' @@P3 '.' @@P4;
+    if  @@P1 = '' then @@P1 = 0; else @@P1 = @@P1 + 0;
+    if  @@P2 = '' then @@P2 = 0; else @@P2 = @@P2 + 0;
+    if  @@P3 = '' then @@P3 = 0; else @@P3 = @@P3 + 0;
+    if  @@P4 = '' then @@P4 = 0; else @@P4 = @@P4 + 0;
+    {$VerCmaVar} = @@P1 || ', ' || @@P2 || ', ' || @@P3 || ', ' || @@P4;
+#DefineRexx
+#(  '<?NewLine>'
+    #define? DLLCA-C_RESOURCE_FILE_StringFileInfo
+
+    ;--- Get a version number with 4 "bits" and commas ----------------------
+    #(
+        #DefineRexx ''
+            <$@@ConvertDottedToComma4 VerCmaVar='@@VerCmaFile'    VerDotExp=^'<$DLLCA-C_RESOURCE_FILE_StringFileInfo_FILE_VERSION>'^>;
+            <$@@ConvertDottedToComma4 VerCmaVar='@@VerCmaProduct' VerDotExp=^'<$DLLCA-C_RESOURCE_FILE_StringFileInfo_PRODUCT_VERSION>'^>;
+        #DefineRexx
+    #)
+
+    ;--- Generate the version info ------------------------------------------
+    1 VERSIONINFO
+    FILEVERSION    <??@@VerCmaFile>
+    PRODUCTVERSION <??@@VerCmaProduct>
+    FILEFLAGSMASK 0
+    FILEOS <$DLLCA-C_RESOURCE_FILE_StringFileInfo_FILEOS>
+    FILETYPE 1
+    {
+     BLOCK "StringFileInfo"
+     {
+      BLOCK <$DLLCA-C_RESOURCE_FILE_StringFileInfo_BLOCK>
+      {
+       VALUE "CompanyName",      "<$COMPANY_PROPERTY_MANUFACTURER>"
+       VALUE "FileDescription",  "Built by MAKEMSI (at <?CompileTime>) as part of the creation of the <$ProdInfo.ProductName> MSI."
+       VALUE "FileVersion",      "<$ProductVersion>"
+       VALUE "LegalCopyright",   "<$DLLCA-C_RESOURCE_FILE_StringFileInfo_LegalCopyright>"
+       VALUE "ProductName",      "<$ProdInfo.ProductName>"
+       VALUE "ProductVersion",   "<$ProductVersion>"
+       <$DLLCA-C_RESOURCE_FILE_StringFileInfo_EXTRA_KEYWORD_VALUE_PAIRS>
+      }
+     }
+    }
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Contents of the Compile Batch file -------------------------------------
+;----------------------------------------------------------------------------
+#(  '<?NewLine>'
+    #define? DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_START
+    @echo off
+    setlocal
+    echo.
+    set     FileBase=<??@@FilesNe>
+    set  SrcCodeFile=<??@@SourceCodeFile>
+    set    SrcRcFile=<??@@SrcRcFile>
+    set      DllFile=<??@@DllFile>
+    if     "%1" == "" set InvokedBy=USER
+    if not "%1" == "" set InvokedBy=MAKEMSI
+    <?NewLine><?NewLine><?NewLine>
+
+    @REM *** Change Buffer size, unless told not too ****************************
+    if  "%InvokedBy%" == "MAKEMSI" goto AlreadyDone
+        set BuffSize=%MAKEMSI_MM_CONBUFFSIZE%
+        if     "%BuffSize%" == ""   set BuffSize=32000
+        if not "%BuffSize%" == "-"  ConSetBuffer.exe /H=%BuffSize%
+    :AlreadyDone
+    <?NewLine><?NewLine><?NewLine>
+#)
+#(  '<?NewLine>'
+    #define? DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_END
+    <?NewLine><?NewLine><?NewLine>
+
+    ;--- Did the user want a compress step (UPX.EXE etc)? -------------------
+    #if ['<$DLLCA-C_COMPRESS_DLL_COMMAND_LINE $$IsBlank>' = 'Y']
+        @echo.
+        @echo Compression not configured with the "DLLCA-C_COMPRESS_DLL_COMMAND_LINE" macro!
+    #elseif
+        <$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_DISPLAY_SEPARATOR>
+        @echo *** COMPRESSING THE SUCCESSFULLY GENERATED DLL ********************
+        set Cmd=<$DLLCA-C_COMPRESS_DLL_COMMAND_LINE> "%DllFile%"
+        echo EXEC: %CMD%
+        %CMD%
+        @if errorlevel 1 goto <$DLLCA_BATCH_LABEL_ERROR_FOUND>
+    #endif
+    <?NewLine>
+
+    ;--- If user let us get to header its OK --------------------------------
+    @rem ============
+    :<$DLLCA_BATCH_LABEL_OK_FINISH>
+    @rem ============
+        set SetRc=echo GOOD (this will always work)
+        goto ExitWithRc
+        <?NewLine>
+
+    @rem ============
+    :<$DLLCA_BATCH_LABEL_ERROR_FOUND>
+    @rem ============
+        @echo.
+        @echo !!!
+        @echo !!! <$DLLCA_BATCH_FILE_ERROR_RC_TEXT_BEFORE>%errorlevel%<$DLLCA_BATCH_FILE_ERROR_RC_TEXT_AFTER>
+        @echo !!!
+        set SetRc=.\NoSuchExeToSetRc.EXE (this will never work)
+        goto ExitWithRc
+        <?NewLine>
+
+    @rem ============
+    :ExitWithRc
+    @rem ============
+    @echo.
+    if  "%InvokedBy%" == "USER" @pause
+    %SetRc% >nul 2>&1
+#)
+#(  '<?NewLine>'
+    #define? DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_DISPLAY_SEPARATOR
+    <?NewLine><?NewLine><?NewLine>
+    @echo.
+    @echo *+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+
+    @echo.
+    <?NewLine><?NewLine><?NewLine>
+#)
+#(  '<?NewLine>'
+    #define? DLLCA-C_COMPILE_BATCH_FILE_CONTENTS
+
+    ;--- Standard initialization code ---------------------------------------
+    <$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_START>
+
+    ;--- Use the configured toolset -----------------------------------------
+    #ifndef DLLCA-C_COMPILE_BATCH_FILE_CONTENTS.[DLLCA-C_USE_TOOLS]
+            #error ^The toolset "<$DLLCA-C_USE_TOOLS>" hasn't been defined!^
+    #endif
+    <$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS.[DLLCA-C_USE_TOOLS]>
+
+    ;--- Standard final code ------------------------------------------------
+    <$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS_END>
+#)
+;---[4DocoDLLCA-C-RelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Optional Code (you may wish to reduce size of scripts) -----------------
+;----------------------------------------------------------------------------
+;---[4DocoDLLCA-C-RelatedCodeConfig]---
+;--- Defaults for the "CODE" parameter --------------------------------------
+#define? DllCa-C_INCLUDE_HEADERS_USER             ;;Easy way for user to add #includes (without replacing all existing).
+#(  '<?NewLine>'
+    ;--- What header files do we need? --------------------------------------
+    #define? DllCa-C_INCLUDE_HEADERS
+    <$DllCa-C_INCLUDE_HEADERS_USER> //User may wish to add their own with the "DllCa-C_INCLUDE_HEADERS_USER" macro.
+    <?Hash>include <windows.h>      //Supplied by MinGw Windows API support
+    <?Hash>include <msi.h>          //Supplied by Microsofts Platform SDK
+    <?Hash>include <msiquery.h>     //Supplied by Microsofts Platform SDK
+#)
+#(  '<?NewLine>'
+    #define DllCa-C_DECLARATIONS
+    static void CaDebug( MSIHANDLE hInstall, int LogTo, TCHAR* szString);
+    static void CaDebugv(MSIHANDLE hInstall, int LogTo, TCHAR* szFormat, ...);
+#)
+#(  '<?NewLine>'
+    #define DllCa-C_START_CODE
+
+    ;--- Load required headers ----------------------------------------------
+    <$DllCa-C_INCLUDE_HEADERS><?NewLine>
+
+    ;--- Used on all DLL CA entry points ------------------------------------
+    <?Hash>define EXPORTME __declspec(dllexport)
+
+    ;--- Standard declarations ----------------------------------------------
+    <$DllCa-C_DECLARATIONS>
+
+    ;--- First "parameter" of CaDebug() -------------------------------------
+    <?Hash>define PROGRESS_LOG       hInstall, 0          //Log only
+    <?Hash>define PROGRESS_ACTION    hInstall, 1          //Above progress bar + Log
+    <?Hash>define PROGRESS_DETAIL    hInstall, 2          //Below progress bar + Log
+#)
+#(  '<?NewLine>'
+
+    #define DllCa-C_END_CODE
+
+    <?NewLine><?NewLine>
+    //======================================================================
+    static void CaDebug(MSIHANDLE hInstall, int LogTo, TCHAR* szString)
+    //======================================================================
+    {
+        ;--- Create a record ------------------------------------------------
+        MSIHANDLE oRec = MsiCreateRecord(3);
+
+        ;--- Format the record appropriately --------------------------------
+        INSTALLMESSAGE MsgType     = INSTALLMESSAGE_INFO;
+        int            RecCol4Text = 0;
+        if  (LogTo == 1)
+        {
+            MsgType     = INSTALLMESSAGE_ACTIONSTART;
+            RecCol4Text = 2;
+            MsiRecordSetString(oRec, 1, "<$DLLCA-C_LOG_PREFIX>");
+            MsiRecordSetString(oRec, 3, "[1]");
+        }
+        if  (LogTo == 2)
+        {
+            MsgType     = INSTALLMESSAGE_ACTIONDATA;
+            RecCol4Text = 1;
+        }
+        MsiRecordSetString(oRec, RecCol4Text, szString);
+
+        ;--- Process the message --------------------------------------------
+        MsiProcessMessage(hInstall, MsgType, oRec);
+
+        ;--- We no longer want the record -----------------------------------
+        MsiCloseHandle(oRec);
+    }
+
+    <?NewLine><?NewLine>
+    //======================================================================
+    static void CaDebugv(MSIHANDLE hInstall, int LogTo, TCHAR* szFormat, ...)
+    //======================================================================
+    {
+        ;--- Create the text ------------------------------------------------
+        #define? DLLCA-C_STACK_BUFFER_SIZE_CaDebugv  <$DLLCA-C_STACK_BUFFER_SIZE>
+        TCHAR szBuffer[<$DLLCA-C_STACK_BUFFER_SIZE_CaDebugv>];
+        va_list args;
+        va_start(args, szFormat);
+            vsnprintf(szBuffer, sizeof(szBuffer), szFormat, args);
+        va_end(args);
+
+        ;--- Now Log the text -----------------------------------------------
+        CaDebug(hInstall, LogTo, szBuffer);
+    }
+#)
+;---[4DocoDLLCA-C-RelatedCodeConfig]---
+
+
+;----------------------------------------------------------------------------
+;--- Clean out any existing C directory (don't want obsolete files) ---------
+;----------------------------------------------------------------------------
+#ifndef DLLCA-C_DONT_INITIALIZE_VBSCRIPTS_DIRECTORY
+   ;--- User is allowing directory to be deleted ----------------------------
+   #ifdef IsNT
+       #DefineRexx ''
+           call AddressCmd 'rd "<$MAKEMSI_DLLCA-C_DIR>" /q /s >nul <$Stderr2Out>'
+       #DefineRexx
+   #end if
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Indicates the start of a C custom action -------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@DLLCA_CNesting = 0
+#RexxVar @@FunctionCnt  = 0
+#RexxVar @@Binary       = ""
+#( '<?NewLine>'
+   ;--- Define macro to create C/C++ and add it to the binary table -----------
+   #define DLLCA-C
+   <$UpdateMmLocation>
+
+   ;--- Basic Validation ----------------------------------------------------
+   {$!KEYWORDS}                        ;;Don't Expect any keywords!
+   {$!:BINARY,LANGUAGE,DOCO}           ;;List valid parms
+
+   ;--- Nesting validation --------------------------------------------------
+   #PUSH "DLLCA-C"
+   #RexxVar @@DLLCA_CNesting + 1
+   #if [@@DLLCA_CNesting <> 1]
+       #error ^You can't nest the "DLLCA-C" macro!^
+   #endif
+
+   ;--- Initialize the function counter -------------------------------------
+   #RexxVar @@FunctionCnt  = 0
+
+   ;--- Do stuff... ---------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4DLLCA-C {$?}>^
+
+   ;--- All following stuff goes into the C/C++ File ------------------------
+   #output  "<??@@SourceCodeFile>" ASIS OTHER
+   <$DllCa-C_START_CODE>
+   <?NewLine><?NewLine><?NewLine>
+#)
+#DefineRexx '@@Rexx4DLLCA-C'
+    ;--- Work out what the Binary is called as well as output filenames (no extn) ---
+   @@Binary = '{$Binary}';
+   if   translate(right(@@Binary, 4)) <> '.DLL' then
+        @@FilesNe = @@Binary;
+   else
+        @@FilesNe = left(@@Binary, length(@@Binary)-4);     ;;Remove extension
+   @@FilesNe = '<$MAKEMSI_DLLCA-C_DIR>\' || @@FilesNe;
+
+   ;--- Get language info ---------------------------------------------------
+   @@Language   = '{$language=^<$DEFAULT_DLLCA-C_LANGUAGE>^}';
+   @@SrcExtnMac =  'DLLCA-C_SOURCE_EXTN_FOR_' || @@Language;
+   if   Defined(@@SrcExtnMac) = 'N' then
+        error('The extension "' || @@Language || '" is not suppported!');
+   @@SrcExtn        = MacroGet(@@SrcExtnMac);
+   @@SourceCodeFile = @@FilesNe || @@SrcExtn;
+
+   ;--- This is the name of the DLL -----------------------------------------
+   @@DllFile = @@FilesNe || '.dll';
+
+   ;--- Want in doco? -------------------------------------------------------
+   @@DocoParameter = translate('{$Doco=^<$DEFAULT_DLLCA-C_DOCO>^}');
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Query name that a FUNCTION Entry point was exported with ---------------
+;----------------------------------------------------------------------------
+#(  ''
+    #define DllCaEntry?
+    <$DLLCA-C_EXPORT_DECORATORS_PREFIX>
+        {$#1}                               ;;Name of entry point
+    <$DLLCA-C_EXPORT_DECORATORS_SUFFIX>     ;;The compiler/linker adds this decorator
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Start FUNCTION Entry point ---------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Start user function macro -------------------------------------------
+   #define DllCaEntry
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1}
+
+   ;--- Nesting validation --------------------------------------------------
+   #push "C/C++ CUSTOM ACTION ENTRY POINT"
+   #if [@@DLLCA_CNesting <> 1]
+       #error ^This macro can only be used with a "DLLCA-C" block!^
+   #endif
+
+   ;--- Remember the name of the function -----------------------------------
+   #RexxVar @@FunctionCnt                  + 1
+   #RexxVar @@Function.@@FunctionCnt       = '{$#1}'
+
+   ;--- Start the function --------------------------------------------------
+   <?NewLine><?NewLine>
+
+   //=s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==
+   static UINT __stdcall {$#1}<$DLLCA-C_USER_FUNCTION_SUFFIX>(MSIHANDLE hInstall);  ;;Prototype your "user" function
+   EXPORTME UINT __stdcall {$#1}(MSIHANDLE hInstall)                                ;;A stub which invokes your "static" function!
+   //=s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==s==
+   {
+        ;--- Log ENTRY (plus any wrapping user code) ------------------------
+        UINT CaRc;
+        <$DLLCA-C_STUB_ENTRY function="{$#1}" Binary="<??@@Binary>">
+
+        ;--- Call the User's code -------------------------------------------
+        CaRc = {$#1}<$DLLCA-C_USER_FUNCTION_SUFFIX>(hInstall);
+
+        ;--- Log EXIT (plus any wrapping user code) -------------------------
+        <$DLLCA-C_STUB_EXIT function="{$#1}" Binary="<??@@Binary>" RcVar="CaRc">
+        return(CaRc);
+   }
+
+   ;--- Start the actual user code ------------------------------------------
+   <?NewLine><?NewLine>
+   //===============================================================
+   static UINT __stdcall {$#1}<$DLLCA-C_USER_FUNCTION_SUFFIX>(MSIHANDLE hInstall)
+   //===============================================================
+   {
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- End FUNCTION Entry point -----------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- End user function macro ---------------------------------------------
+   #define /DllCaEntry
+
+   ;--- Nesting validation --------------------------------------------------
+   #pop  "C/C++ CUSTOM ACTION ENTRY POINT"
+
+   ;--- Finish the actual user code -----------------------------------------
+   }
+#)
+
+
+;----------------------------------------------------------------------------
+;--- End C/C++ --------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   ;--- Define macro to create C/C++ and add it to the binary table -----------
+   #define /DLLCA-C
+   ;<$UpdateMmLocation>            ;;Can't do this as output goes to wrong place!
+
+   ;--- Nesting validation --------------------------------------------------
+   #POP "DLLCA-C"
+   #RexxVar @@DLLCA_CNesting - 1
+   #if [@@DLLCA_CNesting <> 0]
+       #error ^This block end macro used before start defined!!^
+   #endif
+
+   ;--- There must be at least one entry point! -----------------------------
+   #if [@@FunctionCnt < 1]
+       #error ^You did not define any function entry points (with "DllCaEntry")!^
+   #endif
+
+   ;--- End of C/C++ Source -----------------------------------------------------
+   <$DllCa-C_END_CODE>
+   #output
+
+   ;--- Create ".RC file ----------------------------------------------------
+   #Rexxvar @@SrcRcFile = '<??@@FilesNe>.rc'
+   #output "<??@@SrcRcFile>" ASIS OTHER
+           <$DLLCA-C_RESOURCE_FILE>
+           <$DLLCA-C_RESOURCE_FILE_StringFileInfo>
+   #output
+
+
+   ;--- Create ".CMD file ----------------------------------------------------
+   #Rexxvar @@BatchFile = '<??@@FilesNe>(BuildMe).cmd'
+   #output "<??@@BatchFile>" ASIS OTHER
+           <$DLLCA-C_COMPILE_BATCH_FILE_CONTENTS>
+   #output
+
+
+   ;--- Compile the source we just generated --------------------------------
+   #evaluate ^^ ^<$@@CompileCSourceCode>^
+
+   ;--- Add to the binary table ---------------------------------------------
+   <$Binary KEY="<??@@Binary>" "<??@@DllFile>" Comment="<$DLLCA-C_BINARY_COMMENT>" DOCO="<??@@DocoParameter>">
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Compile code -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx '@@CompileCSourceCode'
+    ;--- To protect against crappy batch files, delete some files -----------
+    call FileDelete @@DllFile;     ;;Linked DLL
+
+    ;--- Change color to make it obvious to the user ------------------------
+    @@DllShort = FilePart('n', @@DllFile);
+    call Info 'Building DLL: ' || @@DllShort;
+    call ColorCfg '?BUILDDLL', '<$DLLCA-C_BUILD_DLL_OUTPUT_COLOR>';
+    call ColorSet '?BUILDDLL';
+
+    ;--- Run the batch file (can be replaced with non-MinGw tools etc) ------
+    @@Cmd = '"' || @@BatchFile || '" NOPAUSE'
+    #ifdef IsDos
+        @@Rc = AddressCmd(@@Cmd);
+        call Say2Logs 'Compile command returned RC = ' || @@Rc
+    #elseif
+        ;--- Record starting time -------------------------------------------
+        @@StartTime = GetAmPmTime()
+
+        ;--- Get name of non existant temporary file ------------------------
+        @@TempFile = @@FilesNe || '(BuildOutput).txt';
+
+        ;--- Update the command to generate the file ------------------------
+        @@Cmd = @@Cmd || " 2>&1 | <$NAME_REGINA.EXE> <$NAME_TEE.REX> '" || @@TempFile || "' 2>&1"
+
+        ;--- Needed for regina 3.1+????????????????????? --------------------
+        @@Cmd = 'cmd.exe /c "' || @@Cmd || '"';
+
+        ;--- Execute the VBS ------------------------------------------------
+        @@Rc = AddressCmd(@@Cmd);
+        call Say2Logs 'The Compile command returned RC = ' || @@Rc
+
+        ;--- Sanity check (and have seen 0 length files) --------------------
+        @@WhatThe = "";
+        if  FileQueryExists(@@TempFile) = '' then
+        do
+            @@WhatThe = "doesn't exist!"
+            @@Maybe   = "Is there a permissions issue?"
+        end;
+        else
+        do
+            ;--- File exists, make sure not 0 length! -----------------------
+            if  FileQuerySize(@@TempFile) = "0" then
+            do
+                @@WhatThe = "is zero characters long!"
+                @@Maybe =            "I have seen Norton's AntiVirus cause this.  Some AntiVirus and AntiSpyWare" || d2c(10)
+                @@Maybe = @@Maybe || 'can be configured to terminate scripts without informing you!'            || d2c(10)
+                @@Maybe = @@Maybe || 'You may wish to try the "Diagnostic Shortcuts" MAKEMSI installed.'
+            end;
+        end;
+        if  @@WhatThe <> '' then
+        #(
+            error('We expected the temporary file "' || @@TempFile || '" to contain the output from the DLL build process, but the output file ' || @@WhatThe,, 'The command was:','   ' || @@Cmd,,'Have you rebooted since the MAKEMSI install? If not please try this!',,@@Maybe);
+        #)
+
+        ;--- User already seen (TEE output) so just add to log --------------
+        @@BuildTxt = charin(@@TempFile, 1, 9999999)
+        call FileClose  @@TempFile;
+        @@BuildTxt = ReplaceString(@@BuildTxt, '0D'x, '');   ;;Has CR+LF, need LF, CR gets re-added
+        call Say2Logs ''
+        call Say2Logs '#### START: BUILD "' || @@DllShort || '" (' || @@StartTime || ') ' || copies('#', 30)
+        call Say2Logs @@BuildTxt;
+        call Say2Logs '#### END:   BUILD "' || @@DllShort || '" (' || GetAmPmTime() || ') ' || copies('#', 30)
+        call Say2Logs ''
+        @@RcOutput = 0
+        parse var @@BuildTxt with '<$DLLCA_BATCH_FILE_ERROR_RC_TEXT_BEFORE>' @@RcOutput '<$DLLCA_BATCH_FILE_ERROR_RC_TEXT_AFTER>'
+        if @@RcOutput <> '' then
+        do
+            @@Rc = @@RcOutput
+            call say "We detected the error code of " || @@Rc || ' (from the commands output)'
+        end;
+    #endif
+
+    ;--- Reset the color ----------------------------------------------------
+    call ColorSet 'DEFAULT';
+
+    ;--- Now make sure that the DLL was created -----------------------------
+    if  FileQueryExists(@@DllFile) = '' then
+    do
+        <$RexxDebugViewFile FileVar="@@TempFile">;
+        error('The DLL "' || @@DllFile || '" was not built by the batch file.',, 'Got a return code of ' || @@Rc || ' from "' || @@BatchFile || '"');
+    end;
+    if  @@Rc <> 0 then
+    do
+        <$RexxDebugViewFile FileVar="@@TempFile">;
+        error('The DLL "' || @@DllFile || '" exists but the batch file "' || @@BatchFile || '" returned a non-zero return code of ' || @@Rc);
+    end;
+
+    ;--- Done ---------------------------------------------------------------
+    call Info 'Successfully built DLL: ' || @@DllShort;
+#DefineRexx
+
+
+#NextId UNLOCK "DLLCA-C.MMH"
+

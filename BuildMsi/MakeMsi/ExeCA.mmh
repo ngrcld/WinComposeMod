@@ -1,0 +1,209 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   EXECA.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.21  $
+;          $Date:   24 Mar 2015 18:35:02  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ExeCA.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "EXECA.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_EXECA_SEQTABLE         InstallExecuteSequence
+#define? DEFAULT_EXECA_WORKDIR          SystemFolder        ;;Only used if required when not run via binary table.
+#define? EXECA_DEFAULT_TYPE_ATTRIBUTES
+
+
+
+;----------------------------------------------------------------------------
+;--- Custom Action conditions -----------------------------------------------
+;----------------------------------------------------------------------------
+#define? EXECA_CONDITION_INSTALL_ONLY    <$CONDITION_INSTALL_ONLY>
+#define? EXECA_CONDITION_UNINSTALL_ONLY  <$CONDITION_UNINSTALL_ONLY>
+
+
+
+;----------------------------------------------------------------------------
+;--- Indicates the start of a VBS custom action Script ----------------------
+;----------------------------------------------------------------------------
+#RexxVar @@ExeCaCnt = 0
+#DefineRexx '@@Rexx4ExeCa' NoPack
+   ;--- Get the "EXE" information -------------------------------------------
+   @@ExeName  = '{$Exe=^^}';
+   @@ExeCaCnt = @@ExeCaCnt + 1
+
+   ;--- Get Condition -------------------------------------------------------
+   {$Condition $$RxVar:@@Condition}
+
+   ;--- Get space separated list of table names -----------------------------
+   @@SeqTables = '{$SeqTable=^<$DEFAULT_EXECA_SEQTABLE>^}';
+   ;@@SeqTables = translate(@@SeqTables,, <$SUNDRY_STANDARD_DELIMITERS_REXXEXP> || ',;', ' ');
+   <$Rexx2ConvertDelimitersToSpaces RxVar="@@SeqTables">
+
+   ;--- We no longer support the "Property" parameter -----------------------
+   @@Property = '{$Property=""}'   ;;Information already in a property? Don't use if running via "Binary" Table!
+   if   @@Property <> '' then
+        error('Sorry but the EXECA command no longer uses the "PROPERTY" parameter!');
+
+   ;--- Get the arguments ---------------------------------------------------
+   {$Args=^^ $$RxVar:@@Args}           ;;Arguments
+
+   ;--- Working directory is a directory key or will be converted to one ----
+   @@WorkDir     = '{$WorkDir=^^}';        ;;Current directory for EXE!
+   @@Vbs4WorkDir = ''                      ;;VBS code needed to build this dir
+
+   ;--- Is the executable to be run from the binary table? ------------------
+   @@BinaryCa = '{$Binary=^^}';
+   if  @@BinaryCa = "" then
+   do
+       ;--- EXE in FILE SYSTEM ----------------------------------------------
+       if   @@WorkDir = '' then
+       do
+            @@WorkDir = '<$DEFAULT_EXECA_WORKDIR>';
+            if   @@WorkDir = '' then
+                error('The "DEFAULT_EXECA_WORKDIR" macro should never be blank.', 'Either fix this or supply the "WorkDir" parameter!')
+       end;
+       <$Rexx4MakeDirectoryTree DirExp=^@@WorkDir^>;  ;;Turn into a dir key if required
+       @@Vbs4WorkDir = DTVBS;
+       @@WorkDir     = DT_KEYNAME;
+       @@Attributes  = '<$CATYPE_EXE_IN_FILEYSTEM_WITH_WORKDIR>'
+       @@TypeLetter  = 'F';
+       @@CaExeSource = @@WorkDir;        ;;"Directory" key to the working directory
+       if  @@ExeName = '' then
+           error("You must supply the install time name of the EXE file (use MSI formatting)!");
+       @@CaExeTarget = '"' || @@ExeName || '"'
+       if   @@Args <> '' then
+            @@CaExeTarget = @@CaExeTarget || ' ' || @@Args;
+   end;
+   else
+   do
+       ;--- EXE in BINARY TABLE ---------------------------------------------
+       if   @@WorkDir <> '' then
+            error('Sorry but you can''t specify the working directory for a command run via the binary table.');
+       @@TypeLetter  = 'B';
+       @@Attributes  = '<$CATYPE_EXE_IN_BINARY_TABLE>'
+       if  @@BinaryCa <> '?' then
+           @@CaExeSource = @@BinaryCa;    ;;The user is choosing the binary key
+       else
+       do
+           ;--- User is allowing us to choose the key (so must supply "EXE") ---
+           @@CaExeSource = '';
+           if  @@ExeName = '' then
+               error("You must supply the build time name of the EXE being added to the binary table!");
+       end;
+       @@CaExeTarget = @@Args;
+   end;
+
+   ;--- Update custom action type/attributes --------------------------------
+   @@TypeAttributes = '<$EXECA_DEFAULT_TYPE_ATTRIBUTES> {$Type=^^}';
+   <$CaType.Rexx2ProcessCaAttributes {$?} TypeVar=^@@Type^ TypeExVar=^@@TypeEx^ AttributeVar=^@@Attributes^ TypeAttributesVar=^@@TypeAttributes^>
+
+   ;--- Work out default key suffixes ---------------------------------------
+   if  @@ExeCaCnt < 10 then
+       @@KeySuffix = @@TypeLetter || right(@@ExeCaCnt, 2, '0');
+   else
+       @@KeySuffix = @@TypeLetter || @@ExeCaCnt;
+
+   ;--- Do we wish to build a source name ("Binary" key or property name) ---
+   if  @@CaExeSource = "" then
+       @@CaExeSource = 'ExeCaProperty' || @@KeySuffix
+
+   ;--- What should be the Custom Action Key? -------------------------------
+   @@CaExeKey = '{$Key=""}'
+   if  @@CaExeKey = "" then
+       @@CaExeKey = 'ExeCaKey' || @@KeySuffix
+
+   ;--- The Custom Action's description? ------------------------------------
+   @@CaExeDesc = '{$Description=~~}'
+   if  @@CaExeDesc = '' then
+       @@CaExeDesc = 'EXE Custom Action : ' || @@CaExeKey
+
+   ;--- Handle Sequence number parameter ------------------------------------
+   @@Seq = '{$Seq}';
+   <$SeqNumberRexx2CreateSequenceNumberExpression SEQ="@@Seq" Macro="@@SeqExpression" Number="1">;
+#DefineRexx
+#( '<?NewLine>'
+   #define ExeCa
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Init ----------------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4ExeCa {$?}>^
+   <??@@Vbs4WorkDir><?RestartLine>
+
+   ;--- Add EXE to the binary table if required -----------------------------
+   #if [@@TypeLetter = 'B']
+       #if [@@ExeName <> '']
+            ;--- The user supplied the build time location of the EXE -------
+            <$Binary Key=^<??@@CaExeSource>^ "<??@@ExeName>">
+       #end if
+   #endif
+
+   ;--- Define the custom action --------------------------------------------
+   <$TABLE "CustomAction">
+        #if [@@TypeEx = '']
+           #(
+               <$Row
+                   Action=`<??@@CaExeKey>`         ;;CA key
+                   Source=`<??@@CaExeSource>`      ;;Name or Working Directory or key into Binary table
+                    *Type=`<??@@Type>`
+                   Target=`<??@@CaExeTarget>`      ;;Arguments (preceeded by EXE name unless run from binary)
+               >
+           #)
+        #elseif
+           #(
+               <$Row
+                   Action=`<??@@CaExeKey>`         ;;CA key
+                   Source=`<??@@CaExeSource>`      ;;Name or Working Directory or key into Binary table
+                    *Type=`<??@@Type>`
+            *ExtendedType="<??@@TypeEx>"
+                   Target=`<??@@CaExeTarget>`      ;;Arguments (preceeded by EXE name unless run from binary)
+               >
+           #)
+        #endif
+   <$/TABLE>
+
+   ;--- Install in SEQUENCE table(s) ----------------------------------------
+   #if  [@@SeqTables = '']
+        #if [@@Seq <> 0]
+            #error ^No sequence tables were specified and the sequence number was not 0 (zero)!^
+        #endif
+   #endif
+   #{ SET "SeqTable={ }<??@@SeqTables>"
+       ;--- Install in the specified table ----------------------------------
+       SeqNo = <$@@SeqExpression "<??SET_SeqTable>"> ;;Set the VBS variable "SeqNo"
+       <$TABLE "<??SET_SeqTable>">
+       #(
+           <$Row
+                  Action=`<??@@CaExeKey>`        ;;CA Key
+               Condition=`{$Condition}`          ;;Execute under what condition?
+               *Sequence="SeqNo"                 ;;Execute when?
+           >
+       #)
+       <$/TABLE>
+   #}
+
+   ;--- Add action text -----------------------------------------------------
+   <$TABLE "ActionText">
+   #(
+       <$Row
+               Action="<??@@CaExeKey>"
+          Description=`<??@@CaExeDesc>`
+       >
+   #)
+   <$/TABLE>
+#)
+
+
+#NextId UNLOCK "EXECA.MMH"
+

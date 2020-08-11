@@ -1,0 +1,1138 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   TABLEROW.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.38  $
+;          $Date:   03 Apr 2018 13:05:04  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/TableRow.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_TABLE_CREATE           Y         ;;"Table" command automatically creates tables?
+#define? DEFAULT_ROWS_METHOD           <$ROWS_METHOD_REPLACE>
+#define? DEFAULT_ROW_VALIDATE_NO_WHERE  FIELD          ;;Validate against "_Validation" table ("" to turn off)
+#define? DEFAULT_ROW_VALIDATE_WHERE     FETCH          ;;Validate against "_Validation" table ("" to turn off)
+
+
+;--- Globals ----------------------------------------------------------------
+#RexxVar RxTableNestingLevel        = 0  ;;1 = first table (0 = none)
+#RexxVar RxCurrentTable.0           = '' ;;"" means not in TABLE block
+#RexxVar RxCurrentTableStarted.0    = '' ;;Where the table was started
+#RexxVar RxCurrentTableFields.0     = '' ;;List of fields
+#RexxVar RxCurrentTableDefPrefix.0  = '' ;;table defn prefix (ending in ".!")
+
+;--- Constants to place into VBS --------------------------------------------
+#(  ''
+    #define @ValidateErrTxtDefine
+
+    ;--- Create Rexx variable used for macro validation ---------------------
+    #RexxVar RxMSIDBERROR_{$#1} = "{$#}"
+
+    ;--- Use what Text (user can override!)? --------------------------------
+    #ifdef  @VALIDATE_TEXT_FOR_{$#1}     ;;"@VALIDATE_TEXT_FOR_MISSINGDATA" etc
+        ;--- User supplied alternative text ---------------------------------
+        #RexxVar  '@@Txt' = '<$@VALIDATE_TEXT_FOR_{$#1}>'
+    #elseif
+        ;--- Use the default text -------------------------------------------
+        #RexxVar  '@@Txt' = '{$DefaultText}'
+    #endif
+    #DefineRexx ''
+        ;--- Make safe to use in VBSCRIPT string ----------------------------
+        @@Txt = ReplaceString(@@Txt, '"', '""');
+    #DefineRexx
+
+    ;--- Now add to dictionary to provide runtime error messages ------------
+    oValidateErrTxt.add "{$#}", "({$#1}) <??@@Txt>"
+#)
+#( '<?NewLine>'
+   #define TableRowVbsVariables
+
+   ;--- Some general constants ----------------------------------------------
+   const MsiViewModifyInsert        = 1         ;;Insert new record
+   const MsiViewModifyUpdate        = 2         ;;Update record (can't change primary keys)
+   const MsiViewModifyAssign        = 3         ;;Insert new record or Update if keys duplicated
+   const MsiViewModifyReplace       = 4         ;;Update record (can change primary keys - existing record deleted if required)
+   const MsiViewModifyValidate      = 8         ;;Validate fields (used when @where used)
+   const MsiViewModifyValidateNew   = 9         ;;Validate fields (can be used when inserting or replacing a single record)
+   const MsiViewModifyValidateField = 10        ;;Validate fields (can used when inserting or replacing a single record)
+   const msiColumnInfoTypes         = 1
+   const msiDatabaseNullInteger = &h80000000
+
+   ;--- List of error reasons to ignore -------------------------------------
+   dim RowValidationExclusions()
+   dim RowValidationExclusions4Human()          ;;User friendly text
+   if  Pass = "1" then
+       SetupRowValidationExclusionList_1()
+   else
+       SetupRowValidationExclusionList_2()
+   end if
+
+    ;--- Set up Dictionary object for GetError() translation ----------------
+    <?NewLine>
+    dim oValidateErrTxt : set oValidateErrTxt = MkObject("Scripting.Dictionary")
+    ;---[UsedByMakeMsiDoco-@ValidateErrTxtDefine]---
+    #define+   VarErrorMsg-Assumed83 The name is assumed to be in '8.3' format unless both both 8.3 and long versions supplied (example 'ABCDEF~1.TXT|abcdefgh ij.txt').
+    <$@ValidateErrTxtDefine "INVALIDARG"        #="-3" DefaultText="An argument was invalid.">
+    <$@ValidateErrTxtDefine "MOREDATA"          #="-2" DefaultText="The buffer was too small to receive data.">
+    <$@ValidateErrTxtDefine "FUNCTIONERROR"     #="-1" DefaultText="The function failed.">
+    <$@ValidateErrTxtDefine "DUPLICATEKEY"      #="01" DefaultText="The new record duplicates primary keys of the existing record in a table.">
+    <$@ValidateErrTxtDefine "REQUIRED"          #="02" DefaultText="There are no NULL values allowed, or the column is about to be deleted but is referenced by another row.">
+    <$@ValidateErrTxtDefine "BADLINK"           #="03" DefaultText="The corresponding record in a foreign table was not found.">
+    <$@ValidateErrTxtDefine "OVERFLOW"          #="04" DefaultText="The data is greater than the maximum value allowed.">
+    <$@ValidateErrTxtDefine "UNDERFLOW"         #="05" DefaultText="The data is less than the minimum value allowed.">
+    <$@ValidateErrTxtDefine "NOTINSET"          #="06" DefaultText="The data is not a member of the values permitted in the set (see _Validation table).">
+    <$@ValidateErrTxtDefine "BADVERSION"        #="07" DefaultText="An invalid version string was supplied.">
+    <$@ValidateErrTxtDefine "BADCASE"           #="08" DefaultText="Mixed case is not allowed (must be all upper or lower).">
+    <$@ValidateErrTxtDefine "BADGUID"           #="09" DefaultText="An invalid GUID was supplied. Note that any letters must be UPPER case.">
+    <$@ValidateErrTxtDefine "BADWILDCARD"       #="10" DefaultText="An invalid wildcard file name was supplied, or the use of wildcards was invalid. <$VarErrorMsg-Assumed83>">
+    <$@ValidateErrTxtDefine "BADIDENTIFIER"     #="11" DefaultText="An invalid identifier was supplied. An identifier must begin with either a letter or an underscore which is followed by zero or more letters, digits, underscores ('_'), or periods ('.')">
+    <$@ValidateErrTxtDefine "BADLANGUAGE"       #="12" DefaultText="Invalid language IDs were supplied.">
+    <$@ValidateErrTxtDefine "BADFILENAME"       #="13" DefaultText="An invalid file name was supplied. <$VarErrorMsg-Assumed83>">
+    <$@ValidateErrTxtDefine "BADPATH"           #="14" DefaultText="An invalid path was supplied.">
+    <$@ValidateErrTxtDefine "BADCONDITION"      #="15" DefaultText="An invalid conditional statement was supplied.">
+    <$@ValidateErrTxtDefine "BADFORMATTED"      #="16" DefaultText=^An invalid formatted string was supplied. You probably need to "escape" characters such as curley or square brackets (encode "[" as "[\[]" etc).^>
+    <$@ValidateErrTxtDefine "BADTEMPLATE"       #="17" DefaultText="An invalid template string was supplied.">
+    <$@ValidateErrTxtDefine "BADDEFAULTDIR"     #="18" DefaultText="An invalid string was supplied in the DefaultDir column of the Directory table.">
+    <$@ValidateErrTxtDefine "BADREGPATH"        #="19" DefaultText="An invalid registry path string was supplied.">
+    <$@ValidateErrTxtDefine "BADCUSTOMSOURCE"   #="20" DefaultText="An invalid string was supplied in the CustomSource column of the CustomAction table.">
+    <$@ValidateErrTxtDefine "BADPROPERTY"       #="21" DefaultText="An invalid property string was supplied.">
+    <$@ValidateErrTxtDefine "MISSINGDATA"       #="22" DefaultText=^This column is not mentioned in the _Validation table.  Either add the validation data or use the "@validate" parameter on the "row" command (or alter its default).^>
+    <$@ValidateErrTxtDefine "BADCATEGORY"       #="23" DefaultText="The category column of the _Validation table for the column is invalid.">
+    <$@ValidateErrTxtDefine "BADKEYTABLE"       #="24" DefaultText="The table in the Keytable column of the _Validation table was not found or loaded.">
+    <$@ValidateErrTxtDefine "BADMAXMINVALUES"   #="25" DefaultText="The value in the MaxValue column of the _Validation table is less than the value in the MinValue column.">
+    <$@ValidateErrTxtDefine "BADCABINET"        #="26" DefaultText="An invalid cabinet name was supplied.">
+    <$@ValidateErrTxtDefine "BADSHORTCUT"       #="27" DefaultText="An invalid shortcut target name was supplied.">
+    <$@ValidateErrTxtDefine "STRINGOVERFLOW"    #="28" DefaultText="The string is too long for the length specified by the column definition.">
+    <$@ValidateErrTxtDefine "BADLOCALIZEATTRIB" #="29" DefaultText="An invalid localization attribute was supplied (Primary keys cannot be localized).">
+    ;---[UsedByMakeMsiDoco-@ValidateErrTxtDefine]---
+    <?NewLine>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- Define TABLE -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "Table"
+#( ''
+   #define Table
+
+   ;--- Validation ----------------------------------------------------------
+   #push "TABLE Nesting"
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1,CREATE}
+
+   ;--- Generate VBS --------------------------------------------------------
+   #evaluate ^^ ^<$Rexx4Table {$?ResetUsed}{$?}>^
+
+   ;--- Define the table we are in (create if required - if user wants) -----
+   #if ['{$CREATE=^<$DEFAULT_TABLE_CREATE>^}' = 'N']
+       TableNow "{$#1}"<?NewLine>
+   #elseif
+       TableNowMk "{$#1}"<?NewLine>
+   #endif
+#)
+#( ''
+   #define /Table
+
+   ;--- Validation ----------------------------------------------------------
+   <$UpdateMmLocation>
+   <$MustBeWithinTableMacro "/Table">
+   #pop "TABLE Nesting"                 ;;Give preference to message above...
+   #RexxVar RxTableNestingLevel - 1
+
+   ;--- In some macros we don't need to restore -----------------------------
+   #if ['{$Restore="Y"}' = 'Y']
+       ;--- Normally restore ------------------------------------------------
+       TableNow "<??RxCurrentTable.RxTableNestingLevel>"<?NewLine>
+   #endif
+#)
+#DefineRexx  'Rexx4Table'
+   ;--- Flag start table / remember details ---------------------------------
+   RxTableNestingLevel = RxTableNestingLevel + 1
+   RxCurrentTable.RxTableNestingLevel          = '{$#1}';
+   RxCurrentTableStarted.RxTableNestingLevel   = GetInputFileNameAndLine();
+   RxCurrentTableDefPrefix.RxTableNestingLevel = 'TABLEDEF_' || c2x(RxCurrentTable.RxTableNestingLevel) || '.!';
+
+   ;--- Make sure the table has been defined --------------------------------
+   @@KeyCN = RxCurrentTableDefPrefix.RxTableNestingLevel || "ColumnNames";
+   if  symbol(@@KeyCN) <> "VAR" then
+       error('The table "' || RxCurrentTable.RxTableNestingLevel || '" has not been defined yet!');
+
+   ;--- Remember some info --------------------------------------------------
+   @@ColNames    = value(@@KeyCN);
+   RxCurrentTableFields.RxTableNestingLevel = translate(@@ColNames, ',', ' ');
+#DefineRexx
+#( ''
+   #define MustBeWithinTableMacro
+   ;--- Make sure we are between "table" and "/table" -----------------------
+   #if ['<??RxCurrentTable.RxTableNestingLevel>' = '']
+       #Error ^You must be in a table to use the "{$#1}" macro!^
+   #endif
+#)
+#NextId UNLOCK "Table"
+
+
+
+
+;----------------------------------------------------------------------------
+;--- Create NEW row in table ------------------------------------------------
+;----------------------------------------------------------------------------
+#define  ROWS_METHOD_REPLACE   REPLACE
+#define  ROWS_METHOD_UPDATE    UPDATE
+#define  ROWS_METHOD_INSERT    INSERT
+#NextId
+#NextId LOCK "Row"
+#RexxVar @@InRow = 'N'
+#( ''
+   #define Row
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   <$MustBeWithinTableMacro "Row">
+   #push "Row Macro"
+   #if  [@@InRow = 'Y']
+        #error ^Missing a /Row somewhere...^
+   #end if
+   #RexxVar @@InRow = 'Y'
+
+   ;--- Update the fields (Invalid Field name will cause runtime error) -----
+   #evaluate ^^ ^<$Rexx4Row {$?}>^  ;;@@Vbs <- Stuff
+   <??@@VbsRowStart>
+   #if ['{$@Code=^N^}' = 'N']
+       ;--- Almost always we wish simply end the row ourselves! -------------
+       <$/Row Auto="Y">
+   #elseif
+       <?NewLine>
+       <$Vbs "Processing ROW command's query results">
+       <?NewLine>'--- START of '@Code' USER Code ---<?NewLine>
+   #endif
+#)
+#( ''
+   #define /Row                    ;;Normally never use!
+   <$UpdateMmLocation>
+   <$MustBeWithinTableMacro "/Row">
+   {$!KEYWORDS}                        ;;Don't Expect any keywords!
+   {$!:UPDATE,AUTO}
+
+   #pop "Row Macro"
+   #RexxVar @@InRow = 'N'
+
+   ;--- Only Used internally ------------------------------------------------
+   #if ['{$AUTO=^N^}' = 'N']
+       ;--- The user used @CODE ----------------------------------------------
+       <?NewLine>'--- END of '@Code' USER Code ---<?NewLine>
+
+       ;--- Did the user code update the fields? ----------------------------
+       #if ['{$UPDATE=^N^}' = 'N']
+           <?NewLine>'--- USER NOT UPDATING THE ROW (UPDATE="{$UPDATE}") ---<?NewLine>
+       #elseif
+           <?NewLine>'--- USER HAS UPDATED THE ROW (UPDATE="{$UPDATE}") ---<?NewLine>
+           #if ['{$UPDATE $$UPPER}' = 'Y']
+               #define+ @@UPDATE_METHOD <$DEFAULT_ROWS_METHOD>
+           #else
+               #define+ @@UPDATE_METHOD {$UPDATE}
+           #endif
+           Rows<$@@UPDATE_METHOD>()<?NewLine>'
+       #endif
+
+       ;--- End the user code -----------------------------------------------
+       <$/Vbs>
+   #endif
+   <??@@VbsRowEnd>
+#)
+#RexxVar RxRowValidationExclusionsCnt = 0
+#RexxVar RxRowValidationExclusionsVbs = ''
+#DefineRexx Rexx4Row
+   ;--- Create rexx stem from passed information ----------------------------
+   {$??}        ;;Allows access to ROW/VALUE information
+
+   ;--- Need to create a record with the correct number of columns ----------
+   @@ColsNames = value(RxCurrentTableDefPrefix.RxTableNestingLevel || 'ColumnNames')
+   @@NumCols   = words(@@ColsNames)
+
+   ;--- Prepare to update 1 or more rows ------------------------------------
+   if  '{$@Where=^^ $$IsPassed}' = 'N' then
+   do
+       ;--- UPDATING or CREATING 1 record -----------------------------------
+       @@NewRecord = 'Y';
+       @@Vbs = 'RowPrepare ' || @@NumCols || '<?NewLine>';
+
+       ;--- Can't use Self ref unless where clause suppled ------------------
+       @@SelfRef = '{$@SelfRef=^^}';          ;;DB$TEST
+       if  @@SelfRef <> '' then
+           error('Sorry but the "SelfRef" parameter can only be used with the "WHERE" clause!');
+   end
+   else
+   do
+       ;--- UPDATING any number of records ----------------------------------
+       {$@Where $$RXVAR:@@Where}
+       @@SelfRef = '{$@SelfRef=^^}';
+       @@NewRecord = 'N';
+       @@Vbs =          'RowsPrepare "' || ReplaceString(@@Where, """", """""") || '"<?NewLine>';
+       {$@OK=^^ $$RXVAR:@@OKTest}
+       if  @@OKTest <> '' then
+           @@Vbs = @@Vbs || 'RecCnt = 0<?NewLine>';
+       @@Vbs = @@Vbs || 'do<?NewLine>';
+       @@Vbs = @@Vbs || 'set oRec = SqlViewFetch()<?NewLine>';
+       @@Vbs = @@Vbs || 'if oRec is Nothing then exit DO<?NewLine>';
+       if  @@OKTest <> '' then
+           @@Vbs = @@Vbs || 'RecCnt = RecCnt + 1<?NewLine>';
+   end;
+
+   ;--- The rest is generated by "/Row" -------------------------------------
+   @@VbsRowStart = @@Vbs
+   @@Vbs         = ''
+
+   ;--- Now Create VB code to update the supplied columns -------------------
+   #if  ['<$DBG_ROW_PARMS>' <> 'N']
+        <$DBG_SAY> 'Row Command for table: ' || RxCurrentTable.RxTableNestingLevel;
+        <$DBG_INC>
+   #endif
+   @@Changes      = 0
+   @@StreamValVbs = ''
+   do  @@Fld = 1 to MP.0
+       ;--- Get details ensure ----------------------------------------------
+       @@ColName = MP.@@Fld.MpName
+       @@ColVal  = MP.@@Fld.MpValue
+       #if  ['<$DBG_ROW_PARMS>' <> 'N']
+            if  length(@@ColName) >= 15 then
+                @@SayName = @@ColName
+            else
+                @@SayName = left(@@ColName, 15)
+            <$DBG_SAY> @@SayName || ' = ' || @@ColVal
+       #endif
+       if  left(@@ColName, 1) = '@' then
+           iterate;                ;;Ignore non-record column fields
+       if  left(@@ColName, 1) <> '*' then
+           @@IsLiteral = 'Y';
+       else
+       do
+           @@IsLiteral = 'N';
+           @@ColName   = substr(@@ColName, 2);
+       end;
+       @@Changes = @@Changes + 1               ;;Count #fields changed!
+
+       ;--- Make sure the column name is valid ------------------------------
+       @@FldKey  = RxCurrentTableDefPrefix.RxTableNestingLevel || c2x(@@ColName) || '.!'
+       if  symbol(@@FldKey || "Type") <> 'VAR' then
+           error('There is no column called "' || @@ColName || '" in the "' || RxCurrentTable.RxTableNestingLevel || '" table!', "Available columns:", "    " || @@ColsNames);
+
+       ;--- Update the column -----------------------------------------------
+       @@ColType   = value(@@FldKey || "UpdateMethod");
+       @@ColNumber = value(@@FldKey || "Number");
+       select
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+           when @@ColType = "<$MAKEMSI_COLUPDATE_METHOD_STRING>" then
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+           do
+               ;--- STRING --------------------------------------------------
+               if  @@IsLiteral = 'Y' then
+                   @@ColVal  = '"' || ReplaceString(MP.@@Fld.MpValue, '"', '""') || '"';
+               @@Sr     = 'oRec.StringData(' || @@ColNumber || ')'
+               if  @@SelfRef <> '' then
+                   @@ColVal = ReplaceString(@@ColVal, @@SelfRef, @@Sr)
+               @@Vbs    = @@Vbs || @@Sr || ' = ' || @@ColVal || '<?NewLine>'
+
+               ;--- Dump value of any "*col" --------------------------------
+               #if  ['<$DBG_ROW_VBS>' <> 'N']
+                    if  @@IsLiteral = 'N' then
+                    do
+                        ;--- *Col -------------------------------------------
+                        @@DbgCode = '<$DBG_VBS_SAY> "COLUMN ' || @@ColName || ' = " & ' || @@Sr;
+                        @@Vbs     = @@Vbs || @@DbgCode || '<?NewLine>';
+                        ;@@Vbs     = @@Vbs || ReplaceString(@@DbgCode, '"', '""') || '"';
+                    end;
+               #endif
+           end;
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+           when @@ColType = "<$MAKEMSI_COLUPDATE_METHOD_INTEGER>" then
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+           do
+               ;--- Integer (no quoting required) ---------------------------
+               @@Sr  = 'oRec.IntegerData(' || @@ColNumber || ')'
+               @@Vbs = @@Vbs || @@Sr || ' = '
+               if  @@ColVal = '' then
+                   @@Vbs = @@Vbs || 'msiDatabaseNullInteger<?NewLine>' ;;Make NULL field
+               else
+               do
+                   ;--- Any self references? --------------------------------
+                   if  @@SelfRef <> '' then
+                       @@ColVal = ReplaceString(@@ColVal, @@SelfRef, @@Sr)
+                   @@Vbs    = @@Vbs || @@ColVal || '<?NewLine>'
+               end
+           end;
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+           when @@ColType = "<$MAKEMSI_COLUPDATE_METHOD_BINARY>" then
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+           do
+                ;--- For BINARY fields we want to do "MS_DEFINED_MAX_OLE_DATA_STREAM_KEY_LENGTH" validation ---
+                @@KeyNumbers = value(RxCurrentTableDefPrefix.RxTableNestingLevel || 'KeyColumnNumbers')
+                @@StreamValVbs = '<?NewLine>ValidateStreamKeyLength array(' || @@KeyNumbers || ')<?NewLine>'
+
+               ;--- BINARY (allow this to NULL) -----------------------------
+               ;;if  @@ColVal = '' then
+               ;;    error('No binary file specified in the column "' || @@ColName || '" of table "' || RxCurrentTable.RxTableNestingLevel || '"');
+               if  @@ColVal = '' then
+                   @@Vbs = @@VBS || "'Binary col #" || @@ColNumber || ' = NULL<?NewLine>'
+               else
+               do
+                   ;--- Is the value a literal? -----------------------------
+                   if  @@IsLiteral = 'N' then
+                       @@Vbs = @@Vbs || 'oRec.SetStream ' || @@ColNumber || ', ' || @@ColVal || '<?NewLine>'
+                   else
+                   do
+                       ;--- Since its a literal we can ensure it exists! ----
+                       @@FullName = FindFile(@@ColVal);
+                       if  @@FullName = '' then
+                       do
+                           ;--- About to die, look in subdirectories off current ----
+                           @@FullName = FindFileInPath(@@ColVal, "+.");
+                           if  @@FullName = '' then
+                           do
+                              if    left(@@ColVal, 13) <> "<<BinaryValue" then
+                                    error('The binary file "' || @@ColVal || '" could not be found!');
+                              else
+                                    error('To REPRESENT a file the MSIDIFF tool supplied:',, '   ' || @@ColVal,, 'You must specify the actual name of the file on the "ROW" command!', 'You need to use the "ROW", "BINARY" or "ICON" commands to add this resource.');
+                           end;
+                       end;
+                       @@Vbs = @@Vbs || 'oRec.SetStream ' || @@ColNumber || ', "' || @@FullName || '"<?NewLine>'
+                   end;
+               end;
+           end;
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+           otherwise
+           /*+++++++++++++++++++++++++++++++++++++++++++++++*/
+               error('BUG?: Invalid field type of "' || @@ColType || '" found.');
+       end
+   end;
+   @@Vbs = @@Vbs || @@StreamValVbs;
+
+   ;--- Validate the record? ------------------------------------------------
+   #if  ['<$DBG_ROW_PARMS>' <> 'N']
+        <$DBG_INC>
+   #endif
+   if  @@NewRecord = 'Y' then
+   do
+       ;--- @WHERE was NOT used ---------------------------------------------
+       @@Validate = '{$@Validate=^<$DEFAULT_ROW_VALIDATE_NO_WHERE>^}'
+       @@ValOK    = '|NEW|FIELD|';
+   end;
+   else
+   do
+       ;--- @WHERE used -----------------------------------------------------
+       @@Validate = '{$@Validate=^<$DEFAULT_ROW_VALIDATE_WHERE>^}'
+       @@ValOK    = '|FETCH|NEW|FIELD|';
+   end;
+   #if  ['<$DBG_ROW_OTHER>' <> 'N']
+        if  @@Validate = '' then
+            <$DBG_SAY> 'No validation will occur (@Validate)...'
+        else
+            <$DBG_SAY> '@Validate mode: ' || @@Validate;
+   #endif
+   if  @@Validate <> "" then
+   do
+       ;--- Separate validation mode from exclusion information -------------
+       @@Validate = strip(@@Validate);
+       parse var @@Validate @@ValMode @@ValEx;
+       @@ValEx = space(@@ValEx);
+;**    [CommentBlockStart     (14 July 2006 19:00:15, Dennis)
+;**+----------------------------------------------------------------------
+;**|       @@ValEx = translate( space(@@ValEx) );
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (14 July 2006 19:00:15, Dennis)
+
+       ;--- Make sure user picked a valid validation ------------------------
+       if  pos('|' || translate(@@ValMode) || '|', @@ValOk) = 0 then
+           error('The validation mode of "' || @@ValMode || '" is not valid.');
+
+       ;--- Now process exclusions ------------------------------------------
+       @@MemKey = '@@VALEXC_' || c2x(@@ValEx);
+       if symbol(@@MemKey) = 'VAR' then
+          @@ValIndex = value(@@MemKey);        ;;Used this one before, get its index
+       else
+       do
+           ;--- Need to process this exclusion ------------------------------
+           @@CodesT = @@ValEx;
+           @@CodesI = ""
+           do  while @@CodesT <> ""
+               ;--- Get next code as text, convert to 2 byte integer --------
+               parse var @@CodesT @@CodeT @@CodesT
+               if  left(@@CodeT, 1) <> '-' then
+                   error('The exclusion code of "' || @@CodeT || '" should begin with a "-".')
+               @@CodeT = substr(@@CodeT, 2);
+               if   pos(':', @@CodeT) = 0 then
+                    @@ForCol = '';
+               else
+               do
+                    ;--- This applies to a particular column ----------------
+                    parse var @@CodeT @@ForCol ':' @@CodeT;
+                    @@ForCol = @@ForCol || ':';
+               end;
+               @@Key = "RxMSIDBERROR_" || strip(@@CodeT)
+               if  symbol(@@Key) <> 'VAR' then
+                   error('The validation code of "' || @@CodeT || '" is unknown!')
+
+               ;--- Add to code list ----------------------------------------
+               @@CodesI = @@CodesI || '|' || @@ForCol || value(@@Key)
+           end;
+           if  @@CodesI <> "" then
+               @@CodesI = @@CodesI || '|'     ;;"|05|06|" etc
+
+           ;--- Cache the index ---------------------------------------------
+           @@ValIndex = RxRowValidationExclusionsCnt;
+           call value @@MemKey, @@ValIndex
+           RxRowValidationExclusionsCnt = RxRowValidationExclusionsCnt + 1
+
+           ;--- Update the VB array -----------------------------------------
+          ;RxRowValidationExclusionsVbs = RxRowValidationExclusionsVbs || 'RowValidationExclusions(' || @@ValIndex || ') = "' || @@CodesI || '"   ''' || @@ValEx || '<?NewLine>'
+           RxRowValidationExclusionsVbs = RxRowValidationExclusionsVbs || 'RowValidationExclusions(' || @@ValIndex || ') = "' || @@CodesI || '" : '
+           RxRowValidationExclusionsVbs = RxRowValidationExclusionsVbs || 'RowValidationExclusions4Human(' || @@ValIndex || ') = "' || @@ValEx || '"<?NewLine><?NewLine>'
+       end;
+
+       ;--- Output the VBS code to perform the validation -------------------
+       @@Vbs = @@Vbs || 'Validate' || @@ValMode || '(' || @@ValIndex || ')<?NewLine>'
+   end;
+
+   ;--- End the loop if UPDATING multiple rows ------------------------------
+   if  @@NewRecord = 'Y' then
+   do
+       ;--- Add the record to the table and clean up ------------------------
+       @@Vbs = @@Vbs || 'RowUpdate()<?NewLine>'
+   end;
+   else
+   do
+       ;--- Update this record ----------------------------------------------
+       if  @@Changes <> 0 then
+       do
+           ;--- At least one item changed! ----------------------------------
+           @@Changes = 0
+           @@Method = translate('{$@Method=^<$DEFAULT_ROWS_METHOD>^}' )
+           @@Vbs = @@Vbs || 'Rows' || @@Method || '()<?NewLine>'
+       end;
+
+       ;--- End the loop ----------------------------------------------------
+       @@Vbs = @@Vbs || 'loop<?NewLine>'
+       @@Vbs = @@Vbs || 'SqlViewClose()<?NewLine>'
+       if  @@OKTest <> '' then
+       do
+           ;--- Did user supply full test or only partial? ------------------
+           if  pos('?', @@OKTest) = 0 then
+               @@OKTest = 'RecCnt ' || @@OKTest;    ;;Partial
+           else
+               @@OKTest = ReplaceString(@@OKTest, "?", 'RecCnt');
+
+           ;--- Check # records updated -------------------------------------
+           @@Vbs = @@Vbs || 'if not ' || @@OKTest || ' then Error("Found " & RecCnt & " record(s), we expected ""{$@OK}"".  The SQL WHERE clause was:" & vbCRLF & vbCRLF & "' || ReplaceString(@@Where, '"', '""') || '")<?NewLine>'
+       end;
+   end;
+   @@VbsRowEnd = @@Vbs
+   #if  ['<$DBG_ROW_PARMS>' <> 'N']
+        <$DBG_NEWLINE>
+        <$DBG_DEC>
+        <$DBG_DEC>
+   #endif
+#DefineRexx
+#NextId UNLOCK "Row"
+
+
+
+;----------------------------------------------------------------------------
+;--- DELETE ALL ROWS IN TABLE -----------------------------------------------
+;----------------------------------------------------------------------------
+#NextId LOCK "RowsDeleteAll"
+#( ''
+   #define RowsDeleteAll
+   <$UpdateMmLocation>
+   <$MustBeWithinTableMacro "RowsDeleteAll">
+   DeleteTableRows("")<?NewLine>
+#)
+#NextId UNLOCK "RowsDeleteAll"
+
+
+
+;----------------------------------------------------------------------------
+;--- DELETE SOME ROWS IN TABLE ----------------------------------------------
+;----------------------------------------------------------------------------
+#NextId LOCK "RowsDelete"
+#( ''
+   #define RowsDelete
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:WHERE}
+   <$MustBeWithinTableMacro "RowsDelete">
+   #DefineRexx ''
+        {$Where $$RxVar:@@Where};
+        @@Where = ReplaceString(@@Where, '"', '""'); ;;"escape" double quotes
+   #DefineRexx
+   DeleteTableRows("<??@@Where>")<?NewLine>  ;;Where clause passed to delete subset
+#)
+#NextId UNLOCK "RowsDelete"
+
+
+
+;----------------------------------------------------------------------------
+;--- Create a table ---------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_TableCreate_DropExisting  Y
+#define? DEFAULT_TableCreate_ExistingOK    N
+#NextId
+#NextId LOCK   "TableCreate"
+#( ''
+   #define TableCreate
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1,DROPEXISTING,ExistingOK}
+
+   ;--- User specify a table? -----------------------------------------------
+   #if ['{$#1=^^}' <> '']
+       <$Table "{$#1}" CREATE="N">               ;;User specifed a table name
+   #elseif
+       <$MustBeWithinTableMacro "TableCreate">   ;;Use "default" table
+   #endif
+
+   ;--- Want to drop the table? ---------------------------------------------
+   #if ['{$DropExisting='<$DEFAULT_TableCreate_DropExisting>'}' <> 'Y']
+        #define+ @@DropExistingSpecified N
+   #else
+        ;--- Probably want to recreate table from scratch -------------------
+        #define+ @@DropExistingSpecified Y
+       <$TableDelete>
+   #endif
+
+   ;--- Want to use any existing table --------------------------------------
+   #if ['{$ExistingOK='<$DEFAULT_TableCreate_ExistingOK>'}' <> 'Y']
+       ;--- "Normal" behaviour is to create (fail if exists as "unexpected") ---
+       TableCreate()<?NewLine>
+   #elseif
+       ;--- Only create if required -----------------------------------------
+       if  not TableExists("{$#1}") then<?NewLine>
+           TableCreate()<?NewLine>
+       end if<?NewLine>
+
+       ;--- Look for conflicting parameters ---------------------------------
+       #if  ['<$@@DropExistingSpecified>' = 'Y']
+            #error ^Both "DROPEXISTING" and "EXISTINGOK" parameters used on "TableCreate" command!^
+       #endif
+   #endif
+
+   ;--- User specify a table? -----------------------------------------------
+   #if ['{$#1=^^}' <> '']
+       <$/Table>
+   #endif
+#)
+#NextId UNLOCK "TableCreate"
+
+
+;----------------------------------------------------------------------------
+;--- DROP a table -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#NextId LOCK "TableDelete"
+#( ''
+   #define TableDelete
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+   {$!:#1,UNKNOWN}
+
+   ;--- Delete specified or default table -----------------------------------
+   #if ['{$#1=^^}' = '']
+       <$MustBeWithinTableMacro "TableDelete">
+       TableDelete("")<?NewLine>
+   #elseif
+       ;--- We use the TABLE command to validate the table name -------------
+       #if ['{$UNKNOWN=^N^ $$UPPER}' = 'Y']
+           ;--- No validation, probably updating product produced by another tool ---
+           TableDelete("{$#1}")<?NewLine>
+       #elseif
+           ;--- The default and best approach is to do this to validate the table name ---
+           <$Table "{$#1}">
+               TableDelete("")<?NewLine>
+           <$/Table><?NewLine>
+       #endif
+   #endif
+#)
+#NextId UNLOCK "TableDelete"
+
+
+
+;----------------------------------------------------------------------------
+;--- VBS --------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define TableRowVbFunction-SetupRowValidationExclusionList
+
+   <?NewLine>
+   '=========================================================================
+   sub SetupRowValidationExclusionList_{$PASS}()
+   '=========================================================================
+        ;--- Add to those known for pass 2 ----------------------------------
+        #if ['{$PASS}' = '2']
+            ;--- Reload those defined for Pass 1 ----------------------------
+            SetupRowValidationExclusionList_1()     'Pass 2 needs to add to those already known for pass 1...
+            <?NewLine>
+        #endif
+
+        ;--- Resize the array -----------------------------------------------
+        redim preserve RowValidationExclusions(<?=RxRowValidationExclusionsCnt - 1>)
+        redim preserve  RowValidationExclusions4Human(<?=RxRowValidationExclusionsCnt - 1>)
+
+        ;--- Now output accumulated lines -----------------------------------
+        <??RxRowValidationExclusionsVbs><?RestartLine>
+
+        ;--- Now Reset code (count needs to remain so pass 2 adds to pass 1) ---
+        #RexxVar RxRowValidationExclusionsVbs  = ""
+        #RexxVar RowValidationExclusions4Human = ""
+   end sub
+#)
+#( '<?NewLine>'
+   #define TableRowVbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   sub TableNow(TblName)                   ;;Invoked via "TABLE" and "/TABLE"
+   '=========================================================================
+       ;--- Sets the current table information ------------------------------
+       on error resume next
+       CurrentTable = TblName
+       if  TblName = "" then
+           CurrentTableFields = ""
+       else
+           ;--- Restore field information from dictionary object ------------
+           if  oTableFlds.exists(TblName) then
+               CurrentTableFields = oTableFlds(TblName)
+           else
+               Error "Table Dictionary did not hold table information for """ & TblName & """" & vbCRLF & "Has the table been defined (with the ""TableDefinition"" command?"
+           end if
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub TableNowMk(TblName)
+   ;
+   ; Invoked via "TABLE" and "/TABLE" (creates table if required)
+   '=========================================================================
+       ;--- Sets the current table information ------------------------------
+       on error resume next
+       TableNow(TblName)
+
+       ;--- Now create the table if required --------------------------------
+       if  not TableExists(TblName) then
+           ;--- It doesn't exist --------------------------------------------
+           TableCreate()
+       end if
+   end sub
+
+
+
+
+   <?NewLine>
+   '=========================================================================
+   sub ValidateStreamKeyLength(ByVal KeyNumberArray)     ;;Does "MS_DEFINED_MAX_OLE_DATA_STREAM_KEY_LENGTH" validation
+   '
+   ' From the Windows Installer manual
+   ' ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   ' Binary data is stored with an index name created by concatenating the table
+   ' name and the values of the record's primary keys using a period delimiter.
+   ' OLE limits stream names to 32 characters (31 + null terminator).
+   ' Windows Installer uses a compression algorithm that can expand the limit
+   ' to 62 characters depending upon the character.
+   ' Note that double-byte characters count as 2.
+   '=========================================================================
+        ;--- Work out what the key is (duplicate what WI does) --------------
+        dim Key : Key = CurrentTable           ;;Starts with table name
+        dim n
+        for n = 0 to ubound(KeyNumberArray)
+            ;--- Add data from the record -----------------------------------
+            ;say "DEBUG: Getting COLUMN " & KeyNumberArray(n)
+            Key = Key & "." & oRec.StringData(KeyNumberArray(n))
+        next
+
+        ;--- Is the key too long? -------------------------------------------
+        dim KeyLen   : KeyLen   = len(Key)
+        dim KeyLimit : KeyLimit = <$MS_DEFINED_MAX_OLE_DATA_STREAM_KEY_LENGTH>
+        ;say "DEBUG: VALIDATING KEY length " & KeyLen & ": " & Key
+        if  KeyLen > KeyLimit then
+            say vbCRLF & vbCRLF & DumpRecord()
+            error "The underlying OLE container used to store binary data"                   & vbCRLF & _
+                  "has has a key limit of " & KeyLimit & " characters."                      & vbCRLF & vbCRLF & _
+                  "This was exceeded by " & KeyLen-KeyLimit & " character(s), the key was:"  & vbCRLF & _
+                  "   " & Key
+        end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub RowsPrepare(ByVal WhereClause)     ;;Used to UPDATE 'x' records
+   '=========================================================================
+       ;--- Set up the table view (seem to need to do for every update or get inconsitant results) ---
+       if  WhereClause <> "" then
+           ;--- We don't want ALL records -----------------------------------
+           WhereClause = " WHERE " & WhereClause
+       end if
+       on error resume next
+       SqlOpenExec "SELECT " & CurrentTableFields & " FROM " & CurrentTable & WhereClause
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub RowsChange_(ByVal How)
+       #define RowsChange_HOW_UPDATE  UPDATE
+       #define RowsChange_HOW_REPLACE REPLACE
+       #define RowsChange_HOW_INSERT  INSERT
+   '=========================================================================
+       ;--- Modify the record -----------------------------------------------
+       dim ModifyMode
+       on error resume next
+       select case How
+           ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+           case "<$RowsChange_HOW_UPDATE>"
+           ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+               ModifyMode = MsiViewModifyUpdate
+           ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+           case "<$RowsChange_HOW_REPLACE>"
+           ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+               ModifyMode = MsiViewModifyReplace
+           ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+           case "<$RowsChange_HOW_INSERT>"
+           ;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+               ModifyMode = MsiViewModifyInsert
+       end select
+       oView.Modify ModifyMode, oRec
+       VbsCheck "~ROW command - Adding record, method = " & How
+
+       ;--- Drop the view/record objects ------------------------------------
+       set oRec  = Nothing
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub RowsInsert()
+   '=========================================================================
+       RowsChange_("<$RowsChange_HOW_INSERT>")
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub RowsUpdate()
+   '=========================================================================
+       RowsChange_("<$RowsChange_HOW_UPDATE>")
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub RowsReplace()
+   '=========================================================================
+       RowsChange_("<$RowsChange_HOW_REPLACE>")
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub RowPrepare(ByVal NumberOfColumns)   ;;Used to INSERT/UPDATE 1 record
+   '=========================================================================
+       ;--- Set up the table view (seem to need to do for every update or get inconsitant results) ---
+       on error resume next
+       SqlOpenExec "SELECT " & CurrentTableFields & " FROM " & CurrentTable
+
+       ;--- Create a record as requested ------------------------------------
+       set oRec = oInstaller.CreateRecord(NumberOfColumns)
+       VbsCheck "ROW command - Creating a blank record with " & NumberOfColumns & " columns"
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub RowUpdate()
+   '=========================================================================
+       ;--- Add the record to the view (MSI table) --------------------------
+       on error resume next
+       oView.Modify MsiViewModifyAssign, oRec
+       VbsCheck "~ROW command - Adding record"
+
+       ;--- Drop the view/record objects ------------------------------------
+       set oRec  = Nothing
+       SqlViewClose()
+   end sub
+
+
+
+   <?NewLine>
+   '=========================================================================
+   function DumpRecord()
+   ' Dumps record details, returns the complete text (doesn't display it)
+   '=========================================================================
+       ;--- Output title ----------------------------------------------------
+       on error resume next
+       dim Index, Txt, Int, FldNames, FldName
+       DumpRecord = Title("Contents of the Problem Record (table """ & CurrentTable & """)") & vbCRLF
+
+       ;--- Get array of field names which should match the record ----------
+       Txt = oTableFlds(CurrentTable)
+       FldNames = split(Txt, ",")
+       for Index = 0 to ubound(FldNames)
+            ;--- Field names are quoted (remove these) ----------------------
+            FldNames(Index) = Replace(FldNames(Index), "`", "")
+       next
+
+       ;--- Get Column info -------------------------------------------------
+       err.clear()
+       dim HaveColInfo, TypeName
+       dim MaxTypeWidth : MaxTypeWidth = 0
+       dim oColInfo : set oColInfo = oView.ColumnInfo(msiColumnInfoTypes)
+       if   err.number <> 0 then
+            ;--- Could not get info -----------------------------------------
+            HaveColInfo = false
+            'wscript.echo "CI====> " & err.description
+       else
+            ;--- Got info, find out the width of the widest item ------------
+            HaveColInfo = true
+            for Index = 1 to oColInfo.FieldCount
+                ;--- Work out the width of the longest column name ----------
+                TypeName = oColInfo.StringData(Index)
+                if len(TypeName) > MaxTypeWidth then
+                    MaxTypeWidth = len(TypeName)
+                end if
+            next
+       end if
+
+       ;--- Get width of longest field name ---------------------------------
+       dim MaxFldNameWidth : MaxFldNameWidth = 0
+       for Index = 1 to oRec.FieldCount
+            ;--- Work out the width of the longest column name --------------
+            FldName = FldNames(Index-1)
+            if len(FldName) > MaxFldNameWidth then
+                MaxFldNameWidth = len(FldName)
+            end if
+       next
+
+       ;--- Dump each column ------------------------------------------------
+       dim ColValue
+       MaxTypeWidth  = MaxTypeWidth + 2          'plus brackets either side
+       for Index = 1 to oRec.FieldCount
+           ;--- Is this column "NULL"? --------------------------------------
+           dim IsNull : IsNull = false
+           FldName = FldNames(Index-1)
+           if  oRec.IsNull(Index) then
+               ColValue = "<<null string>>"
+               IsNull   = true
+           else
+               ;--- Try to read as a string ---------------------------------
+               err.clear()
+               ColValue = oRec.StringData(Index)
+               if  err.number <> 0 then
+                   ColValue = "<<Read Failed: Probably binary column>>"
+               else
+                   ;--- Read didn't fail is this a null integer (not cause by above!) ---
+                   if   (oRec.DataSize(Index) = 4) and (ColValue = "-2147483648") then
+                        ColValue = "<<null integer>>"
+                        IsNull   = true
+                   end if
+               end if
+           end if
+
+           ;--- Format the field name ---------------------------------------
+           FldName = left(FldName & string(MaxFldNameWidth, " "), MaxFldNameWidth)
+
+           ;--- Format the type name ----------------------------------------
+           dim  TypeFormatted
+           if   not HaveColInfo then
+                TypeFormatted = ""
+           else
+                ;--- Have type info -----------------------------------------
+                TypeName      = oColInfo.StringData(Index)
+                TypeFormatted = " " & right(string(MaxTypeWidth, " ") & "(" & TypeName & ")", MaxTypeWidth)
+
+                ;--- If field was null then is this allowed? ----------------
+                if  IsNull then
+                    ;--- Column is NULL, is this allowed? -------------------
+                    dim FirstLetter : FirstLetter = left(TypeName, 1)
+                    if  FirstLetter = lcase(FirstLetter) then
+                        ;--- Its lower case so nulls are not allowed! -------
+                        ColValue = ColValue & "   (ERROR: nulls not allowed in this column)"
+                    else
+                        ColValue = ColValue & "   (OK: nulls allowed in this column)"
+                    end if
+                end if
+           end if
+
+           ;--- Output the line ---------------------------------------------
+           'FldName = "COL #" & Index
+           DumpRecord = DumpRecord & FldName & TypeFormatted & " = " & ColValue & vbCRLF
+       next
+   end function
+
+
+   <?NewLine>
+   '=========================================================================
+   sub @@RowValidate(HowText, HowValue, ByVal ExclusionIndex)
+   '=========================================================================
+       ;--- Validate record against "_Validation" table info ----------------
+       on error resume next
+       oView.Modify HowValue, oRec
+       if  err.number <> 0 then
+           ;--- Failed validation, collect column information ---------------
+           err.clear()
+           dim ErrCnt : ErrCnt = 0
+           dim ErrTxt : ErrTxt = ""
+           dim ColInfo, ErrNum, ErrCol, ErrReason, Want
+           do
+               ;--- Get next column, exit if end ----------------------------
+               ColInfo = oView.GetError()
+               if  ColInfo = "00" or ColInfo = "" then
+                   exit do
+               end if
+
+               ;--- Get information -----------------------------------------
+               ErrNum = left(ColInfo,2)
+               ErrCol = mid(ColInfo, 3)
+               dim Exclusions : Exclusions = RowValidationExclusions(ExclusionIndex)
+               if  Exclusions = "" then
+                   Want = true         ;;No exclude list
+               else
+                   dim RowSpec : RowSpec = "|"                & ErrNum & "|"
+                   dim ColSpec : ColSpec = "|" & ErrCol & ":" & ErrNum & "|"
+                   if      instr(Exclusions, RowSpec) <> 0 then
+                       Want = false         ;;Its in the exclude list which covers whole table row
+                   elseif  instr(Exclusions, ColSpec) <> 0 then
+                       Want = false         ;;Its in the exclude list (covers this specific column of the table)
+                   else
+                       Want = true          ;;Not in the exclude list
+                   end if
+               end if
+
+               ;--- Do we want to report this error? ------------------------
+               if  Want then
+                   ;--- Convert error code to "pretty" text -----------------
+                   if  oValidateErrTxt.exists(ErrNum) then
+                       ErrReason = oValidateErrTxt(ErrNum)
+                   else
+                       ErrReason = "Error #" & ErrNum & " (""MSIDBERROR"" description unavailable)."
+                   end if
+
+                   ;--- Add to information ----------------------------------
+                   ErrCnt = ErrCnt + 1
+                   if  ErrCnt <> 1 then
+                       ErrTxt = ErrTxt & vbCRLF
+                   end if
+                   ErrTxt = ErrTxt & "   * #" & ErrCnt & " """ & ErrCol & """: " & ErrReason
+               end if
+           loop
+
+           ;--- Display the error (unless we are ignoring all errors) -------
+           if  ErrCnt <> 0 then
+               ;--- Dump the record -----------------------------------------
+               ErrTxt = ErrTxt & vbCRLF & vbCRLF & DumpRecord()
+
+               ;--- If we failed for some reason above... -------------------
+               if err.number <> 0 then
+                  ErrTxt = ErrTxt & vbCRLF & vbCRLF & "MAKEMSI BUG?: Something went wrong in processing errors and exclusions. Posible reason: 0x" & hex(err.number) & "- " & err.description
+               end if
+
+               ;--- Display the error message -------------------------------
+               dim HumanFriendly         : HumanFriendly         = RowValidationExclusions4Human(ExclusionIndex)
+               dim HowTextWithExclusions : HowTextWithExclusions = trim(HowText & " " & HumanFriendly)
+               #(
+                    Error("Windows Installer has reported that " &
+                          ErrCnt & " column(s) in a """ & CurrentTable & """ table record" &
+                          vbCRLF &
+                          "failed """ & HowTextWithExclusions & """ validation:" &
+                          vbCRLF & ErrTxt)
+               #)
+           end if
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub ValidateNew(ByVal ExclusionIndex)
+   '=========================================================================
+       @@RowValidate "NEW", MsiViewModifyValidateNew, ExclusionIndex
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   sub ValidateField(ByVal ExclusionIndex)
+   '=========================================================================
+       @@RowValidate "FIELD", MsiViewModifyValidateField, ExclusionIndex
+   end sub
+
+   <?NewLine>
+   '=========================================================================
+   sub ValidateFetch(ByVal ExclusionIndex)  ;;Default validation when "@WHERE" used
+   '=========================================================================
+       @@RowValidate "FETCH", MsiViewModifyValidate, ExclusionIndex
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub TableCreate()
+   '=========================================================================
+       on error resume next
+       dim Sql
+       if  oTableCreateSql.exists(CurrentTable) then
+           Sql = oTableCreateSql(CurrentTable)
+       else
+           Error "Table Dictionary did not hold table information for """ & CurrentTable & """ (have you defined it?)"
+       end if
+       SqlExec(Sql)
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub TableDelete(ByVal TableName)
+   ;;
+   ;;  Note that the "Cabs" table must not have any rows in it to be deleted.
+   ;;  Others don't need to be cleared first!
+   ;;
+   ;;  This function only tries to delete the table if it doe not already
+   ;;  exist!
+   '=========================================================================
+       ;--- Set error ignore state ------------------------------------------
+       on error resume next
+
+       ;--- What table? -----------------------------------------------------
+       if   TableName = "" then
+            TableName = CurrentTable
+       end if
+
+       ;--- Does the table exist? -------------------------------------------
+       if  TableExists(TableName) then
+           ;--- Execute the SQL to drop the table -------------------------------
+           SqlExec("DROP TABLE `" & TableName & "`")
+       end if
+   end sub
+
+
+   <?NewLine>
+   '=========================================================================
+   sub DeleteTableRows(ByVal Where)
+   '=========================================================================
+       ;--- Execute the command ---------------------------------------------
+       on error resume next
+       dim SqlCmd : SqlCmd = "DELETE FROM `" & CurrentTable & "`"
+       if  Where  <> "" then
+           ;--- Don't want to delete all rows! ------------------------------
+           SqlCmd = SqlCmd & " WHERE " & where ;;User supplied a "WHERE" test
+       end if
+       SqlExec(SqlCmd)
+   end sub
+#)

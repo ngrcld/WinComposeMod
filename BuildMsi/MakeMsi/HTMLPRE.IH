@@ -1,0 +1,201 @@
+;----------------------------------------------------------------------------
+;     MODULE NAME:   HTMLPRE.IH
+;
+;         $Author:   USER "Dennis"  $
+;       $Revision:   1.0  $
+;           $Date:   14 Oct 2002 17:50:00  $
+;        $Logfile:   C:/DBAREIS/Projects.PVCS/PpwAddOn/HtmlPRE/htmlpre.ih.pvcs  $
+;
+;     DESCRIPTION:   This is a header file for handling inclusion of
+;                    "examples" into HTML.
+;
+;                    See PPWIZARD documentation for examples of this file
+;                    in use.  The sample "TryMe.IT" file also uses this
+;                    header file.
+;
+;
+;                    Macro "ExampleFile"
+;                    ~~~~~~~~~~~~~~~~~~~
+;
+;                    This macro takes the following parameters:
+;
+;                         FILE
+;                         ~~~~
+;                         Manditory. Identifies the file to be included.
+;
+;                         FRAGMENT
+;                         ~~~~~~~~
+;                         Optional. You may wish to have a single example
+;                         file hold more than one example.  The text that
+;                         you supply for this parameter marks the line before
+;                         as well as the line after the example.
+;
+;
+;                         INDENT
+;                         ~~~~~~
+;                         Optional.  By default a 4 space indent is used,
+;                         you specify the number of spaces with 0 being
+;                         valid.
+;
+;                         STATE
+;                         ~~~~~
+;                         Optional.  By default no autotagging will be
+;                         performed.  If you specify "REMEMBER" then the
+;                         currently available autotags will be used, you
+;                         may also specify which states tags should come
+;                         from (see the "#AutoTagState +" command).
+;
+;
+;                         ASIS
+;                         ~~~~
+;                         Optional.  By default only basic "AsIs" tagging
+;                         is performed.  If for example you wished to
+;                         handle international characters then you would
+;                         need to specify the names of the AsIs tags to use.
+;
+;
+;
+;                    Macro "Example / eExample"
+;                    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+;
+;                    Note that your "inline" example code is terminated by
+;                    a "eExample" macro where the "Example" part is in the
+;                    EXACT case that you used. This allows the example code
+;                    itself to contain the string "eExample" as long as it
+;                    is in a different case.
+;
+;                    This macro takes the following parameters:
+;
+;
+;                         INDENT
+;                         ~~~~~~
+;                         As above.
+;
+;                         STATE
+;                         ~~~~~
+;                         As above.
+;
+;
+;                         ASIS
+;                         ~~~~
+;                         As above.
+;
+;
+;
+;----------------------------------------------------------------------------
+
+
+;--- Define the version number of this header file --------------------------
+#ifdef    VERSION_HTMLPRE_IH
+    ;--- Only include the file once! ---
+    #EOF 1
+#endif
+#define   VERSION_HTMLPRE_IH    03.238
+#require  02.001
+
+
+;--- Define some aliases for characters we need to be careful with ----------
+#RexxVar  "LT"   =x= "&lt;"               ;;'<' Char
+#RexxVar  "GT"   =x= "&gt;"               ;;'>' Char
+#RexxVar  "AMP"  =x= "&amp;"              ;;'&' Char
+#RexxVar  "HASH" =x= "#"                  ;;'#' Char
+
+
+;--- Did user already define the way examples are tagged (start & end)? -----
+#ifndef ExampleFormatted
+   ;--- Define look and feel of examples ------------------------------------
+   #ifndef HTMLPRE_JUST_PRE_TAGS
+           ;--- Set up defaults that user can override ----------------------
+           #define? HTMLPRE_COLOR          purple
+           #define? HTMLPRE_STYLE_OTHER    ;font-size:80%
+
+           ;--- Set up the tags ---------------------------------------------
+           #define ExampleFormatted                                               \
+                   <FONT COLOR=<$HTMLPRE_COLOR>> ;;Set up font (older browsers)  -\
+                   <PRE STYLE="color:<$HTMLPRE_COLOR><$HTMLPRE_STYLE_OTHER>">
+           #define eExampleFormatted                                              \
+                   </PRE>                                                        -\
+                   </FONT>                       ;;Restore Font (older browsers)
+   #elseif
+       ;--- Either want default "PRE" look or will define via stylesheet ----
+       #define ExampleFormatted                                           \
+               <pre>                             ;;Start Example
+       #define eExampleFormatted                                          \
+               </pre>                            ;;End of Example
+   #endif
+#endif
+
+
+;--- Set up AsIs Mode (minimum changes required - user can add to these) ----
+#AutoTagState +
+   ;--- Define characters that should be automatically modified -------------
+   #AutoTag  "<"   "<?xLT>"
+   #AutoTag  ">"   "<?xGT>"
+   #AutoTag  "&"   "<?xAMP>"
+   #AutoTag  "#"   "<?xHASH>"
+
+   ;--- "PROGRAM" ASIS mode -------------------------------------------------
+   #AsIs  SETUP    HTMLPRE_IH
+#AutoTagState -
+
+
+;----------------------------------------------------------------------------
+;--- ALLOW SPELL CHECKING IN EXAMPLES? --------------------------------------
+;----------------------------------------------------------------------------
+#ifndef HTMLPRE_SPELL_CHECKING
+        #define HTMLPRE_SPELL_CHECKING OFF
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- EXAMPLE FILE INCLUSION -------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define ExampleFile
+   <$ExampleFormatted>
+   #AutoTagState  +     {$STATE=''}      ;;User can set up own tags
+   #NextId        PUSH   ;;Don't want #Nextid processing!
+   #option        PUSH AllowSpell={$SPELL="<$HTMLPRE_SPELL_CHECKING>"} ExtraIndent=^copies(' ', {$Indent='4'})^
+   #AutoTag       ON
+   #AsIs          ON HTMLPRE_IH {$AsIs=''}
+   #include       "{$File}" "{$Fragment=''}"
+   #AsIs          OFF
+   #option        POP
+   #NextId        POP
+   #AutoTagState  -
+   <$eExampleFormatted>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- EXAMPLE (INLINE) -------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define Example
+   ;--- Starts Example ------------------------------------------------------
+   <$ExampleFormatted>
+   #AutoTagState  +     {$STATE=''}    ;;User can set up own tags
+   #NextId        PUSH   ;;Don't want #Nextid processing!
+   #option        PUSH AllowSpell={$SPELL="<$HTMLPRE_SPELL_CHECKING>"} ExtraIndent=^copies(' ', {$Indent='4'})^
+   #option        PUSH replace=OFF
+   #AutoTag       '<?xLT>$e{$?MacName}<?xGT>'  '<$e{$?MacName}>'  #1
+   #option        POP                  ;;Restore REPLACE mode
+   #AutoTag       ON
+   #AsIs          ON HTMLPRE_IH {$AsIs=''}
+   #define        HTMLPRE_INLINE_EXAMPLE
+#)
+#( ''
+   ;--- Ends Example --------------------------------------------------------
+   #define /Example
+   #ifndef        HTMLPRE_INLINE_EXAMPLE
+       #error ^Incorrectly formatted inline example (can't include end of example tag)^
+   #endif
+   #AsIs          OFF
+   #option        POP
+   #NextId        POP
+   #AutoTagState  -
+   #undef         HTMLPRE_INLINE_EXAMPLE
+   <$eExampleFormatted>
+#)
+#define eExample <$/Example>           ;;Map old macro name to new

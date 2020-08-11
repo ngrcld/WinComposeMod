@@ -1,0 +1,54 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SOURCEFILE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.1  $
+;          $Date:   10 Aug 2005 18:43:42  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/SourceFile.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "SOURCEFILE"
+
+
+;----------------------------------------------------------------------------
+;--- "SourceFile" macro -----------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+  #define SourceFile
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!KEYWORDS}                             ;;Don't Expect any keywords!
+   {$!:FILENAME,VERSION,HTML,TYPE,SAMPLE}   ;;List all valid parameters
+
+  ;--- What is the source filename? -----------------------------------------
+  #RexxVar '@@FileName' = ^{$FileName=~<?InputComponent>~}^
+
+  ;--- Add property to the database? ----------------------------------------
+  #RexxVar '@@Version' = ^{$Version=''}^
+  #if   [@@Version <> '']
+        <$StampSourceDetailsIntoProperty Version="<??@@Version>" FileName=^<??@@FileName>^ Type=^{$Type=~~}^>
+  #endif
+
+  ;--- Want in the html doco? -----------------------------------------------
+  #if   ['{$Html=^N^}' <> 'N']
+        ;--- User wants this file displayed in the "SOURCE" section of the generated HTML report ---
+        <$SourceForReport "<??@@FileName>">
+  #endif
+
+  ;--- Is this a sample file? -----------------------------------------------
+  #if   ['{$Sample=^N^}' = 'N']
+        ;--- Remember that this is NOT a sample -----------------------------
+  #else
+        ;--- Remember that this IS a sample ---------------------------------
+  #endif
+#)
+
+
+
+#NextId UNLOCK "SOURCEFILE"

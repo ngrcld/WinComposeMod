@@ -1,0 +1,74 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   BINARY.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   28 Feb 2016 15:41:16  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/CodePage.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "CodePage"
+
+;----------------------------------------------------------------------------
+;--- CodePage ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define CodePage
+
+   ;--- Check parameters ----------------------------------------------------
+   {$!KEYWORDS}                                 ;;Don't Expect any keywords!
+   {$!:#1}
+   #RexxVar @@CodePage = '{$#1}'
+   #if DataType('<??@@CodePage>', 'W') = 0
+      #error ^The code page "<??@@CodePage>" is not an integer!^
+   #end if
+
+   ;--- Generate the VBS code -----------------------------------------------
+   <$UpdateMmLocation>
+   ForceDataBaseCodePage(<??@@CodePage>)
+#)
+
+
+
+
+
+;----------------------------------------------------------------------------
+;--- VB functions -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? CODEPAGE_VBEXP_TMP_IDT_FILENAME  "<$MAKEMSI_OUT_LOG_DIR>_ForceCodePage.IDT"
+#( '<?NewLine>'
+   #define CodePageVbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   function ForceDataBaseCodePage(ByVal CodePage)
+   '=========================================================================
+       ;--- Create an IDT file that can be imported ------------------------
+       on error resume next
+       dim TmpIdtFile : TmpIdtFile = <$CODEPAGE_VBEXP_TMP_IDT_FILENAME>
+       dim Stream     : set Stream  = oFS.CreateTextFile(TmpIdtFile, True)
+       VbsCheck "Could not create the database code page IDT file """ & TmpIdtFile & """"
+       Stream.WriteLine ""
+       Stream.WriteLine ""
+       Stream.WriteLine CodePage & vbTAB & "_ForceCodepage"
+       Stream.close
+       VbsCheck "Failed writing to the database code page IDT file """ & TmpIdtFile & """"
+
+       ;--- Now Import the IDT file -----------------------------------------
+       IdtImport(TmpIdtFile)
+   end function
+#)
+
+
+
+
+
+
+#NextId UNLOCK "CodePage"
+

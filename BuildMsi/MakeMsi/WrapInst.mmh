@@ -1,0 +1,410 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   WRAPINST.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.18  $
+;          $Date:   30 May 2009 15:07:18  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/WrapInst.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "WRAPINST.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4Doco-WrapInstall-Options]---
+#define? WRAPINST_SEQ_INSTALL            StartServices-RegisterUser
+#define? WRAPINST_SEQ_UNINSTALL          InstallInitialize-StopServices
+#define? WRAPINST_CONDITION_INSTALL      <$CONDITION_INSTALL_ONLY>        ;;You could add repair etc.
+#define? WRAPINST_CONDITION_UNINSTALL    <$CONDITION_UNINSTALL_ONLY>      ;;Make this "" if you don't want to ever uninstall (rare?)
+#define? WRAPINST_BASETYPE_INSTALL       Deferred                         ;;Base CA attributes (install). You may need to add "SYSTEM".
+#define? WRAPINST_BASETYPE_UNINSTALL     Deferred                         ;;Base CA attributes (uninstall). You may need to add "SYSTEM".
+#define? WRAPINST_HIDE_WRAPPED_PRODUCT   Y                                ;;Don't show in ARP as wrapping product will uninstall
+#define? WRAPINST_(UN)INSTALL_VALIDATION Y
+#define? WRAPINST_INSTALL_VALIDATION         <$WRAPINST_(UN)INSTALL_VALIDATION>
+#define? WRAPINST_UNINSTALL_VALIDATION       <$WRAPINST_(UN)INSTALL_VALIDATION>
+#define? WRAPINST_UNINSTALL_VALIDATION_WAIT  0                               ;;Some uninstalls are ASYNC with task returning before complete!  If non-blank and non-zero then how many seconds do we wish to allow for the uninstall task to complete?
+#define? WRAPINST_CDIMAGE_COPYATTRIBUTES                                     ;;See the "CopyAttributes" on the file command
+;---[4Doco-WrapInstall-Options]---
+
+
+
+
+;----------------------------------------------------------------------------
+;--- WrapInstall ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@WrapInstallCnt = 0
+#(
+   #define WrapInstall
+   <$UpdateMmLocation>
+
+   ;--- Parameter validation ------------------------------------------------
+   {$!KEYWORDS}                     ;;Don't Expect any keywords!
+   {$!:CDIMAGE,EXLIST,WORKDIRI,WORKDIRU,EXE,INSTALLDIR,ARGS,RC0,WHAT,UninstallKey,Key,UninstallExe,UninstallArgs,SeqI,SeqU,UninstallRc0}
+
+   ;--- Get some EXE details ------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4WrapInstall {$?}>^
+
+   ;--- Just a single EXE or a whole bunch of files? ------------------------
+   #if [@@CdImage = '']
+       ;--- We have a single EXE file so run via "Binary" table -------------
+       #if  ['{$WorkDirI=^^}' <> '']
+            #error ^The EXECA "WORKDIRI" parameter can't be used if we running via the Binary table.^
+       #endif
+       #(
+           <$ExeCa
+                       Key="<??@@KeyI>"
+                       Exe=^<??@@Exe>^
+                      Args=`{$Args=^^}`
+                    Binary="?"              ;;Let command choose the binaries key
+               Description=`Installing: {$What=^<??@@WhatDefault>^}`
+                 Condition=^<$WRAPINST_CONDITION_INSTALL>^
+                       Seq="<??@@SeqI>"
+                      Type="<??@@TypeI>"
+           >
+       #)
+   #elseif
+       ;--- Check that the user told us the images "destination" directory ---
+       #if [@@Exe = '']
+           #error ^You forgot to supply the EXE parameter (installed EXE to execute)!^
+       #endif
+
+       ;--- Add the CD image (copy the tree) --------------------------------
+       #(
+           <$Files
+                    "<??@@CdFileMask>"                      ;;The files to be installed...
+                    DestDir="<??@@InstallDir>"              ;;Should be a key (as you will probably need to refer to it...
+                  Component=""                              ;;Create components
+                     SubDir="TREE"
+                     ExList=`{$ExList=^^}`                  ;;Allow the users to have set up some exclusions
+                    SelfReg="N"
+             CopyAttributes="<$WRAPINST_CDIMAGE_COPYATTRIBUTES>"
+           >
+       #)
+
+       ;--- EXE is already on the filesystem (installed in the above step) --
+       #(
+           <$ExeCa
+                       Key="<??@@KeyI>"
+                       Exe=^<??@@Exe>^
+                    Binary=""                                ;;Don't add to the binary table!
+                   WorkDir="{$WorkDirI=^<??@@InstallDir>^}"  ;;Allows user to set a working directory
+                      Args=^{$Args=''}^
+               Description=`Installing: {$What=^<??@@WhatDefault>^}`
+                 Condition=^<$WRAPINST_CONDITION_INSTALL>^
+                       Seq="<??@@SeqI>"
+                      Type="<??@@TypeI>"
+           >
+       #)
+   #endif
+
+   ;--- Want uninstall support? ---------------------------------------------
+   #if  ['<$WRAPINST_CONDITION_UNINSTALL>' = '']
+        ;--- We don't want to uninstall -------------------------------------
+        #if ['{$UninstallExe=^^}' <> '']
+             #error ^You said not to uninstall but then also supplied the "UninstallExe" parameter!^
+        #endif
+   #elseif
+        ;--- Yes we wish to uninstall ---------------------------------------
+        #if ['{$UninstallExe=^^}' <> '']
+           ;--- We were told how to uninstall! ------------------------------
+           #(
+               <$ExeCa
+                           Key="<??@@KeyU>"
+                           Exe=^{$UninstallExe}^
+                        Binary=""                   ;;File in filesystem
+                        WorkDir="{$WorkDirU=^SystemFolder^}"  ;;Allows user to set a working directory
+                          ARGS=^{$UninstallArgs=''}^
+                   Description=`Uninstalling: {$What=^<??@@WhatDefault>^}`
+                     Condition=^<$WRAPINST_CONDITION_UNINSTALL>^
+                           Seq="<??@@SeqU>"
+                          Type="<??@@TypeU>"
+               >
+           #)
+        #elseif
+           ;--- If we know the Uninstall key can can work out how to uninstall! ---
+           #if ['{$UninstallKey=^^}' <> '']
+               ;--- Look for the uninstall string ---------------------------
+               #(
+                   <$RegistryRead
+                       Property="UNINSTALL_COMMAND<??@@WrapInstallCnt>"
+                           HKEY="LOCAL_MACHINE"
+                            Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{$UninstallKey}"
+                           Name="UninstallString"
+                      Condition=^<$WRAPINST_CONDITION_UNINSTALL>^   ;;Key must be available during uninstall!
+                   >
+               #)
+
+               ;--- Define Uninstall Action ---------------------------------
+               #DefineRexx ''
+                    @@Attributes     = '<$CATYPE_EXE_IN_FILEYSTEM_WITH_WORKDIR>';
+                    @@TypeAttributes = '<??@@TypeU>';
+                    <$CaType.Rexx2ProcessCaAttributes TypeVar=^@@Type^ TypeExVar=^@@TypeEx^ AttributeVar=^@@Attributes^ TypeAttributesVar=^@@TypeAttributes^>
+               #DefineRexx
+               <$Table "CustomAction">
+                    #if [@@TypeEx = '']
+                       #(
+                            <$Row
+                               Action="<??@@KeyU>"
+                                *Type="<??@@Type>"
+                               Source="<$AnyDir>"      ;;Actual dir shouldn't matter
+                               Target=`[UNINSTALL_COMMAND<??@@WrapInstallCnt>] {$UninstallArgs=''}`
+                            >
+                       #)
+                    #elseif
+                       #(
+                            <$Row
+                               Action="<??@@KeyU>"
+                                *Type="<??@@Type>"
+                        *ExtendedType="<??@@TypeEx>"
+                               Source="<$AnyDir>"      ;;Actual dir shouldn't matter
+                               Target=`[UNINSTALL_COMMAND<??@@WrapInstallCnt>] {$UninstallArgs=''}`
+                            >
+                       #)
+                    #endif
+               <$/Table>
+
+               ;--- Sequence the uninstall ----------------------------------
+               dim Uninstall<??@@WrapInstallCnt> : Uninstall<??@@WrapInstallCnt> = GetSeqNumber("InstallExecuteSequence", "<??@@SeqU>", 1)
+               <$Table "InstallExecuteSequence">
+               #(
+                    <$Row
+                         Action="<??@@KeyU>"
+                      Condition=^<$WRAPINST_CONDITION_UNINSTALL>^
+                      *Sequence="Uninstall<??@@WrapInstallCnt>"
+                    >
+               #)
+               <$/Table>
+           #endif
+        #endif
+   #endif
+
+   ;--- Did the user give us the UNINSTALL KEY? -----------------------------
+   #if ['{$UninstallKey=^^}' <> '']
+       ;--- Now hide the wrapped product from "add/remove" etc --------------
+       #if ['<$WRAPINST_HIDE_WRAPPED_PRODUCT $$UPPER>' <> 'N']
+           <$Component "WrapInstall<??@@WrapInstallCnt>.SystemComponent" Directory_="<$AnyDir>">
+           #(
+               ;--- Hide the wrapped product from users in ARP ------------------
+               <$Registry
+                     HKEY="LOCAL_MACHINE"
+                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{$UninstallKey}"
+                     Name="SystemComponent"
+                     Type="Integer"
+                    Value="1"
+                  KeyPath="Y"
+                  Comment="Hide this wrapped product from add/remove applet."
+               >
+           #)
+           <$/Component>
+       #endif
+
+       ;--- Mark this as a wrapped install ----------------------------------
+       <$Component "WrapInstall<??@@WrapInstallCnt>.Comment" Directory_="<$AnyDir>">
+       #(
+           ;--- Indicate which product did the installation -----------------
+           <$Registry
+                 HKEY="LOCAL_MACHINE"
+                  Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{$UninstallKey}"
+                 Name="MakeMsiWrapInstall"
+                Value="<$MSI_MSIBASENAME> (<$ProdInfo.ProductName> version <$ProductVersion>) installed this at [Date] [Time]"
+              KeyPath="Y"
+              Comment="For debugging purposes add this into uninstall registry of wrapped product"
+              MsiFormatted="VALUE"
+           >
+       #)
+       <$/Component>
+
+       ;--- Should double check install by validating the key exists after install ---
+       #if  ['<$WRAPINST_(UN)INSTALL_VALIDATION $$UPPER>' = 'Y']
+           ;--- Generate the Custom Action ----------------------------------
+           <$VbsCa Binary="WrapInstallValidation<??@@WrapInstallCnt>.VBS" OptCode="+CaSleep">
+           #(  '<?NewLine>'
+               <$VbsCaEntry "Install">
+                    CheckInUninstallRegistryShouldExist true        ;;Should exist in registry
+               <$/VbsCaEntry>
+               #if  ['<$WRAPINST_CONDITION_UNINSTALL>' <> '']
+                   <$VbsCaEntry "UnInstall">
+                        CheckInUninstallRegistryShouldExist false   ;;Should not exist in registry
+                   <$/VbsCaEntry>
+               #endif
+
+               <?NewLine><?NewLine>
+               '=======================
+               sub CheckInUninstallRegistryShouldExist(ShouldExist)
+               '=======================
+                    ;--- Get access to to the shell object ------------------
+                    CaDebug 2, "Creating shell object."
+                    dim oShell : set oShell = CaMkObject("WScript.Shell")
+
+                    ;--- Now see if the registry entry exists ---------------
+                    CaDebug 2, "Looking for the DisplayName (for ""{$UninstallKey}"")."
+                    dim DisplayName : DisplayName = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{$UninstallKey}\DisplayName"
+                    dim ErrMsg : ErrMsg = ""
+                    CaDebug 0, "Reading: " & DisplayName
+                    on error resume next
+                    #if '<$WRAPINST_UNINSTALL_VALIDATION_WAIT>' = '' | '<$WRAPINST_UNINSTALL_VALIDATION_WAIT>' = 0
+                        dim ItsValue : ItsValue = oShell.RegRead(DisplayName)
+                    #elseif
+                        ;--- The UNINSTALL can be ASYNC (idiots again...) ---
+                        if  ShouldExist then
+                            ;--- INSTALL validation -----------------------------
+                            dim ItsValue : ItsValue = oShell.RegRead(DisplayName)
+                        else
+                            ;--- UNINSTALL validation (allow for tasks being ASYNC, for example NSIS uninstall) ---
+                            VbsCaLogInc 1
+                            dim CheckSeconds : CheckSeconds = 5
+                            dim WaitFor      : WaitFor      = <$WRAPINST_UNINSTALL_VALIDATION_WAIT>
+                            dim s
+                            CaDebug 2, "The uninstall program may return before the uninstall is complete... Waiting up to " & WaitFor & " seconds for uninstall to complete!"
+                            for s = 0 to WaitFor step CheckSeconds
+                                ;--- Try reading the value ----------------------
+                                err.clear
+                                ItsValue = oShell.RegRead(DisplayName)
+
+                                ;--- If its gone then ASYNC task has finished successfully so exit loop ---
+                                if  not err.number = 0 then
+                                    exit for
+                                else
+                                    ;--- ASYNC uninstall task either failed or still executing ---
+                                    CaDebug 2, "{$UninstallKey} Still in UNINSTALL registry... Lets wait " & CheckSeconds & " seconds!"
+                                    CaSleep CheckSeconds
+                                end if
+                            next
+                            VbsCaLogInc -1
+                        end if
+                    #endif
+                    if  Err.Number <> 0 then
+                        ;--- Did not find it --------------------------------
+                        ErrMsg = "The DisplayName was not found : 0x" & hex(err.number) & " - " & err.description
+                        err.clear()
+                        CaDebug 0, ErrMsg
+                        if  ShouldExist then
+                            ErrMsg = "The installation of the wrapped product appears to have failed."
+                            CaDebug 2, "The DisplayName was not found. " & ErrMsg
+                        else
+                            ErrMsg = ""
+                            CaDebug 2, "The DisplayName was not found. The uninstall appears to have been successful"
+                        end if
+                    else
+                        ;--- We found it so the product is installed --------
+                        CaDebug 0, "The DisplayName exists: " & ItsValue
+                        if  ShouldExist then
+                            CaDebug 2, "The DisplayName exists. The installation appears to have been successful"
+                        else
+                            ErrMsg = "The uninstallation of the wrapped product appears to have failed."
+                            CaDebug 2, "The DisplayName was found. " & ErrMsg
+                        end if
+                    end if
+                    on error goto 0
+
+                    ;--- Need to die? ---------------------------------------
+                    if  ErrMsg <> "" then
+                        VbsCaRaiseError "{$What} Validation", ErrMsg
+                    end if
+               end sub
+           #)
+           <$/VbsCa>
+
+           ;--- Sequemce the custom actions ----------------------------------
+           #if  ['<$WRAPINST_INSTALL_VALIDATION $$UPPER>' = 'Y']
+                ;--- We want install validation -----------------------------
+                <$VbsCaSetup Entry="Install" Seq="<??@@KeyI>-" CONDITION=^<$WRAPINST_CONDITION_INSTALL>^ Binary="WrapInstallValidation<??@@WrapInstallCnt>.VBS">
+           #endif
+           #if  ['<$WRAPINST_UNINSTALL_VALIDATION $$UPPER>' = 'Y']
+                ;--- We want uninstall validation, Did user set up uninstallation? ---
+                #if  ['<$WRAPINST_CONDITION_UNINSTALL>' <> '']
+                    ;--- Yes we can do it -----------------------------------
+                    <$VbsCaSetup Entry="UnInstall" Seq="<??@@KeyU>-" CONDITION=^<$WRAPINST_CONDITION_UNINSTALL>^ Binary="WrapInstallValidation<??@@WrapInstallCnt>.VBS">
+                #endif
+           #endif
+       #endif
+   #endif
+
+   ;--- Check parameter usage -----------------------------------------------
+#)
+#DefineRexx '@@Rexx4WrapInstall'
+   ;--- Keep Count ----------------------------------------------------------
+   @@WrapInstallCnt = @@WrapInstallCnt + 1
+   @@Exe     = '{$Exe}';
+   @@SeqI    = '{$SeqI=^<$WRAPINST_SEQ_INSTALL>^}';
+   @@SeqU    = '{$SeqU=^<$WRAPINST_SEQ_UNINSTALL>^}';
+   @@CdImage = '{$CdImage=""}';
+   if left(@@Exe, 1) = '[' then
+   do
+       ;--- User supplied DIR key for directory -----------------------------
+       parse var @@Exe @@ExeDir ']' @@WhatDefault;
+       if   left(@@WhatDefault, 1) = '\' then
+            @@WhatDefault = substr(@@WhatDefault, 2);
+       @@ExeDir = @@ExeDir || ']';
+   end;
+   else
+   do
+       ;--- A DIR key was not used ------------------------------------------
+       @@WhatDefault = FilePart('name', @@Exe);
+       @@ExeDir      = ''
+   end;
+   @@InstallDir = '{$InstallDir=^^}'
+   if   @@CdImage <> '' & @@InstallDir = '' then
+   do
+        ;--- We are installing a CD Image and installation Key not supplied ---
+        @@InstallDir = @@ExeDir;
+        if  @@InstallDir = '' then
+            error('You need to supply the "INSTALLDIR" parameter to indicate where the IMAGE should be placed!');
+   end;
+
+   ;--- Work out the required mask ------------------------------------------
+   @@CdFileMask = @@CdImage;
+   if   right(@@CdFileMask, 1) <> '\' then
+        @@CdFileMask = @@CdFileMask || '\';
+   @@CdFileMask = @@CdFileMask || '*.*';
+
+   ;--- Work out the type of custom action ----------------------------------
+   @@TypeI = "<$WRAPINST_BASETYPE_INSTALL>"
+   @@TypeU = "<$WRAPINST_BASETYPE_UNINSTALL>"
+   <$@@HandleRc0Parameter UpdateVar="@@TypeI" RC0=^{$Rc0="Y"}^>
+   <$@@HandleRc0Parameter UpdateVar="@@TypeU" RC0=^{$UninstallRc0="Y"}^>
+
+   ;--- Get the key ---------------------------------------------------------
+   @@Key = '{$Key=^^}'
+   if   @@Key = '' then
+        @@Key = 'WrapInstall' || @@WrapInstallCnt
+   @@KeyI = @@Key || '_I'
+   @@KeyU = @@Key || '_U'
+#DefineRexx
+#DefineRexx '@@HandleRc0Parameter'
+   @@Rc0 = translate('{$Rc0}');
+   select
+        /*****************************/
+        when @@Rc0 = "ASYNC" then
+        /*****************************/
+            {$UpdateVar} = {$UpdateVar} || " AnyRc ASync"
+        /*****************************/
+        when @@Rc0 = "N" then
+        /*****************************/
+            {$UpdateVar} = {$UpdateVar} || " AnyRc"
+        /*****************************/
+        when @@Rc0 = "Y" then
+        /*****************************/
+            {$UpdateVar} = {$UpdateVar} || " Rc0"
+        /*****************************/
+        otherwise
+        /*****************************/
+            error('Invalid RC0 parameter of "' || @@Rc0 || '" passed!');
+
+   end;
+#DefineRexx
+
+
+
+#NextId UNLOCK "WRAPINST.MMH"
+
+
+

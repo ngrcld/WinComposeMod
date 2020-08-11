@@ -1,0 +1,620 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   ADSI.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.15  $
+;          $Date:   06 Nov 2007 09:47:20  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ADSI.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "ADSI.MMH"
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? DEFAULT_ADSI_MACHINE              LocalHost
+#define? DEFAULT_ADSI_DUMP                 Y
+#define? DEFAULT_ADSI_PARENT               IIS://<$DEFAULT_ADSI_MACHINE>/W3SVC  ;;Must NOT be empty! Slash added to end before appending object names
+#define? ADSI_BINARY_KEY                   ADSI_<??@@AdsiCnt>
+#define? ADSI_INSTALL_SEQ                  InstallServices-InstallFinalize
+#define? ADSI_UNINSTALL_SEQ                InstallServices-InstallFinalize
+#define? ADSI_APPCFG_FILE_NAME             <$MAKEMSI_VBSCA_DIR $$DEL:\>\ADSI_CMDS_
+#define? ADSI_APPCFG_FILE_EXTN             .4OBJ        ;;The extension for the temp file
+#define? ADSI_APPCFG_BEFORE_#INCLUDE                    ;;Code hook
+#define? ADSI_APPCFG_AFTER_#INCLUDE                     ;;Code hook
+#define? ADSI_APPCFG_DUMP_OBJECT_ON_ERROR  Y            ;;Y/N: If user's code fails, dump object?
+#define? ADSI_DUMP_OBJECT_TREE             false        ;;VBSCRIPT True/false: When object dumped, dump children too?
+#define? ADSI_ASSIGN_DATE_BASED_SLOTS      Y            ;;Probably never want to disable but...
+#define? ADSI_VBS_CONSTANTS                             ;;Add constants/initialization code here
+#define? ADSI_VBS_FUNCTIONS                             ;;Add any function/sub code here
+#( '<?NewLine>'
+   #define? ADSI_IIS_SERVER_START_CODE
+
+   ;--- Start the server ----------------------------------------------------
+   CaDebug 2,  "Starting the IIS server ""<??@@AdsiName.@@x>"""
+   .start   'Start IIS server
+   CaDebug 2,  "Successfully started the IIS server ""<??@@AdsiName.@@x>"""
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Start with EMPTY CustomActionData --------------------------------------
+;----------------------------------------------------------------------------
+#data "@@AdsiCad" 2
+#data
+
+
+
+;----------------------------------------------------------------------------
+;--- ADSI --------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@AdsiNestingLevel = 0   ;;Nesting level
+#RexxVar @@AdsiCnt          = 0   ;;Array of ADSI details
+#RexxVar @@CreateCnt        = 0   ;;Count of ADSI objects actually being created
+#RexxVar @@MaxNesting       = 0   ;;Highest nesting level
+#( ''
+   #define Adsi
+
+   ;--- Increase nesting level ----------------------------------------------
+   #push "ADSI Macros"
+   #RexxVar @@AdsiNestingLevel + 1
+
+   ;--- Remember Details ----------------------------------------------------
+   #evaluate ^^ ^<$Rexx4Adsi {$?}>^
+   #if  ['{$Data=^^}' <> '']
+        #evaluate ^^ ^<$Rexx2AddDatatoCustomActionDataStructure Data="{$Data}" #DATA=^@@AdsiCad^>^
+   #endif
+
+   ;--- Hold output ---------------------------------------------------------
+   #output ^<$ADSI_APPCFG_FILE_NAME><??@@AdsiCnt><$ADSI_APPCFG_FILE_EXTN>^ ASIS
+
+   ;--- Output a header (just for debugging) --------------------------------
+   #( '<?NewLine>'
+       '############################################################################
+       '### Object : #<??@@AdsiCnt>
+       '### NAME   : <??@@AdsiName.@@AdsiCnt>
+       '### CREATE : <??@@AdsiCreate.@@AdsiCnt>
+       '### NESTING: <??@@AdsiNesting.@@AdsiCnt>
+       '### CLASS  : <??@@AdsiClass.@@AdsiCnt>
+       '### PARENT : <??@@AdsiParent.@@AdsiCnt>
+       '### DEFINED: <??@@AdsiDefLocn.@@AdsiCnt>
+       '############################################################################
+       <?NewLine><?NewLine>
+   #)
+#)
+#DefineRexx  'Rexx4Adsi'
+   ;--- Have a new ADSI slot! ------------------------------------------------
+   @@AdsiCnt = @@AdsiCnt + 1
+
+   ;--- Remember highest Nesting Level --------------------------------------
+   if  @@AdsiNestingLevel > @@MaxNesting then
+       @@MaxNesting = @@AdsiNestingLevel
+
+   ;--- @@What is the name of this object -----------------------------------
+   @@Name = '{$#1}';
+
+   ;--- What is the PATH to the parent ("IISComputer" has parent "IIS:/") ---
+   @@Parent = '{$Parent=^^}';
+   if  @@Parent = '' then
+   do
+       ;--- Set the default root --------------------------------------------
+       if  @@AdsiNestingLevel = 1 then
+           @@Parent = '<$DEFAULT_ADSI_PARENT>';
+   end;
+   else
+   do
+       ;--- Can only specify "Parent" on root object ------------------------
+       if  @@AdsiNestingLevel <> 1 then
+           error('The "PARENT" parameter can only be used on the non-nested ADSI objects!');
+   end;
+
+   ;--- Object class (useually only required if creating) -------------------
+   @@ObjClass = '{$Class=''}';
+
+   ;--- Creating the object? ------------------------------------------------
+   @@Create = translate('{$Create='N'}');
+   if  @@Create = 'Y' then
+       @@CreateCnt = @@CreateCnt + 1;
+
+   ;--- What is the parent object -------------------------------------------
+   if  @@Parent = '' then
+   do
+       @@Prev   = @@AdsiNestingLevel - 1;
+       @@Parent = @@AdsiPath.@@Prev;
+   end;
+   @@ObjClassU = translate(@@ObjClass)
+   if  @@ObjClassU = "IISWEBSERVER" | @@ObjClassU = "IISFTPSERVER" then
+       @@Path = @@Parent || "/?";
+   else
+       @@Path = @@Parent || "/" || @@Name;
+   @@AdsiPath.@@AdsiNestingLevel = @@Path
+
+   ;--- Remember the details ------------------------------------------------
+   @@AdsiName.@@AdsiCnt      = @@Name;
+   @@AdsiDump.@@AdsiCnt      = '{$Dump=^<$DEFAULT_ADSI_DUMP>^}';
+   @@AdsiCreate.@@AdsiCnt    = @@Create;
+   @@AdsiClass.@@AdsiCnt     = @@ObjClass;
+   @@AdsiParent.@@AdsiCnt    = @@Parent;
+   @@AdsiNesting.@@AdsiCnt   = @@AdsiNestingLevel;
+   @@AdsiDefLocn.@@AdsiCnt   = GetInputFileNameAndLine();
+
+   ;--- Check parameter usage -----------------------------------------------
+   {$!:#1,PARENT,CLASS,CREATE,DUMP,DATA}
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- /ADSI -------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define /Adsi
+
+   ;--- Validate nesting ----------------------------------------------------
+   #RexxVar @@AdsiNestingLevel - 1
+   #if [@@AdsiNestingLevel < 0]
+       #error "Not currently within an ADSI block!"
+   #endif
+   #pop "ADSI Macros"
+
+   ;--- No more code so close the file --------------------------------------
+   #output
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Called on EXIT to generate ADSI VBS if required -------------------------
+;----------------------------------------------------------------------------
+#(
+   #define ADSI_GENERATE_IF_REQUIRED
+   #if [@@AdsiCnt <> 0]
+       <$@@GenerateCustomAction>
+   #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- GENERATE ADSI custom action ---------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define @@GenerateCustomAction
+
+   ;--- Start the VBS -------------------------------------------------------
+   <$VbsCa Binary="<$ADSI_BINARY_KEY>" DATA="@@AdsiCad">
+       ;--- Hook for user to add stuff at the start of the VBS ------------------
+       <$ADSI_VBS_CONSTANTS>
+
+       ;--- Globals ---------------------------------------------------------
+       public Slot                    ;;".name" for IIsWebServer/IIsFtpServer
+       public Found                   ;;Was IISWebServer/IISFtpServer found?
+       public oParent, oADSI
+       #include "AdsiDumpObject.H"
+       <$AdsiDumpObjectDefinitions>
+
+       ;--- Install ---------------------------------------------------------
+       <$VbsCaEntry "Install">
+           ;--- INSTALL initialization --------------------------------------
+           CaDebug 1, "Processing <??@@AdsiCnt> ADSI object(s)"
+
+           ;--- Generate code for each ADSI object ---------------------------
+           dim ErrNumb, ErrSrc, ErrDesc
+           #{  FOR @@x = 1 to <??@@AdsiCnt>
+               ;--- Summary -------------------------------------------------
+               <?NewLine><?NewLine><?NewLine>
+               '############################################################################
+               '### During : MSI INSTALLATION
+               '### Object : #<??@@x>/<??@@AdsiCnt>
+               '### NAME   : <??@@AdsiName.@@x>
+               '### CREATE : <??@@AdsiCreate.@@x>
+               '### NESTING: <??@@AdsiNesting.@@x>
+               '### CLASS  : <??@@AdsiClass.@@x>
+               '### PARENT : <??@@AdsiParent.@@x>
+               '### DEFINED: <??@@AdsiDefLocn.@@x>
+               '############################################################################
+               CaDebug 1, "Processing ADSI object ""<??@@AdsiName.@@x>"" - <??@@AdsiClass.@@x>"
+
+               ;--- Create/open the object ----------------------------------
+               #define+ @@ServerCreated N
+               #if  '<??@@AdsiClass.@@x $$UPPER>' = 'IISWEBSERVER' | '<??@@AdsiClass.@@x $$UPPER>' = 'IISFTPSERVER'
+                   ;--- Get parent for "IIsWebServer" -----------------------
+                   set oParent = GetAdsiObject("<??@@AdsiParent.@@x>")
+
+                   ;--- Need special code for the IIS Server objects --------
+                   #if  ['<??@@AdsiCreate.@@x>' = 'Y']
+                       ;--- Want to recreate the object, get slot #, delete existing ---
+                       Slot = GetIIsServerSlot(oParent, "<??@@AdsiClass.@@x>", "<??@@AdsiName.@@x>", true, Found)
+
+                       ;--- Now Create the server ---------------------------
+                       #define+ @@ServerCreated Y
+                       CaDebug 0, "We will create the server using Web Server ID #" & Slot
+                       CaDebug 2,  "Creating web application ""<??@@AdsiName.@@x>"" (#" & Slot & ")"
+                       set oADSI = oParent.Create("<??@@AdsiClass.@@x>", Slot)
+                       CaDebug 0,  "Created object!"
+
+                       ;--- Name the "slot" ---------------------------------
+                       oADSI.ServerComment = "<??@@AdsiName.@@x>"
+                       CaDebug 0,  "Added ServerComment to name slot #" & Slot
+                   #else
+                       ;--- Not creating so we don't delete and must find! ---
+                       Slot = GetIIsServerSlot(oParent, "<??@@AdsiClass.@@x>", "<??@@AdsiName.@@x>", false, Found)
+                       if  not Found  then
+                           ;--- Die as the server was not found -------------
+                           VbsCaRaiseError "Find ADSIWEBSERVER", "The web server ""<??@@AdsiName.@@x>"" could not be found!"
+                       end if
+
+                       ;--- Get the existing object -------------------------
+                       CaDebug 2,  "Loading the existing web application ""<??@@AdsiName.@@x>"" (#" & Slot & ")"
+                       set oADSI = GetAdsiObject("<??@@AdsiParent.@@x>/" & Slot)
+                   #endif
+               #elseif
+                   ;--- Handle normal objects which are not named by ID! ----
+                   #if  ['<??@@AdsiCreate.@@x>' = 'Y']
+                       ;--- Need to load the parent object ------------------
+                       CaDebug 2,  "Loading the parent for ""<??@@AdsiName.@@x>"""
+                       set oParent = GetAdsiObject("<??@@AdsiParent.@@x>")
+
+                       ;--- If application already exists then delete it! -------
+                       on error resume next
+                       CaDebug 2,  "Deleting the web application ""<??@@AdsiName.@@x>"""
+                       oParent.delete    "<??@@AdsiClass.@@x>", "<??@@AdsiName.@@x>"
+
+                       ;--- Create a new Application ----------------------------
+                       on error goto 0
+                       CaDebug 2,  "Creating #<??@@x>/<??@@AdsiCnt> - ""<??@@AdsiName.@@x>"" (object ""<??@@AdsiClass.@@x>"")"
+                       set oADSI = oParent.Create("<??@@AdsiClass.@@x>", "<??@@AdsiName.@@x>")
+                       CaDebug 0,  "Created object!"
+
+                       ;--- Create the application --------------------------
+                       #if '<??@@AdsiClass.@@x $$UPPER>' <> 'IISWEBDIRECTORY' & '<??@@AdsiClass.@@x $$UPPER>' <> 'IISWEBVIRTUALDIR'
+                           ;--- Doesn't need an ".appcreate()" performed ----
+                           CaDebug 0,  "No need for an .AppCreate() on object, user code follows!"
+                       #elseif
+                           ;--- Need an ".appcreate()" performed ------------
+                           CaDebug 0,  "Performing an .AppCreate()"
+                           oADSI.AppCreate TRUE
+                           CaDebug 0,  "Executed .AppCreate() on object, user code follows!"
+                       #endif
+                   #else
+                       ;--- Get the existing object -------------------------
+                       CaDebug 2,  "Loading the existing object ""<??@@AdsiName.@@x>"""
+                       set oADSI = GetAdsiObject("<??@@AdsiParent.@@x>/<??@@AdsiName.@@x>")
+                   #endif
+               #endif
+
+               ;--- Start WITH ----------------------------------------------
+               with oADSI
+
+               ;--- User code follows ---------------------------------------
+               CaDebug 0,  "Starting User code for ADSI object ""<??@@AdsiName.@@x>"""
+               on error resume next
+                    UserCode_ADSI_<??@@x> oADSI, oParent        ;;May wish to refer to parent
+               ErrNumb = err.number
+               ErrSrc  = err.source
+               ErrDesc = err.description
+               if   ErrNumb <> 0 then
+                    ;--- Dump object on error? ------------------------------
+                    #if ['<$ADSI_APPCFG_DUMP_OBJECT_ON_ERROR $$UPPER>' <> 'N']
+                        err.clear()
+                        CaDebug 2,  "Dumping all the ADSI properties of ""<??@@AdsiName.@@x>"" (as the update failed)."
+                        DumpAdsiObject oADSI, false
+                    #endif
+
+                    ;--- Report the error -----------------------------------
+                    on error goto 0
+                    VbsCaRaiseError "ADSI UPDATE - " & ErrSrc, "The user code for ""<??@@AdsiClass.@@x>"" failed with 0x" & hex(ErrNumb) & " (" & ErrNumb & ") - Reason: " & ErrDesc
+               end if
+               CaDebug 0,  "Successfully executed USER code for ADSI object ""<??@@AdsiName.@@x>""."
+
+               ;--- Update the information (sometimes invalid info makes this fail) ---
+               CaDebug 0,  "About to perform the .setinfo() call to save the data."
+               .setinfo             ;;Update information
+               ErrNumb = err.number
+               ErrSrc  = err.source
+               ErrDesc = err.description
+               if   ErrNumb <> 0 then
+                    ;--- Dump object on error? ------------------------------
+                    #if ['<$ADSI_APPCFG_DUMP_OBJECT_ON_ERROR $$UPPER>' <> 'N']
+                        err.clear()
+                        CaDebug 2,  "Dumping all the ADSI properties of ""<??@@AdsiName.@@x>"" (as the update flushing failed)."
+                        DumpAdsiObject oADSI, false
+                    #endif
+
+                    ;--- Report the error -----------------------------------
+                    on error goto 0
+                    VbsCaRaiseError "ADSI .SetInfo - " & ErrSrc, "The ADSI .setinfo() failed for ""<??@@AdsiClass.@@x>"", this can be due to invalid information supplied in user code." & vbCRLF & vbCRLF & "Reason 0x" & hex(ErrNumb) & " (" & ErrNumb & ") - Reason: " & ErrDesc
+               end if
+               CaDebug 0,  ".SetInfo() - successful."
+               CaDebug 2,  "Successfully configured the ADSI object ""<??@@AdsiName.@@x>""."
+               on error goto 0
+
+               ;--- Did the user want to dump info to logs etc --------------
+               #if  ['<??@@AdsiDump.@@x>' <> 'N']
+                   CaDebug 2,  "Dumping all the ADSI properties of ""<??@@AdsiName.@@x>"" (TREE=<$ADSI_DUMP_OBJECT_TREE>)."
+                   DumpAdsiObject oADSI, <$ADSI_DUMP_OBJECT_TREE>
+               #endif
+
+               ;--- If we created a server we need to start it --------------
+               #if ['<$@@ServerCreated>' = 'Y']
+                   ;--- Via macro, allows user to override ------------------
+                   <$ADSI_IIS_SERVER_START_CODE>
+               #endif
+
+               ;--- End "WITH", Check what happened -------------------------
+               end with
+               CaDebug 2,  "Successfully completed processing of the ADSI object ""<??@@AdsiName.@@x>""."
+
+               ;--- Finished ------------------------------------------------
+               set oADSI = Nothing
+               set oParent = Nothing
+           #}
+           <?NewLine><?NewLine><?NewLine>
+       <$/VbsCaEntry>
+
+       ;--- Uninstall -------------------------------------------------------
+       <$VbsCaEntry "UnInstall">
+           ;--- INSTALL initialization --------------------------------------
+           CaDebug 1, "UnInstalling <??@@CreateCnt> previously installed ADSI object(s)"
+
+           ;--- Generate code for each ADSI object ---------------------------
+           on error resume next                ;;Ignore deletion problems
+           dim ErrNumb, ErrSrc, ErrDesc
+           #{  FOR @@x = 1 to <??@@AdsiCnt>
+               ;--- Delete any objects we created ---------------------------
+               #if  '<??@@AdsiCreate.@@x>' = 'Y' | '<??@@AdsiClass.@@x $$UPPER>' = 'IISWEBSERVER' | '<??@@AdsiClass.@@x $$UPPER>' = 'IISFTPSERVER'
+                   ;--- Summary -------------------------------------------------
+                   <?NewLine><?NewLine><?NewLine>
+                   '############################################################################
+                   '### During : MSI UN-INSTALLATION
+                   '### Object : #<??@@x>/<??@@AdsiCnt>
+                   '### NAME   : <??@@AdsiName.@@x>
+                   '### CREATE : <??@@AdsiCreate.@@x>
+                   '### NESTING: <??@@AdsiNesting.@@x>
+                   '### CLASS  : <??@@AdsiClass.@@x>
+                   '### PARENT : <??@@AdsiParent.@@x>
+                   '### DEFINED: <??@@AdsiDefLocn.@@x>
+                   '############################################################################
+
+                   ;--- Access the parent object (may not exist) --------
+                   CaDebug 0,  "Loading the parent for ""<??@@AdsiName.@@x>"""
+                   set oParent = GetAdsiObject("<??@@AdsiParent.@@x>")
+                   if  err.number <> 0 then
+                       ;--- Parent doesn't exist then our object doesn't! ---
+                       CaDebug 0, "Can't load PARENT, assuming our object does not exist. RC = 0x" & hex(err.number) & " - " & err.description
+                   else
+                       ;--- WEB server or created object to be deleted ----------
+                       #if  ['<??@@AdsiCreate.@@x>' = 'N']
+                           ;--- We didn't create object but we need the slot # ---
+                           CaDebug 2, "Need to determine the slot number for the ADSI object ""<??@@AdsiName.@@x>"" - <??@@AdsiClass.@@x>"
+                           err.clear()
+                           Slot = GetIIsServerSlot(oParent, "<??@@AdsiClass.@@x>", "<??@@AdsiName.@@x>", false, Found)  ;;Don't delete!
+                           CaDebug 0, "Get Slot # RC = 0x" & hex(err.number) & " - " & err.description
+                       #elseif
+                           ;--- We created the object during install so delete it ---
+                           CaDebug 2, "Removing the ADSI object ""<??@@AdsiName.@@x>"" - <??@@AdsiClass.@@x>"
+                           #if  '<??@@AdsiClass.@@x $$UPPER>' = 'IISWEBSERVER' | '<??@@AdsiClass.@@x $$UPPER>' = 'IISFTPSERVER'
+                               ;--- Delete the object by slot number --------
+                               Slot = GetIIsServerSlot(oParent, "<??@@AdsiClass.@@x>", "<??@@AdsiName.@@x>", true, Found)
+                           #elseif
+                               ;--- If application already exists then delete it! -------
+                               CaDebug 2,  "Deleting the web application ""<??@@AdsiName.@@x>"""
+                               err.clear()
+                               oParent.delete    "<??@@AdsiClass.@@x>", "<??@@AdsiName.@@x>"
+                           #endif
+                           CaDebug 0, "Delete RC = 0x" & hex(err.number) & " - " & err.description
+                       #endif
+                   end if
+               #endif
+           #}
+
+           ;--- All done! ---------------------------------------------------
+           err.clear()                     ;;clear "err.number"...
+           <?NewLine><?NewLine><?NewLine>
+       <$/VbsCaEntry>
+       <?NewLine><?NewLine><?NewLine>
+
+
+       <?NewLine>
+       '=============================================
+       function GetAdsiObject(ByVal FullAdsiPath)
+       '=============================================
+           FullAdsiPath = replace(FullAdsiPath, "?", Slot)
+           CaDebug 0,  "Getting Object : " & FullAdsiPath
+           set GetAdsiObject = GetObject(FullAdsiPath)
+           CaDebug 0,  "Performing .GetInfo() on the object"
+           GetAdsiObject.GetInfo()
+           CaDebug 0,  "Successfully loaded the object : " & FullAdsiPath
+       end function
+
+       <?NewLine>
+       '================================================================
+       function GetIIsServerSlot(oAdsiParent, ObjClassName, ByVal ServerComment, ByVal DeleteIfFound, ByRef Found)
+       '================================================================
+           ;--- Non valid value ---------------------------------------------
+           GetIIsServerSlot = -1
+
+           ;--- Look for a spare "slot" (ID) --------------------------------
+           dim Slot, HighestSlot, oWebSite
+           CaDebug 0, ""
+           CaDebug 0, "Looking at Existing Sites (" & ObjClassName & ")..."
+           Slot        = clng(0)
+           HighestSlot = clng(0)
+           dim FoundSlots : FoundSlots = ""
+           for each oWebSite in oAdsiParent
+               ;--- Is this a web site? -------------------------------------
+               if  (ucase(oWebSite.class) = ucase(ObjClassName)) then
+                   ;--- Output debug info -----------------------------------
+                   CaDebug 0, "   * Found #" & oWebSite.name & " - " & oWebSite.ServerComment
+
+                   ;--- Highest slot so far? --------------------------------
+                   if   FoundSlots <> "" then
+                        FoundSlots = FoundSlots & "|"
+                   end if
+                   FoundSlots = FoundSlots & oWebSite.name
+                   if  clng(oWebSite.name) > HighestSlot then
+                       HighestSlot = clng(oWebSite.name)
+                   end if
+
+                   ;--- Is this "our" site ----------------------------------
+                   if  ucase(oWebSite.ServerComment) = ucase(ServerComment) then
+                       ;--- Remember the slot # -----------------------------
+                       Slot = clng(oWebSite.name)
+
+                       ;--- Delete the site if that is wanted ---------------
+                       if  DeleteIfFound then
+                           dim oADSI
+                           CaDebug 0, "   * Deleting: " & oAdsiParent.AdsPath & "/" & Slot
+                           set oADSI = GetObject(oAdsiParent.AdsPath & "/" & Slot)
+                           CaDebug 0, "   * Stopping..."
+                           oADSI.stop
+                           CaDebug 0, "   * Deleting..."
+                           oAdsiParent.delete  oWebSite.class, oWebSite.name
+                           CaDebug 0, "   * Deleted..."
+                       end if
+                   end if
+               end if
+           next
+           FoundSlots = "|" & FoundSlots & "|"
+
+           ;--- Return the slot number --------------------------------------
+           if  Slot <> 0 then
+               ;--- Object was found ----------------------------------------
+               Found            = true
+               GetIIsServerSlot = Slot              ;;Reuse slot
+               CaDebug 0, "   * Reusing slot"
+           else
+               ;--- Object not found ----------------------------------------
+               Found = false
+               CaDebug 0, "   * We did not find the object (need to find a free slot)..."
+
+               ;--- See if a specific ID (or list of) has been requested ----
+               CaDebug 0, "   * See if we are configured for a specific value for the slot number"
+               dim CadSlot    : CadSlot = ServerComment & ".SiteId"
+               if   VbsCaCadGet("?:" & CadSlot) = "Y" then
+                    CaDebug 0, "   * Looks like we are..."
+                    dim Continue    : Continue    = false
+                    dim TryThese    : TryThese    = VbsCaCadGet(CadSlot)
+                    dim WantedSlots : WantedSlots = split(TryThese, ",")
+                    dim i, Proposed
+                    for i = lbound(WantedSlots) to ubound(WantedSlots)
+                        Proposed = trim(WantedSlots(i))
+                        if  Proposed <> "" then
+                            if  Proposed = "*" then
+                                Continue = true
+                                CaDebug 0, "   * If we can't use proposed sites we will continue and assign our own..."
+                            else
+                                CaDebug 0, "   * Exists?: " & Proposed
+                                if  instr(FoundSlots, "|" & Proposed & "|") = 0 then
+                                    Slot = clng(Proposed)
+                                    exit for
+                                end if
+                            end if
+                        end if
+                    next
+                    if   not Continue and Slot = 0 then
+                         VbsCaRaiseError "Assign SiteID", "The web server """ & ServerComment & """ couldn't use any of the supplied Site IDs """ & TryThese & """ as they are already used."
+                    end if
+               end if
+
+               ;--- Date based slot -----------------------------------------
+               if   Slot = 0 then
+                   if ucase("<$ADSI_ASSIGN_DATE_BASED_SLOTS>") <> "N" then
+                        ;--- Create slot based on date (seems to work in IIS 5 - certainly OK in v6) ---
+                        CaDebug 0, "   * Want to create a date based slot number"
+                        dim NowTime  : NowTime  = now()
+                        dim SlotBase : SlotBase = year(NowTime) & Pad0(month(NowTime), 2) & Pad0(day(NowTime), 2)
+                        for i = 0 to 99
+                            Proposed = SlotBase
+                            if  i <> 0 then
+                                Proposed = Proposed & Pad0(i, 2)
+                            end if
+                            CaDebug 0, "   * Exists?: " & Proposed
+                            if  instr(FoundSlots, "|" & Proposed & "|") = 0 then
+                                Slot = clng(Proposed)
+                                exit for
+                            end if
+                        next
+                   end if
+               end if
+
+               ;--- Fall back on simply picking next available --------------
+               if   Slot = 0 then
+                    ;--- Use next available ---------------------------------
+                    Slot = HighestSlot + 1
+                    CaDebug 0, "   * Using next available slot = " & Slot
+               end if
+               GetIIsServerSlot = Slot
+               CaDebug 0, "   * Assigned slot = " & GetIIsServerSlot
+           end if
+       end function
+
+
+       <?NewLine>
+       '================================================================
+       function Pad0(ByVal TheNumber, ByVal TheLength)
+       '================================================================
+            dim Lng: Lng = len(TheNumber)
+            if  Lng >= TheLength then
+                Pad0 = TheNumber
+            else
+                Pad0 = string(TheLength-Lng, "0") & TheNumber
+            end if
+       end function
+
+       <$AdsiDumpObject SAY=^CaDebug 0,^>
+
+       ;--- Any user defined functions follow -------------------------------
+       <?NewLine><?NewLine><?NewLine>
+       <$ADSI_VBS_FUNCTIONS>
+       <?NewLine><?NewLine><?NewLine>
+
+       ;--- The user code in subroutines ------------------------------------
+       #{  FOR @@x = 1 to <??@@AdsiCnt>
+            <?NewLine><?NewLine><?NewLine>
+            '##########################################################
+            sub UserCode_ADSI_<??@@x>(ByRef oADSI, ByRef oParent)
+            '#
+            '#  Must return with err.number = 0
+            '##########################################################
+                on error goto 0     'Any error should immediately cause exit.
+                with oADSI
+                    <$ADSI_APPCFG_BEFORE_#INCLUDE>
+                        #include "<$ADSI_APPCFG_FILE_NAME><??@@x><$ADSI_APPCFG_FILE_EXTN>"
+                    <$ADSI_APPCFG_AFTER_#INCLUDE>
+                end with
+            end sub
+       #}
+   <$/VbsCa>
+
+   ;--- Set up custom actions (install & uninstall) -------------------------
+   #(
+       <$VbsCaSetup
+                Data="@@AdsiCad"
+               Entry="Install"
+                 Key="ADSIInstallation"
+              Binary="<$ADSI_BINARY_KEY>"
+                 Seq=^<$ADSI_INSTALL_SEQ>^
+           CONDITION=^<$VBSCA_CONDITION_INSTALL_ONLY>^
+         Description=^Installing <??@@AdsiCnt> task ADSI Applications^
+       >
+   #)
+   #(
+       <$VbsCaSetup
+                Data="@@AdsiCad"
+               Entry="UnInstall"
+                 Key="ADSIUnInstallation"
+              Binary="<$ADSI_BINARY_KEY>"
+                 Seq=^<$ADSI_UNINSTALL_SEQ>^
+           CONDITION=^<$VBSCA_CONDITION_UNINSTALL_ONLY>^
+         Description=^Removing <??@@AdsiCnt> task Applications^
+       >
+   #)
+#)
+
+#NextId UNLOCK "ADSI.MMH"
+

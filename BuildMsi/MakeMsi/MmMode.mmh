@@ -1,0 +1,105 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MMMODE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   31 Jul 2007 17:49:18  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MmMode.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "MMMODE.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? MMMODE_DEFAULT                       <$MMMODE_DEVELOPMENT>  ;;Note likely to have been supplied on command line!
+#define? MMMODE_SUMMARY_LINES_MODE_TEXT       Mode                   ;;Blank to prevent adding to PPWIZARD summary
+#define? MMMODE_SUMMARY_LINES_MODE_VALUE     <$MMMODE_DESCRIPTION>
+
+;----------------------------------------------------------------------------
+;--- Define the DEFAULT modes (you can add others) --------------------------
+;----------------------------------------------------------------------------
+#define  MMMODE_DEVELOPMENT         D
+#define  MMMODE_PRODUCTION          P
+#define? MMMODE_DESCRIPTION.D       Development        ;;Mode "D"
+#define? MMMODE_DESCRIPTION.P       Production         ;;Mode "P"
+#define? MMMODE_PLATFORM_RELDIR.P                      ;;Production goes into the root
+
+
+;----------------------------------------------------------------------------
+;--- Set up "MmMode" --------------------------------------------------------
+;----------------------------------------------------------------------------
+#option push DefineMacroReplace=ON
+   #define? MmMode <$MMMODE_DEFAULT>     ;;If not defined use default value
+   #if ['<$MmMode>' = '']
+       #define+ MmMode <$MMMODE_DEFAULT> ;;Currently blank, use default value
+   #endif
+   #define+ MmMode <$MMMODE $$Upper>     ;;Make sure upper case
+#option pop
+
+
+;----------------------------------------------------------------------------
+;--- Make sure the mode is valid --------------------------------------------
+;----------------------------------------------------------------------------
+;#if defined("MMMODE_DESCRIPTION.[MMMODE]") = 'N'
+#ifndef MMMODE_DESCRIPTION.[MMMODE]
+   #error ^The processing mode of "<$MMMODE>" is unknown!^
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- These values can be used elsewhere... ----------------------------------
+;----------------------------------------------------------------------------
+#define  MMMODE_DESCRIPTION  <$MMMODE_DESCRIPTION.[MMMODE]>
+
+
+;----------------------------------------------------------------------------
+;--- Set up the platform relative directory ---------------------------------
+;----------------------------------------------------------------------------
+#ifdef MMMODE_PLATFORM_RELDIR.[MMMODE]
+   ;--- User supplied a value (if non-blank must end with a slash) ----------
+   #define MMMODE_PLATFORM_RELDIR  <$MMMODE_PLATFORM_RELDIR.[MMMODE]>
+#elseif
+   ;--- No value supplied, default to the "description" ---------------------
+   #define MMMODE_PLATFORM_RELDIR  <$MMMODE_DESCRIPTION>\
+#endif
+
+
+;---[4DocoCompileOptionsThatVaryByMode]---
+;----------------------------------------------------------------------------
+;--- Which compression to use? ----------------------------------------------
+;----------------------------------------------------------------------------
+#define? COMPILE_COMPRESSION_TYPE_4_PRODUCTION     <$COMPRESS_BEST>
+#define? COMPILE_COMPRESSION_TYPE_4_NOT_PRODUCTION <$COMPRESS_MEDIUM>
+#define? COMPILE_COMPRESS_4_PRODUCTION             ON
+#define? COMPILE_COMPRESS_4_NOT_PRODUCTION         ON
+#if ['<$MmMode>' = '<$MMMODE_PRODUCTION>']
+   ;--- Production mode -----------------------------------------------------
+   #define? COMPILE_CABDDF_CompressionType    <$COMPILE_COMPRESSION_TYPE_4_PRODUCTION>
+   #define? COMPILE_CABDDF_Compress           <$COMPILE_COMPRESS_4_PRODUCTION>
+#elseif
+   ;--- Other mode ----------------------------------------------------------
+   #define? COMPILE_CABDDF_CompressionType    <$COMPILE_COMPRESSION_TYPE_4_NOT_PRODUCTION>
+   #define? COMPILE_CABDDF_Compress           <$COMPILE_COMPRESS_4_NOT_PRODUCTION>
+#endif
+;---[4DocoCompileOptionsThatVaryByMode]---
+
+
+;--- Output processing mode to PPWIZARD summary? ----------------------------
+#if ['<$MMMODE_SUMMARY_LINES_MODE_TEXT>' <> '']
+   #evaluate ^^ ^call Summary '<$MMMODE_SUMMARY_LINES_MODE_TEXT>', '<$MMMODE_SUMMARY_LINES_MODE_VALUE>'^
+#endif
+
+
+#NextId UNLOCK "MMMODE.MMH"
+
+

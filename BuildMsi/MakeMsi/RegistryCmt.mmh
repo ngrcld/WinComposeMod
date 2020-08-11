@@ -1,0 +1,78 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   REGISTRYCOMMENT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.1  $
+;          $Date:   10 Aug 2005 18:43:42  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/RegistryCmt.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "REGISTRYCOMMENT.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- [RegistryComment] ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar RxRegistryCommentCnt     = 0       ;;Not in a block
+#RexxVar RxRegistryComment.0      = ''      ;;Allows consumer to not care about count (whether in block or not)
+#(
+   #define RegistryComment
+   #evaluate ^^ ^<$Rexx4RegistryComment {$?}>^
+#)
+#DefineRexx 'Rexx4RegistryComment'
+   ;--- Check parameter usage -----------------------------------------------
+   {$!KEYWORDS}                        ;;Don't Expect any keywords!
+   {$!:#1,Comment}
+
+   ;--- Get Parameters ------------------------------------------------------
+   {$Comment $$RxVar:@@Comment}
+   {$#1=^^   $$RxVar:@@4}              ;;Can be extension such as ".exe"
+
+   ;--- How do we want to handle the comment? -------------------------------
+   if   @@4 <> '' then
+   do
+        ;--- Non block mode (store info) ------------------------------------
+        @@Key = "@@RCmt_" || c2x(translate(@@4));
+        call value @@Key, @@Comment;
+   end
+   else
+   do
+       ;--- Start of a block ------------------------------------------------
+       Call StackPush "RegistryComment", ""
+       RxRegistryCommentCnt                   = RxRegistryCommentCnt + 1;
+       RxRegistryComment.RxRegistryCommentCnt = @@Comment;
+   end;
+#DefineRexx
+#(
+   #define /RegistryComment
+   #evaluate ^^ ^<$Rexx4/RegistryComment {$?}>^
+#)
+#DefineRexx 'Rexx4/RegistryComment'
+   if  RxRegistryCommentCnt <= 0 then
+       error('You have not within a "RegistryComment" block!');
+   Call StackPop "RegistryComment", ""
+   RxRegistryCommentCnt = RxRegistryCommentCnt - 1;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Get a Registry comment -----------------------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'Rexx2GetRegistryComment'
+   @@Key = "@@RCmt_" || c2x(translate({$KeyVar}));
+   if  symbol(@@Key) = 'VAR' then
+       {$CmtVar} = value(@@Key);   ;;Get the comment
+   else
+       {$CmtVar} = '';             ;;No comment
+#DefineRexx
+
+
+
+#NextId UNLOCK "REGISTRYCOMMENT.MMH"
+

@@ -1,0 +1,66 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   InvalidMacros.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.3  $
+;          $Date:   16 Nov 2017 11:28:32  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/InvalidMacros.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2006
+;                   All rights reserved.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "INVALIDMACROS.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Check for obsolete macros (macros users may have used) -----------------
+;----------------------------------------------------------------------------
+#(
+    #define     ObsoleteMacro
+
+    ;--- Flag the macro as invalid (catches macro replacement errors) -------
+    #define obsolete={$#1}    {$Msg=~Please use "{$NowUse}" instead.~}
+
+    ;--- See if the user has already defined it -----------------------------
+    #ifdef  {$#1}
+        ;--- Output error message -------------------------------------------
+        #error ^You have defined the obsolete macro{NL}{NL}   * {$#1}{NL}{NL}<$obsolete={$#1}>{NL}{NL}Be sure to check the documentation or MAKEMSI headers to confirm usage!^
+    #endif
+#)
+<$ObsoleteMacro "COMPILE"                       NowUse="Cabinet">
+<$ObsoleteMacro "DIRTREE_DRIVE_PROPERY_PREFIX"  NowUse="DIRTREE_DRIVE_PROPERTY_PREFIX">
+<$ObsoleteMacro "COMPANY_ADD_GENERATED_DOCO"    NowUse="COMPANY_WANT_TO_INSTALL_DOCUMENTATION">
+<$ObsoleteMacro "COMPANY_INFOZIP_EXE"           NowUse="COMMONFRAMEWORK_ZIP_SOURCE_FOR_BACKUP">
+<$ObsoleteMacro "MAKEMSI_IZIP.EXE"              NowUse="MAKEMSI_INFOZIP.EXE">
+<$ObsoleteMacro "COMPANY_UPGRADE_ATTRIBUTES"    NowUse="UPGRADETABLE_DEFAULT_ATTRIBUTES">
+<$ObsoleteMacro "COMPANY_UPGRADE_LANGUAGE"      NowUse="UPGRADETABLE_DEFAULT_LANGUAGE">
+<$ObsoleteMacro "COMPANY_PROPERTY_SUPPORTED_ON" NowUse="COMPANY_PROPERTY_SupportedPlatforms">
+<$ObsoleteMacro "COMPANY_PROPERTY_COMPUTERNAME" NowUse="COMPANY_PROPERTY_BuildComputer">
+<$ObsoleteMacro "MSIEXTRA_IF_POSSIBLE_DONT_USE_SCRIPT_CUSTOM_ACTIONS" NowUse="MSIEXTRA_USE_CUSTOM_ACTIONS">
+<$ObsoleteMacro "SUNDRY_STANDARD_DELIMITERS_REXXEXP"                  NowUse="No replacement">
+
+
+
+;----------------------------------------------------------------------------
+;--- Hook into the reporting of unknown macros ------------------------------
+;----------------------------------------------------------------------------
+#define? MAKEMSI_HOOK_UNKNOWN_MACRO_BEFORE      ;;A user Hook. The "HandledYN" parameter contains the name on a rexx variable (set it to Y/N)
+#option PUSH DefineMacroReplace=ON
+    #DefineRexx 'HOOK_UNKNOWN_MACRO'            ;;Hooks into macro replacement error handling!
+        ;--- Let someone define their own code in front ---------------------
+        @@Handled = 'N';
+        <$MAKEMSI_HOOK_UNKNOWN_MACRO_BEFORE HandledYN="@@Handled">;
+        if  @@Handled <> 'Y' then
+        do
+            ;--- The user's hook didn't handle the issue --------------------
+            @@ObsMsgMacro = 'obsolete=' || HookDefineName;
+            if  defined(@@ObsMsgMacro) = 'Y' then
+                error('You used the macro "' || HookDefineName || '".',, MacroGet(@@ObsMsgMacro));
+        end
+    #DefineRexx
+#option POP
+
+
+
+#NextId UNLOCK "INVALIDMACROS.MMH"

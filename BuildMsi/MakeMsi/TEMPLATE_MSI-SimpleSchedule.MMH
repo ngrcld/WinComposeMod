@@ -1,0 +1,302 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   TEMPLATE_MSI-SimpleSchedule.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   24 Mar 2015 18:35:32  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/TEMPLATE_MSI-SimpleSchedule.MMH.pvcs  $
+;
+;    DESCRIPTION:
+;----------------------------------------------------------------------------
+
+
+;----------------------------------------------------------------------------
+;--- Defaults  --------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SIMPLE_SCHEDULE_MAKEMSI_SUPPORT                    MyTeam.MMH         ;;You will likely want to override this one...
+#define? SIMPLE_SCHEDULE_REQUIRED_FILES                                        ;;Semicolon (;) delimitered list of files your script needs
+#define? SIMPLE_SCHEDULE_LOGON_SCHEDULED_VIA_REGISTRY       N                  ;;We will not schedule at user logon via the registry by default [Context used (Y=USER N=SYSTEM) account]
+#define? SIMPLE_SCHEDULE_INSTALL_LOCATION                   [ProgramFilesFolder]\<$ProdInfo.ProductName>
+#define? SIMPLE_SCHEDULE_MAX_DAYS_LOGS                      120
+#define? SIMPLE_SCHEDULE_COMMENT                            Created by the SimpleSchedule MAKEMSI framework
+#define? SIMPLE_SCHEDULE_INTERACTIVE                        1
+#define? SIMPLE_SCHEDULE_MAXRUNTIME_MS                      1800000            ;;0.5 hour (in milliseconds)
+#define? SIMPLE_SCHEDULE_PARM1_VIA_REGISTRY                 ViaRegistry
+#define? SIMPLE_SCHEDULE_PARM1_VIA_SCHEDULE                 ViaTaskSchedule
+#define? SIMPLE_SCHEDULE_MS_JT_EXE_NAME                     ms_jt.exe          ;;Name it whatever you want
+
+
+;----------------------------------------------------------------------------
+;--- Validations ------------------------------------------------------------
+;----------------------------------------------------------------------------
+#ifndef SIMPLE_SCHEDULE_COMMANDS
+        #error ^You need to define the command(s) to be executed in "SIMPLE_SCHEDULE_COMMANDS"!^
+#endif
+#ifndef SIMPLE_SCHEDULE_TRIGGERS
+        #error ^You need to define the schedule's trigger(s) in "SIMPLE_SCHEDULE_TRIGGERS"!^
+#endif
+#if ['<$SIMPLE_SCHEDULE_TRIGGERS>' = '']
+    ;--- Definately not creating a windows task schedule --------------------
+    #define _BATCH_FILE_COMMENT_     The batch file is only "scheduled" for user logon via machine registry
+    #if ['<$SIMPLE_SCHEDULE_LOGON_SCHEDULED_VIA_REGISTRY>' <> 'Y']
+        #error ^You haven't set any schedule triggers so we expect "SIMPLE_SCHEDULE_LOGON_SCHEDULED_VIA_REGISTRY" to contain "Y" (to confirm this is what you want)!^
+    #endif
+#elseif
+    ;--- Its Possible we want to use both types of scheduling ---------------
+    #if ['<$SIMPLE_SCHEDULE_LOGON_SCHEDULED_VIA_REGISTRY>' = 'N']
+        #define _BATCH_FILE_COMMENT_  The Schedule runs the batch file (logging the results)
+    #elseif
+        #define _BATCH_FILE_COMMENT_  The Windows registry handles user logon and Windows's Schedule runs the batch file other times.
+    #endif
+#end if
+#info ^<$_BATCH_FILE_COMMENT_>^
+
+
+
+;----------------------------------------------------------------------------
+;--- Include MAKEMSI support & Process version file -------------------------
+;----------------------------------------------------------------------------
+#include   "<$SIMPLE_SCHEDULE_MAKEMSI_SUPPORT>"
+
+
+;----------------------------------------------------------------------------
+;--- Install Files here... --------------------------------------------------
+;----------------------------------------------------------------------------
+<$DirectoryTree Key="INSTALLDIR" Dir="<$SIMPLE_SCHEDULE_INSTALL_LOCATION>" CHANGE="\">
+
+
+;----------------------------------------------------------------------------
+;--- Create batch file for schedule -----------------------------------------
+;----------------------------------------------------------------------------
+#define  SIMPLESCHEDULE.CMD_BASENAME   _ScheduledBatchFile_4_<$ProdInfo.ProductName>_.CMD
+#define  SIMPLESCHEDULE.CMD            <$MAKEMSI_OTHER_DIR>\<$SIMPLESCHEDULE.CMD_BASENAME>
+<$FileMake "<$SIMPLESCHEDULE.CMD>">
+#option PUSH LineContinuation="NULL"     ;;Terminating "\" on dirs etc cause issues!
+    @echo off
+
+    <?NewLine><?NewLine>
+    ::--- Turn logging ON ----------------------------------------------------
+    if "%~1" == "NOWLOGGING" goto NowLogging
+        ::--- Init -----------------------------------------------------------
+        cls
+        setlocal ENABLEDELAYEDEXPANSION
+        set PARM1CONTEXT=%~1
+        if  "%PARM1CONTEXT%" == "" set PARM1CONTEXT=user invoked
+        set BatchFileDir=%~dp0
+        cd /D "%BatchFileDir%"
+
+        <?NewLine>
+        ::--- At this stage user will see the output on the console ----------
+        TITLE <$ProdInfo.ProductName> : Logging preparation...
+        echo [%TIME%] ###################################
+        echo [%TIME%] ### SIMPLE SCHEDULE STARTING... ###
+        echo [%TIME%] ###################################
+
+        <?NewLine>
+        ::--- Work out where to log (Health checking location if possible) ---
+        set LOGDIR=%LOGS%
+        if "%LOGDIR%" == "" set LOGDIR=C:\LOGS\
+        set LOGDIR=%LOGDIR%<$ProdInfo.ProductName>\
+        md "%LOGDIR%" > nul 2>&1
+        <?NewLine><?NewLine>
+
+        <?NewLine>
+        ::--- Determine LogFile prefix ---------------------------------------
+        call :GetDateTime
+        set LogPrefix=%YYYYMMDD% (%DAY3%) @ %HHMMSS::=_% - <$ProdInfo.ProductName>
+
+        <?NewLine>
+        ::--- Start the logging ----------------------------------------------
+        if     "%USERNAME%" == "" set LogBase=%LogPrefix% [SYSTEM ACCOUNT]
+        if not "%USERNAME%" == "" set LogBase=%LogPrefix% [USER '%USERNAME%']
+        set SchedulesLogFile=%LOGDIR%%LogBase%.txt
+           #define CMDNEEDS  "                      ;;Got to love "cmd.exe"...
+           set CMD=cmd.exe /c %0 "NOWLOGGING"
+           echo EXECUTING: %CMD% > "%SchedulesLogFile%"
+           echo.                >> "%SchedulesLogFile%"
+           echo If you see this the above command probably failed... >> "%SchedulesLogFile%"
+           cmd.exe /c <$CMDNEEDS>%0 "NOWLOGGING" > "%SchedulesLogFile%" 2>&1<$CMDNEEDS>
+           set ScheduleRc=%ERRORLEVEL%
+           echo.
+           echo [%TIME%] Exiting with return code "%ScheduleRc%"...
+           ren "%SchedulesLogFile%" "%LogBase%, rc=%ScheduleRc%.txt"
+           exit %ScheduleRc%
+           goto :EOF
+    :NowLogging
+
+    ;--- Display header -----------------------------------------------------
+    <?NewLine><?NewLine>
+    call :SaySection Schedule starting (%COMPUTERNAME%)...
+    call :say Invoked     : %PARM1CONTEXT%
+    call :say MSI product : <$ProdInfo.ProductName>
+    call :say MSI version : <$ProductVersion>
+    call :say MSI built   : <?CompileTime>
+    call :say Current Dir : "%CD%"
+    call :say Log File    : "%SchedulesLogFile%"
+
+
+    <?NewLine><?NewLine>
+    ::===========================================================================
+    call :SAYSECTION Starting Configured Commands
+    ::===========================================================================
+
+        ;--- Execute the configured commands ----------------------------
+            <$SIMPLE_SCHEDULE_COMMANDS>
+            set CmdsRc=%ERRORLEVEL%
+            echo.
+            call :SAY RC (SIMPLE_SCHEDULE_COMMANDS) : %CmdsRc%
+
+    <?NewLine><?NewLine>
+    <?NewLine><?NewLine>
+    ::===========================================================================
+    call :SAYSECTION Finished Configured Commands, Now delete logs older than <$SIMPLE_SCHEDULE_MAX_DAYS_LOGS> days old
+    ::===========================================================================
+           cscript.exe //NoLogo DelOlderRE.vbs "%LOGDIR%" ".*\.txt" <$SIMPLE_SCHEDULE_MAX_DAYS_LOGS>
+        exit %CmdsRc%       ;;Can't use "/B" as windows bug prevents passing the return code to the command processor
+        goto :EOF
+
+
+    <?NewLine><?NewLine>
+    <?NewLine><?NewLine>
+    <?NewLine><?NewLine>
+    :: ##########################################################################
+    :SAYSECTION
+    :: ##########################################################################
+        echo.&echo.&echo.
+        echo ###########################################################################################################
+        echo [%date% %Time%] %*
+        echo ###########################################################################################################
+        echo.&echo.
+        TITLE <$ProdInfo.ProductName> :  %*
+
+        ::--- To console -----------------------------------------------------
+        echo. > CON
+        echo. > CON
+        echo ##############################################################################> CON
+        echo [%time%] %* > CON
+        echo ##############################################################################> CON
+        echo. > CON
+        echo. > CON
+        goto :EOF
+
+    <?NewLine><?NewLine>
+    :: ##########################################################################
+    :Say
+    :: ##########################################################################
+        echo [%date% %time%] %*
+        echo [%time%] %* > CON
+        goto :EOF
+
+
+    <?NewLine><?NewLine>
+    ::===========================================================================
+    :GetDateTime
+    :: Tokenise date into DD MM and YY independent of locale
+    :: NEWSGROUP: microsoft.public.win2000.cmdprompt.admin
+    :: SUBJECT  : How can I to get the current month in commandline?
+    :: WHEN/WHO : Mar 14 2001, 9:05 pm  post by Michael (maj0)
+    ::
+    :: DATE output (when prompting for new date) looks like:
+    ::      The current date is: Sat 05/07/2014
+    ::      Enter the new date: (dd-mm-yy)
+    ::
+    :: The first loop reads the DATE from the environment variable and splits it up
+    :: The second loop reads 2nd line of the date output and splits up "(dd-mm-yy)"
+    :: It then sets up the "DD", "MM" and "YY" environment variables.
+    ::===========================================================================
+        ::--- Get the date ------------------------------------------------------
+        for /f "tokens=2-4 delims=.:/-, " %%i in ("%date%") do (
+            for /f "tokens=2-4 delims=/-,() skip=1" %%l in ('echo.^|date') do (
+              set %%l=%%i
+              set %%m=%%j
+              set %%n=%%k
+            )
+        )
+        set YYYYMMDD=%YY%-%MM%-%DD%
+
+        ::--- Get the day of the week -------------------------------------------
+        for /f "tokens=1 delims= " %%W in ("%date%") do set Day3=%%W
+
+        ::--- Get some time formats ---------------------------------------------
+        set HHMMSSSS=%TIME: =0%
+        set   HHMMSS=%HHMMSSSS:~0,8%
+        set     HHMM=%HHMMSSSS:~0,5%
+        goto :EOF
+#option POP         ;;Restore original line continuation
+<$/FileMake>
+
+
+;----------------------------------------------------------------------------
+;--- Add the required files -------------------------------------------------
+;----------------------------------------------------------------------------
+<$Component "Files4Schedule" Create="Y" Directory_="INSTALLDIR">
+    <$File  Source="<$SIMPLESCHEDULE.CMD>"          Comment=^<$_BATCH_FILE_COMMENT_>.^ KeyPath="Y">
+    <$File  Source="<??*MAKEMSI_DIR>DelOlderRE.VBS" Comment=^Used by "<$SIMPLESCHEDULE.CMD>" to delete older log files.^>
+<$/Component>
+#if ["<$SIMPLE_SCHEDULE_REQUIRED_FILES>" <> ""]
+    <$Component "SIMPLE_SCHEDULE_REQUIRED_FILES" Create="Y" Directory_="INSTALLDIR">
+        #{ SET "FILE={;}<$SIMPLE_SCHEDULE_REQUIRED_FILES>"
+               #info ^SUPPORTING FILE: <??SET_FILE>^
+               <$File Source=^<??SET_FILE>^ Comment=^SIMPLE_SCHEDULE_REQUIRED_FILES^ KeyPath="Y">
+        #}
+    <$/Component>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Schedule via REGISTRY? -------------------------------------------------
+;----------------------------------------------------------------------------
+#if ['<$SIMPLE_SCHEDULE_LOGON_SCHEDULED_VIA_REGISTRY>' = 'Y']
+    ;--- "schedule" the logon command with REGISTRY -------------------------
+    #info ^Creating REGISTRY schedule for user logon (runs in user's context)^
+    <$Component  "StartScriptViaRegistry" Directory_="INSTALLDIR">
+    #(
+        <$Registry
+                  HKEY="LOCAL_MACHINE"
+                   KEY="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+                  Name="RunAtLogon4<$ProdInfo.ProductName>[<$ProductVersion>]"
+                 Value=^cmd.exe /C START /MIN "" cmd.exe /c <$CMDNEEDS>"[INSTALLDIR]<$SIMPLESCHEDULE.CMD_BASENAME>" "<$SIMPLE_SCHEDULE_PARM1_VIA_REGISTRY>"<$CMDNEEDS>^
+          MsiFormatted="VALUE"
+               KEYPATH="Y"
+        >
+    #)
+    <$/Component>
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Create WINDOWS TASK Schedule -------------------------------------------
+;----------------------------------------------------------------------------
+#if ['<$SIMPLE_SCHEDULE_TRIGGERS>' <> '']
+    ;--- We are creating a proper schedule ----------------------------------
+    #info ^Creating Window's TASK schedule (runs in SYSTEM context)^
+    <$Component "Files4ScheduleCreation" Create="Y" Directory_="INSTALLDIR">
+        <$File  Source="<$SIMPLE_SCHEDULE_MS_JT_EXE_NAME>"  Comment=^This is used to create schedules.^ KeyPath="Y">
+    <$/Component>
+
+    #data "CadSchedule"
+       ;--- Installation Directory ----------------------------------------------
+       "INSTALLDIR"    "[INSTALLDIR]"
+    #data
+    <$Schedule "<$ProdInfo.ProductName>" DATA="CadSchedule" JT.EXE="[INSTALLDIR]<$SIMPLE_SCHEDULE_MS_JT_EXE_NAME>">
+       ;--- Set up task details -------------------------------------------------
+       /SJ
+       WorkingDirectory = "(*INSTALLDIR*)"
+       ApplicationName  = "%COMSPEC%"
+       Parameters = "/C <$SIMPLESCHEDULE.CMD_BASENAME> <$SIMPLE_SCHEDULE_PARM1_VIA_SCHEDULE>"
+       Interactive = <$SIMPLE_SCHEDULE_INTERACTIVE>
+       Comment = "<$SIMPLE_SCHEDULE_COMMENT>"
+       Creator = "<$ProdInfo.ProductName> version <$ProductVersion> (via MAKEMSI's schedule Command)"
+       MaxRunTime = <$SIMPLE_SCHEDULE_MAXRUNTIME_MS>
+       KillIfGoingOnBatteries = 0
+       SystemRequired = 1
+
+       ;--- Invoker defined trigger(s) ------------------------------------------
+       <$SIMPLE_SCHEDULE_TRIGGERS>
+
+       ;--- Set the Security Info -----------------------------------------------
+       /SC "" NULL
+    <$/Schedule>
+#endif
+

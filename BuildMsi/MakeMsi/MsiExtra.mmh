@@ -1,0 +1,440 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MSIEXTRA.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.13  $
+;          $Date:   16 Aug 2006 19:35:14  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MsiExtra.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "MSIEXTRA.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainMsiExtraRelatedOptions]---
+#define? DEFAULT_MSIEXTRA_CHECK            Y                          ;;N=NO, Y=YES
+#define? MSIEXTRA_MSILOCATION              <$MSI_MSILOCATION>         ;;By default will copy to where MSI is...
+#define? MSIEXTRA_CHECK_WHEN_CONDITION     <$CONDITION_INSTALL_ONLY>  ;;Only want the validation during install...
+#define? MSIEXTRA_VALIDATE_AFTER           CostFinalize               ;;Must insert "ResolveSource" action if validate occurs during repairs etc!
+#define? MSIEXTRA_ALLOW_FILE_SIZE_PARMS    Y                          ;;"N" = Don't allow missing files to be specified by filename and size
+#define? DEFAULT_MSIEXTRA_DOCO             Y                          ;;"N" = Don't add to doco (by default)
+#define? MSIEXTRA_FILE_DETAILS_HOOK                                   ;;Macro can contain Rexx code to store or process file info
+#if ['<$SUNDRY_IF_POSSIBLE_DONT_USE_SCRIPT_CUSTOM_ACTIONS>' = 'Y']
+    #define? MSIEXTRA_USE_CUSTOM_ACTIONS    N                         ;;By default don't use VBSCRIPT CA
+#elseif
+    #define? MSIEXTRA_USE_CUSTOM_ACTIONS    Y                         ;;By default use VBSCRIPT CA
+#endif
+
+
+;--- These options only used when VBSCRIPT is NOT being used ----------------
+#(
+  #define? MSIEXTRA_ERRORMSG_SUFFIX
+  <$CRLF><$CRLF> -\
+  A file required by the MSI was not located.
+  This could indicate corrupt media.<$CRLF><$CRLF> -\
+  [ProductName] version [ProductVersion] is being installed from the "[SourceDir]" directory.<$CRLF><$CRLF>
+#)
+
+
+;--- Options only used when VBSCRIPT is being used --------------------------
+#define? MSIEXTRA_CHECK_SEQUENCE   LaunchConditions-    ;;Sequence number for non-deferred CA within "InstallUISequence" & "InstallExecuteSequence" tables
+;---[4DocoMainMsiExtraRelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- MSIEXTRAFILES ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@UseVbs = '<$MSIEXTRA_USE_CUSTOM_ACTIONS>'
+#(
+   #define MsiExtraFiles
+
+   ;--- Validate parameters -------------------------------------------------
+   <$UpdateMmLocation>
+   {$!KEYWORDS}              ;;Don't Expect any keywords!
+   {$!:#1,MsiRelDir,Check,Doco,File,Size}
+
+   ;--- Save info -----------------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4MsiExtraFiles {$?}>^
+
+   ;--- If using "normal" custom actions then expand now... -----------------
+   #if [@@UseVbs = 'N']
+       <??@@CheckCmds><?RestartLine>
+       #RexxVar @@CheckCmds = ''              ;;Clear value for new time!
+   #endif
+
+   ;--- Generate any MD5 calculation VBSCRIPT -------------------------------
+   <??@@VbsMd5><?RestartLine>
+#)
+#RexxVar @@MsiExtraFilesCnt = 0               ;;#Items to copy (not all may be put in html report)
+#RexxVar RxMsiExtraFilesTotalBytes = 0        ;;Total number of bytes in all files
+#RexxVar @@HtmlItemCnt      = 0               ;;#items for the HTML report
+#RexxVar @@CheckCnt         = 0               ;;#items to check
+#RexxVar @@CheckCmds        = ''              ;;MAKEMSI or VBSCRIPT code to check
+#DefineRexx '@@Rexx4MsiExtraFiles'
+    ;--- Get parameters -----------------------------------------------------
+    @@Mask   = '{$#1=^^}'
+    @@RelDir = '{$MsiRelDir=^^}'
+    @@Check  = translate('{$Check=^<$DEFAULT_MSIEXTRA_CHECK>^}');
+    @@Copy   = translate('{$Copy="Y"}')
+    if @@RelDir <> "" then
+    do
+        ;--- Add trailing "\" if required -----------------------------------
+        if  right(@@RelDir,1) <> '\' then
+            @@RelDir = @@RelDir || '\';
+    end;
+
+    ;--- Get list of files --------------------------------------------------
+    if  @@Mask <> '' then
+    do
+        ;--- We have a filemask ---------------------------------------------
+        @@Files.0 = 0;
+        call Files4Mask @@Mask, "@@Files";
+        if  @@Files.0 = 0 then
+            error('No files matched the mask "' || @@Mask || '"!');
+    end;
+    else
+    do
+        ;--- No mask so user supplied info! ---------------------------------
+        @@Copy    = 'N';          ;;We don't know where it is at build time!
+        @@Files.0 = 1;
+        @@File    = '{$File=^^}';
+        @@Files.1 = @@File;       ;;Add to array
+        if  @@File = '' then
+            error("You forgot to supply a file mask for extra files!");
+        if  '{$Size='' $$IsPassed}' = 'N' then
+            error('How big is file "' || @@File || '"?', 'You should use the "SIZE" parameter to suggest how big it might be.', 'If unsure, its better for the value to be larger rather than smaller as', 'it reserves media space.')
+        @@SizeInBytes = {$Size='0'};
+        if  '<$MSIEXTRA_ALLOW_FILE_SIZE_PARMS $$UPPER>' <> 'Y' then
+            error('The "extra" file "' || @@File || '" is being rejected because MAKEMSI has been configured to disable use of "missing" files.');
+    end;
+
+    ;--- Record details for each file that matches the mask -----------------
+    @@VbsMd5  = ''
+    @@C       = ''
+    do  @@Index = 1 to @@Files.0
+        ;--- Get some details -----------------------------------------------
+        @@FileBaseName  = FilePart('n', @@Files.@@Index)
+        @@DstFileRel    = @@RelDir || @@FileBaseName;
+
+        ;--- Pass information to any user hook (if it exists) ---------------
+        <$MSIEXTRA_FILE_DETAILS_HOOK RxVarFullSrcFile=^@@Files.@@Index^ RxVarRelDestFile=^@@DstFileRel^ RxVarFileSize=^@@SizeInBytes^>
+
+       ;--- Remember Details (for copy) -------------------------------------
+       if   @@Copy <> 'N' then
+       do
+           ;--- Normally MAKEMSI copies the file (but user may) ---------
+           @@MsiExtraFilesCnt                 = @@MsiExtraFilesCnt + 1;
+           @@MsiExtraFiles.@@MsiExtraFilesCnt = @@Files.@@Index || '00'x || @@DstFileRel;
+       end;
+
+       ;--- Want to check? --------------------------------------------------
+       if   @@Check <> 'N' then
+       do
+            ;--- We are checking this file ----------------------------------
+            @@CheckCnt = @@CheckCnt + 1;
+
+            ;--- Use SCRIPT or standard custom actions for validation? ------
+            #if [@@UseVbs = 'Y']
+                ;--- Use VBSCRIPT -------------------------------------------
+                @@C = @@C || 'MsiExtraFileMustExist "' || @@DstFileRel || '"<?NewLine>';
+            #elseif
+                ;--- Use standard custom actions ----------------------------
+                @@C = @@C || "<?NewLine>'--- Checking file #" || @@CheckCnt || ' - "' || @@DstFileRel || '"<?NewLine><?NewLine>';
+
+                ;--- If the first check then generate the error message header ---
+                if  @@CheckCnt = 1 then
+                do
+                    @@C = @@C || '<' || '$Property'
+                    @@C = @@C || '   "_MXF_Suffix"'
+                    @@C = @@C || '   value=^<$MSIEXTRA_ERRORMSG_SUFFIX>^'
+                    @@C = @@C || '>'
+                end;
+
+                ;--- Now add the validation code --------------------------------
+                @@C = @@C || '<' || '$FileFind'
+                @@C = @@C || '     File=^' || @@FileBaseName || '^'
+                @@C = @@C || ' Property="MSIEXTRAFILE_' || @@CheckCnt || '"'
+                @@C = @@C || '     Path="[SourceDir]' || @@RelDir || '"'
+                @@C = @@C || '    Depth="0"'
+                @@C = @@C || '  Message=^The file "' || @@DstFileRel || '" is missing![_MXF_Suffix]^'
+                @@C = @@C || '  Condition=^<$MSIEXTRA_CHECK_WHEN_CONDITION>^'
+                @@C = @@C || '  ValidateAfter="<$MSIEXTRA_VALIDATE_AFTER>"'
+                @@C = @@C || '>'
+            #endif
+       end;
+
+       ;--- Keep track of size of all files ---------------------------------
+       if   @@Mask = '' then
+            @@FileSize = @@SizeInBytes;                     ;;We don't have a clue as to where this file might be...
+       else
+            @@FileSize = FileQuerySize(@@Files.@@Index);    ;;We know this file exists
+       RxMsiExtraFilesTotalBytes = RxMsiExtraFilesTotalBytes + @@FileSize;
+
+        ;--- Add to Binary report -------------------------------------------
+        if  '{$Doco='<$DEFAULT_MSIEXTRA_DOCO>'}' <> 'N' then
+        do
+           ;--- Create VBS to calculate MD5 and return it -------------------
+           @@BinId = 'MsiFilesExtra-' || @@HtmlItemCnt;                ;;Any unique value will do (no spaces!)
+           #ifndef FILE_DISABLE_MD5_GENERATION_ALTOGETHER
+               #if ['<$DEFAULT_FILE_WANT_FILEHASH>' <> 'N']
+                   if   @@Mask <> '' then
+                   do
+                        ;--- The filename is of a file known to exist! ------
+                        @@VbsMd5 = @@VbsMd5 || 'BinaryMd5ForReport "' || @@BinId || '", "' || @@Files.@@Index || '"<?NewLine>'
+                   end;
+               #endif
+           #endif
+           if   @@Mask = '' then
+                @@BinId = '';           ;;Can't get details in HTML report!
+
+           ;--- User wants this in the doco -----------------------------
+           @@SortKey = @@DstFileRel   || 'FF'x || FilePart('n', @@Files.@@Index);
+           @@All     = @@SortKey || '00'x || @@RelDir || '00'x || @@Files.@@Index || '00'x || @@BinId || '00'x || RxMmLocation;
+           @@HtmlItemCnt            = @@HtmlItemCnt + 1;
+           @@HtmlItem.@@HtmlItemCnt = @@All;
+           @@HtmlItem.0             = @@HtmlItemCnt;
+        end;
+    end;
+
+    ;--- Update the checking commands (may be VBSCRIPT or standard CA based) ---
+    @@CheckCmds = @@CheckCmds || @@C;
+#DefineRexx
+
+
+
+
+;----------------------------------------------------------------------------
+;--- EXIT processing --------------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+    #define MSIEXTRA_CHECKING_GENERATE_IF_REQUIRED
+
+    ;--- Do we want to use script? ------------------------------------------
+    #if [@@UseVbs = 'Y']
+        ;--- We are using custom action -------------------------------------
+        #if  [@@CheckCnt <> 0]
+            <$VbsCa Binary="MsiExtraChecks.vbs">
+            #( '<?NewLine>'
+               ;--- Global Variables --------------------------------------------
+               dim DataBaseDir : DataBaseDir = ""
+
+               ;--- INSTALL -----------------------------------------------------
+               <$VbsCaEntry "EarlyInInstall">
+                   ;--- Perform the checks --------------------------------------
+                   <??@@CheckCmds><?RestartLine>
+               <$/VbsCaEntry>
+
+               ;=========================================================
+               sub MsiExtraFileMustExist(ExtraFileName)
+               ;=========================================================
+                   ;--- Initialization ------------------------------------------
+                   CaDebug 0, ""
+                   CaDebug 2, "Ensuring """ & ExtraFileName & """ is available."
+                   dim oFs : set oFS = CreateObject("Scripting.FileSystemObject")
+
+                   ;--- Get MSI location information ----------------------------
+                   if   DataBaseDir = "" then
+                        CaDebug 0, "Determining the location of the database."
+                        DataBaseDir = oFS.GetParentFolderName(session.Property("OriginalDatabase"))
+                        CaDebug 0, "The database source directory is """ & DataBaseDir & """"
+                   end if
+
+                   ;--- Does the file exist? ------------------------------------
+                   dim FullFileName : FullFileName = DataBaseDir & "\" & ExtraFileName
+                   CaDebug 0, "Looking for the required file """ & FullFileName & """"
+                   if   not oFS.FileExists(FullFileName) then
+                        VbsCaRaiseError "MsiExtraFileMustExist()", "The MSI required the file """ & FullFileName & """ to be available at install time however it was not found!"
+                   end if
+                   CaDebug 0, "The file exists!"
+                   set oFS   = Nothing
+               end sub
+            #)
+            <$/VbsCa>
+            <$VbsCaSetup Binary="MsiExtraChecks.vbs" Entry="EarlyInInstall" SeqTable=^InstallUISequence InstallExecuteSequence^ Seq=^<$MSIEXTRA_CHECK_SEQUENCE>^ Type="immediate" CONDITION=^<$MSIEXTRA_CHECK_WHEN_CONDITION>^>
+        #end if
+    #endif
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Can be called from anywhere to copy files ------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'Rexx2CopyMsiExtraFiles'
+    if  @@MsiExtraFilesCnt <> 0 then
+    do
+        ;--- Have at least one file to take care of -------------------------
+        if  '{$CopyMsg="N"}' = 'Y' then
+            call Info "Copying " || @@MsiExtraFilesCnt || ' extra file(s) to sit beside the MSI'
+        @@MsiDir  = {$MsiDirExp};              ;;Rexx expression for destination directory
+        @@MsiDir  = ReplaceMacros(@@MsiDir)
+        if  right(@@MsiDir,1) <> '\' then
+            @@MsiDir = @@MsiDir || '\';
+        do  @@Index = 1 to @@MsiExtraFilesCnt
+            ;--- Get components of this file ------------------------------------
+            parse var @@MsiExtraFiles.@@Index @@SrcFile '00'x @@DstFileRel
+
+            ;--- Make sure the destination directory exists -----------------
+            @@DstFile = @@MsiDir || @@DstFileRel;
+            @@DstDir  = FilePart('S', @@DstFile);
+            if  DirQueryExists(@@DstDir) = '' then
+                call MakeDirectoryTree @@DstDir, "Y";
+
+            ;--- Do the copy ----------------------------------------------------
+            {$BeforeCopy=^^};
+            call FileCopy @@SrcFile, @@DstFile, 'equals:2'
+        end
+    end;
+#DefineRexx
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? MSIEXTRA_BEFORE_BUTTON
+#define? MSIEXTRA_AFTER_BUTTON
+#(
+   #define? MSIEXTRA_BUTTON
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$MSIEXTRA_BEFORE_BUTTON>
+   <$BUTTON2 "MSIEXTRA" Text="Msi Extra" CNT="@@HtmlItemCnt" TT="These <??@@HtmlItemCnt> files are required by the MSI">
+   <$MSIEXTRA_AFTER_BUTTON>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? MSIEXTRA_BEFORE_REPORT
+#define? MSIEXTRA_AFTER_REPORT
+#( ''
+   #define? MSIEXTRA_REPORT
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$MSIEXTRA_BEFORE_REPORT>
+
+   ;--- Generate MsiExtra report --------------------------------------------
+   <A NAME="MSIEXTRA"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$MSIEXTRA_HTML_NO_ENTRIES>
+   #elseif
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="MSI EXTRA FILES">
+      <$MSIEXTRA_HTML_REPORT_START>
+
+      ;--- Sort binary table entries ----------------------------------------
+      #evaluate ^^ ^call SortArray '@@HtmlItem'^
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Index = 1 to @@HtmlItemCnt
+          ;--- Split off components -----------------------------------------
+          #evaluate ^^ ^<$@@Rexx2PrepareInformation>^
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$MSIEXTRA_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$MSIEXTRA_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$MSIEXTRA_AFTER_REPORT>
+#)
+#DefineRexx '@@Rexx2PrepareInformation'
+   parse var @@HtmlItem.@@Index . '00'x @@RelDir '00'x @@SrcFile '00'x @@BinId '00'x @@MmLocation;
+   @@ShortName = FilePart('n', @@SrcFile);
+   @@ShortNE   = FilePart('W', @@ShortName);
+   @@Extn      = FilePart('E', @@ShortName);
+   @@SrcDir    = FilePart('l', @@SrcFile);
+   @@SrcDir    = Wbr(@@SrcDir);
+   if @@RelDir = '' then
+      @@RelDir = '.';
+
+   if   @@BinId = '' then
+   do
+        ;--- We have no idea where the source file is -----------------------
+        @@SrcDir   = '*Unknown*'
+        @@FileSize = '?'
+        @@FileTime = '?'
+        @@Md5      = '?'
+   end;
+   else
+   do
+       ;--- Get date/time info ----------------------------------------------
+       @@FileSize  = AddCommasToDecimalNumber(FileQuerySize(@@SrcFile));
+       @@FileTime  = FileQueryDateTime(@@SrcFile, '<$HTMLRPT_DATETIME_FORMAT>');
+
+       ;--- Get some other info ---------------------------------------------
+       @@Key = 'VBSRET.Binary.' || @@BinId || '.MD5'
+       if  Defined(@@Key) = 'N' then
+           @@Md5 = "?"
+       else
+           @@Md5 = ReplaceString( MacroGet(@@Key), "-", "-<wbr>" );
+   end;
+
+#DefineRexx
+
+
+#( '<?NewLine>'
+   #define? MSIEXTRA_HTML_NO_ENTRIES
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="MSI EXTRA FILES">
+       <P><B>
+       <CENTER>There are no Extra files.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? MSIEXTRA_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="3" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>Relative<br>Directory</TH>
+       <TH>Name</TH>
+       <TH>Extn</TH>
+       <TH>Source</TH>
+       <TH title="Files time" SortType="Date">Time</TH>
+       <TH title="Files size" SortType="NumberComma">Size</TH>
+       <TH>MD5</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? MSIEXTRA_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+       <TD><??@@RelDir></TD>
+       <TD><??@@ShortNE></TD>
+       <TD><??@@Extn></TD>
+       <TD><??@@SrcDir></TD>
+       <TD><??@@FileTime></TD>
+       <TD><??@@FileSize></TD>
+       <TD><??@@Md5></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? MSIEXTRA_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> extra files.
+   </CENTER>
+#)
+
+
+
+
+
+
+
+
+
+
+#NextId UNLOCK "MSIEXTRA.MMH"

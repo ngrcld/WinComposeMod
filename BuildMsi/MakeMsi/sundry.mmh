@@ -1,0 +1,712 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SUNDRY.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.41  $
+;          $Date:   07 Jun 2018 18:01:28  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/sundry.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;                   Holds small general purpose "utilities" and definitions.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "SUNDRY.MMH"
+
+;----------------------------------------------------------------------------
+;--- Prefer not to use VBS custom actions were an option exists? ------------
+;----------------------------------------------------------------------------
+#define? SUNDRY_IF_POSSIBLE_DONT_USE_SCRIPT_CUSTOM_ACTIONS  Y       ;;Where a non-script alternative exists use it (script is typically better)?
+#define? SUNDRY_DISALLOW_USE_OF_SCRIPT_CUSTOM_ACTIONS               ;;Blank=ALLOW, else error message! You may want to disallow script altogether (see "malicious script")
+
+
+;----------------------------------------------------------------------------
+;--- Custom Action conditions -----------------------------------------------
+;----------------------------------------------------------------------------
+;---[UsedInDoco-CA_CONDITIONS]---
+#define? CONDITION_ALREADY_INSTALLED Installed                          ;;Repair, uninstall etc.
+#define? CONDITION_INSTALL_ONLY      not Installed                      ;;Doesn't include a repair, uninstall etc!
+#define? CONDITION_UNINSTALL_ONLY    Installed and REMOVE~="ALL"        ;;Complete uninstall  - HIGHLY RECOMMENDED at you read the "REMOVE" properties MAKEMSI doco!
+#define? CONDITION_EXCEPT_UNINSTALL  not (<$CONDITION_UNINSTALL_ONLY>)  ;;Install, Repair etc (all but complete uninstall)
+#define? CONDITION_IS_WIN2000        VersionNT = "500"                  ;;Is OS WIN2000?
+#define? CONDITION_IS_WINXP          VersionNT = "501"                  ;;Is OS WINXP?
+#define? CONDITION_IS_VISTA          VersionNT = "600"                  ;;Is OS WINDOWS Vista?
+#define? CONDITION_IS_WINDOWS_7      VersionNT = "601"                  ;;Is OS WINDOWS Windows7
+#define? CONDITION_UI_NONE           UILevel = 2                        ;;Silent Install
+#define? CONDITION_UI_BASIC          UILevel = 3
+#define? CONDITION_UI_REDUCED        UILevel = 4
+#define? CONDITION_UI_FULL           UILevel = 5                        ;;"Normal"
+#define? CONDITION_UI_NO_DIALOGS     UILevel <> 5                       ;;Don't bother user with popup dialogs, opening readme files etc.
+#define  CONDITION_PER_MACHINE       Version9X or (ALLUSERS = 1)        ;;True if per-machine install.
+#define  CONDITION_PER_USER          not (<$CONDITION_PER_MACHINE>)     ;;True if per-user (not per-machine) install.
+;---[UsedInDoco-CA_CONDITIONS]---
+
+
+;----------------------------------------------------------------------------
+;--- Used in Custom Actions -------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SUNDRY_CA_PAUSE             N                ;;Debug pauses (Y/N)
+
+
+;----------------------------------------------------------------------------
+;--- Custom Action/MSIEXEC return codes -------------------------------------
+;----------------------------------------------------------------------------
+#define ERROR_INSTALL_FAILURE 1603
+
+
+;----------------------------------------------------------------------------
+;--- HTML Report Related ----------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SUNDRY_HTMLRPT_HR           <hr size="1" color="red">
+
+
+
+;----------------------------------------------------------------------------
+;--- Delimiter handling code ------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar '@@StdDelimiters' = ';,+'          ;;Must NEVER contain a space (space not always valid)
+#DefineRexx 'Rexx2ConvertDelimiters'
+    ;--- A space is NOT a valid delimiter, so convert all delimiters to one particular one ---
+    {$RxVar} = strip(translate({$RxVar},, @@StdDelimiters, '{$ToDelChar}'));
+#DefineRexx
+#DefineRexx 'Rexx2ConvertDelimitersToSpaces'
+    ;--- A space is a valid delimiter, so convert to it ---------------------
+    {$RxVar} = strip(translate({$RxVar},, @@StdDelimiters, ' '));
+#DefineRexx
+
+
+
+
+
+;--------------------------------------------------------------------------------------
+; Can set/reset bits and take literal value (literal value like "12F" returned)
+;--------------------------------------------------------------------------------------;
+;  TEST CODE
+;  ~~~~~~~~~
+;  #RexxVar @@msidbFileAttributesReadOnly       = 0x0001
+;  #RexxVar @@msidbFileAttributesHidden         = 0x0002
+;  #RexxVar @@msidbFileAttributesSystem         = 0x0004
+;  #RexxVar @@msidbFileAttributesVital          = 0x0200
+;  #RexxVar @@msidbFileAttributesChecksum       = 0x0400
+;  #RexxVar @@msidbFileAttributesPatchAdded     = 0x1000
+;  #RexxVar @@msidbFileAttributesNoncompressed  = 0x2000
+;  #RexxVar @@msidbFileAttributesCompressed     = 0x4000
+;
+;  #DefineRexx ''
+;      @@Attributes = "ReadOnly Hidden Vital"
+;      <$GetHex8Literal ResultVar="@@Val" BitStringVar="@@Attributes" BitMap="@@msidbFileAttributes" BitType="file attribute">
+;      say "0x" || @@Val || '   (' || @@Attributes || ')'
+;
+;
+;     @@Attributes = @@Attributes || " -Vital 0x50000"
+;      <$GetHex8Literal ResultVar="@@Val" BitStringVar="@@Attributes" BitMap="@@msidbFileAttributes" BitType="file attribute">
+;      say "0x" || @@Val || '   (' || @@Attributes || ')'
+;  #DefineRexx
+;--------------------------------------------------------------------------------------
+#DefineRexx 'GetHex8Literal'
+    ;--- Get parameters -----------------------------------------------------
+    @@Bits       = {$BitStringVar};         ;;Contains the attribute string (INPUT)
+    @@MapVar     = '{$BitMap}';             ;;Will contain somthing like "@@A_"
+    @@MapName    = '{$BitType}';            ;;Used in error messages to identify what sorts of bits failed.
+    if  '{$StartVar=^^}' = '' then
+        @@BitsTotal  = '00000000'x;         ;;Start with no bits set (default)
+    else
+        @@BitsTotal  = {$StartVar};         ;;The initial value is in a variable
+
+    ;--- Process all the attributes in left to right order ------------------
+    do  while @@Bits <> ""
+        ;--- Get next attribute ---------------------------------------------
+        parse var @@Bits @@TheseBits @@Bits;
+        @@TheseBits = strip(@@TheseBits);
+
+        ;--- Want to set of reset the bits? ---------------------------------
+        @@L1 = left(@@TheseBits, 1);
+        if  @@L1 <> '-' & @@L1 <> '+' then
+            @@Action = '+';
+        else
+        do
+            @@Action    = @@L1;
+            @@TheseBits = substr(@@TheseBits, 2);
+        end;
+
+        ;--- If not a hex value then convert from "alias" -------------------
+        if  translate(left(@@TheseBits, 2)) <> '0X' then
+        do
+            ;--- This is an attribute which must exist ----------------------
+            @@Alias = @@TheseBits;
+            @@RxVar   = @@MapVar || @@Alias;
+            if  symbol(@@RxVar) <> 'VAR' then
+                error('The ' || @@MapName || ' "' || @@Alias || '" is unknown!');
+            @@TheseBits = value(@@RxVar);
+
+            ;--- Validate the value the macro contained ---------------------
+            if  translate(left(@@TheseBits, 2)) <> '0X' then
+                error('The ' || @@MapName || ' "' || @@Alias || '" is incorrectly defined!', 'The rexx variable "' || @@RxVar || '" contained "' || @@TheseBits || '".');
+        end;
+
+        ;--- Create Packed copy ---------------------------------------------
+        @@HexDigits = substr(@@TheseBits, 3);
+        if  datatype(@@HexDigits, 'X') = 0 then
+            error('The ' || @@MapName || ' number "' || @@TheseBits || '" should be made up only of digits "0" - "F"!');
+        @@Packed = x2C( right(@@HexDigits, 8, '0') )
+
+        ;--- Process the bit(s) ---------------------------------------------
+        if  @@Action = '-' then
+            @@BitsTotal = BitAnd(@@BitsTotal, BitXor('FFFFFFFF'x, @@Packed)) ;;ReSet bit
+        else
+            @@BitsTotal = BitOr(@@BitsTotal, @@Packed)                       ;;Set bit
+    end;
+
+    ;--- Return the result a hexadecimal literal ----------------------------
+    {$ResultVar} = c2x(@@BitsTotal)
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Convert user supplied attributes to a bitfield (integer) ---------------
+;----------------------------------------------------------------------------
+#DefineRexx 'MapBits'
+   {$ResultVar} = ''
+   @@List       = strip('{$BitList}');
+   if  left(@@List, 1) = '(' & right(@@List, 1) = ')' then
+       {$ResultVar} = strip( substr(@@List, 2, length(@@List)-2) ); ;;Don't need the brackets...
+   else
+   do
+       ;--- We have to translate the user bit names into VBSCRIPT constants ---
+       ;@@List = translate(@@List,, <$SUNDRY_STANDARD_DELIMITERS_REXXEXP> || ',;', ' ');   ;;Convert supported delimiters to spaces
+       <$Rexx2ConvertDelimitersToSpaces RxVar="@@List">
+       do  while @@List <> ''
+           ;--- Get next event that the user specified ----------------------
+           parse var @@List @@OneBit ' ' @@List
+
+           ;--- Get the correct VBS constant --------------------------------
+           @@Var = '{$RxMapVarName}' || @@OneBit;
+           if  symbol(@@Var) <> 'VAR' then
+               error('The {$What} "' || @@OneBit || '" is unknown!');
+           else
+               @@Const = value(@@Var);
+
+           ;--- Add to the list ---------------------------------------------
+           if  {$ResultVar} <> '' then
+               {$ResultVar} = {$ResultVar} || ' or ';
+           {$ResultVar} = {$ResultVar} || @@Const;
+       end;
+   end;
+   if  {$ResultVar} = '' then
+       {$ResultVar} = 0;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- What a valid Windows Installer ID looks like? --------------------------
+;----------------------------------------------------------------------------
+#define?  SUNDRY_VALID_FIRST_CHAR_IN_MSI_IDENTIFIER  ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz
+#define?  SUNDRY_VALID_CHARS_IN_MSI_IDENTIFIER       <$SUNDRY_VALID_FIRST_CHAR_IN_MSI_IDENTIFIER>.0123456789
+#define?  SUNDRY_REPLACEMENT_CHAR_IN_MSI_IDENTIFIER  _
+#RexxVar  @@ValId1  = '<$SUNDRY_VALID_FIRST_CHAR_IN_MSI_IDENTIFIER>'
+#RexxVar  @@ValIdR  = '<$SUNDRY_VALID_CHARS_IN_MSI_IDENTIFIER>'
+#RexxVar  @@InvRepl = '<$SUNDRY_REPLACEMENT_CHAR_IN_MSI_IDENTIFIER>'
+
+
+;----------------------------------------------------------------------------
+;--- Used to check that a rexx variable contains a valid MSI "identifier" ---
+;----------------------------------------------------------------------------
+#DefineRexx 'Rexx2CheckMsiId'
+   ;--- Is this a valid Identifier? -----------------------------------------
+   @@Id  = {$IdVar};
+   @@Inv = ''
+   if  pos(left(@@Id, 1), @@ValId1) = 0 then
+       @@Inv = 'invalid first character'
+   else
+   do
+       ;--- First character valid so check the rest -------------------------
+       @@Pos = verify(substr(@@Id, 2), @@ValIdR, 'N')
+       if  @@Pos <> 0 then
+           @@Inv = '"' || substr(@@Id, @@Pos+1, 1) || '" not allowed'
+   end;
+   if  @@Inv <> '' then
+   do
+       ;--- Generate an error message ---------------------------------------
+       @@T =        'Incorrect {$What} "' || @@Id || '" (' || @@Inv || ')!' || '0A0A0A'x;
+       @@T = @@T || 'All valid windows installer identifiers starts with one of' || '0A'x
+       @@T = @@T || 'the following characters:' || '0A0A'x
+       @@T = @@T || '   ' || @@ValId1 || '0A0A'x
+       @@T = @@T || 'With any subsequent characters being one of:'  || '0A0A'x
+       @@T = @@T || '   ' || @@ValIdR;
+       error(@@T);
+   end;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Convert into a valid identifier ----------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'Rexx2FixMsiId'        ;;Does not ensure unique etc (just contains valid characters)
+   ;--- Check out the first character of the ID -----------------------------
+   @@Id   = {$IdVar};
+   @@L1   = left(@@Id, 1);
+   @@Rest = substr(@@Id, 2);
+   if  pos(@@L1, @@ValId1) = 0 then
+   do
+       ;--- First char invalid, would it be valid as a subsequent character? ---
+       if  pos(@@L1, @@ValIdR) = 0 then
+           @@L1 = @@InvRepl;              ;;No completely invalid
+       else
+           @@L1 = @@InvRepl || @@L1;      ;;Push into second position
+   end;
+   @@Id = @@L1;
+
+   ;--- Now Handle all but the first character of the passed ID -------------
+   @@Pos = verify(@@Rest, @@ValIdR, 'N');
+   do  while @@Pos <> 0
+       ;--- Fix this invalid character --------------------------------------
+       @@Id = @@Id || left(@@Rest, @@Pos-1) || @@InvRepl;
+       @@Rest   = substr(@@Rest, @@Pos+1);
+
+       ;--- Look for next problem character ---------------------------------
+       @@Pos = verify(@@Rest, @@ValIdR, 'N');
+   end;
+   @@Id = @@Id || @@Rest;
+
+   ;--- Only one "invalid character" marker (remove duplicates) -------------
+   do while pos(@@InvRepl||@@InvRepl, @@Id) <> 0
+      @@Id = ReplaceString(@@Id, @@InvRepl||@@InvRepl, @@InvRepl);
+   end;
+
+   ;--- Return the new ID ---------------------------------------------------
+   {$IdVar} = @@Id;
+#DefineRexx
+#DefineRexx 'Rexx2FixMsiIdAndEnsureUnique'
+    ;--- Generate ID (may not be unique) ------------------------------------
+    <$Rexx2FixMsiId {$?}>
+
+    ;--- Now Ensure it is unique --------------------------------------------
+    @@Before = {$IdVar}
+    @@Cnt    = 0
+    do  until symbol(@@Key) <> 'VAR'
+        ;--- Generate a value -----------------------------------------------
+        if  @@Cnt = 0 then
+            @@Unique = @@Before
+        else
+            @@Unique = @@Before || @@Cnt
+        @@Cnt = @@Cnt + 1;
+
+        ;--- Generate a key which will be tested ----------------------------
+        @@Key = '@@UMsiId_' || c2x(@@Unique)
+    end;
+    call value @@Key, ""                ;;Mark this value as being used.
+
+   ;--- Return the new ID ---------------------------------------------------
+   {$IdVar} = @@Unique;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- Code to add to the #data structure -------------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'Rexx2AddDatatoCustomActionDataStructure'
+   @@Data = '{$Data=''}';
+   if  @@Data <> '' then
+   do
+       ;--- User has data, Make sure the data structure has 2 columns -------
+       @@Cnt = value(@@Data || '.0');
+       if  @@Cnt = 0 | DataInfo(@@Data || '.*.?') <> 2 then
+           error('The #data structure "' || @@Data || '" is empty or does not have 2 columns!');
+
+       ;--- Add any unique values to our data, look for errors --------------
+       do  @@si = 1 to @@Cnt
+           ;--- Get source data ---------------------------------------------
+           @@Key = value(@@Data || '.' || @@Si || '.1');
+           @@Val = value(@@Data || '.' || @@Si || '.2');
+
+           ;--- See if the key is already recorded --------------------------
+           @@Found = 'N';
+           do  @@li = 1 to {$#DATA}.0
+               if  @@Key = {$#DATA}.@@li.1 then
+               do
+                   ;--- Already in the table, make sure it contained the same value! ---
+                   @@Found = 'Y';
+                   if  @@Val <> {$#DATA}.@@li.2 then
+                       error("If a schedule #data key is reused it must contain the same value!", 'The key "' || @@Key || '"  values:', 'SAVED: ' || {$#DATA}.@@li.2, '  NEW: ' || @@Val);
+                   leave;
+               end;
+           end;
+
+           ;--- If not already recorded, then add it ------------------------
+           if  @@Found = 'N' then
+           do
+               ;--- Append to the structure ---------------------------------
+               @@di            = {$#DATA}.0 + 1;
+               {$#DATA}.@@di.1 = @@Key
+               {$#DATA}.@@di.2 = @@Val
+               {$#DATA}.0      = @@di;
+           end;
+       end;
+   end;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- The user passes:
+;---     1. The name of a macro
+;---     2. Usually the short name of a file ("izip.exe" etc)
+;---     3. Optionally the name of a rexx variable you want the full filename
+;---        placed.
+;---
+;---  Note that the routine aborts on error (it only ever returns on success).
+;---
+;---  If the macro exists the contents is validated to exist, if the macro
+;---  didn't appear to have the full name the macro is updated to do so.
+;---
+;---  If the macro didn't exist then the "PATH" environment variable
+;---  is searched (assuming it couldn't be located from current directory)
+;---  and the macro updated with the full filename.
+;----------------------------------------------------------------------------
+#(
+    #define GetFullBuildTimeFileName
+
+    ;--- Do all the work in rexx (then can be called from within/without rexx code) ---
+    #evaluate ^^ ^<$Rexx2GetFullBuildTimeFileName {$?}>^
+#)
+#DefineRexx 'Rexx2GetFullBuildTimeFileName'
+    ;--- Has the user already defined the macro? ----------------------------
+    @@MacroName = '{$Macro}';
+    @@FileName  = '{$File}';
+    @@RcVar     = '{$RcVar=^^}';
+    @@MustExist = translate('{$MustExist=^Y^}');
+    if  Defined(@@MacroName) = 'Y' then
+    do
+        ;--- See if the file exists -----------------------------------------
+        @@MacroValue = MacroGet(@@MacroName);
+        @@MacroValue = ReplaceMacros(@@MacroValue);
+        @@FullName   = FileQueryExists(@@MacroValue);
+        if  @@FullName = '' then
+            call error 'The macro "' || @@MacroName || '" contained the filename "' || @@MacroValue || '" which doesn''t exist!';
+        if  translate(@@FullName) <> translate(@@MacroValue) then
+        do
+            ;--- Update the macro with the full name ------------------------
+            call MacroSet @@MacroName, @@FullName, "Y";
+        end;
+    end;
+    else
+    do
+        ;--- No preexisting macro, can we find the file "locally" -----------
+        @@FullName = FileQueryExists(@@FileName);
+        if  @@FullName = '' then
+        do
+            ;--- No, we need to search the "PATH" ---------------------------
+            @@FullName = FindFileInPath(@@FileName, "*MAKEMSI_DIR;*MAKEMSI_USER_FILES_PATH;*MAKEMSI_COMPANY_SUPPORT_DIR;*PATH")
+            if  @@FullName = '' then
+            do
+                if  @@MustExist <> 'N' then
+                    call error 'We tried to find "' || @@FileName || '" locally as well as in the directories listed by the "PATH" environment variable but failed to find it!'
+            end;
+        end;
+
+        ;--- Create the macro with the full name ----------------------------
+        call MacroSet @@MacroName, @@FullName;
+    end;
+
+    ;--- Does user also want the answer returned in a rexx variable? --------
+    if  @@RcVar <> '' then
+        call value @@RcVar, @@FullName;         ;;Update the rexx variable
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- The user passes:
+;---     List       : Name of "array" containing the list of files
+;---     ZipFileExp : Rexx expresion which builds zip filename
+;---     DieOnError : Y/N (default = "Y")
+;---     AddToZip   : Y/N (default = "N") - Adding to an existing zip
+;---     IncludeList:Y/N (default = "N")  - Add the file list to the ZIP?
+;---     InfoMsgExp : Message to display
+;---     Store      : List of extensions to not compress (".zip;.cab")
+;----------------------------------------------------------------------------
+#define?    SUNDRY_IZIP_EXE_COLOR_CONSOLE_OUTPUT {CYAN}
+#define?    SUNDRY_IZIP_EXE_SHORT_FILENAME       izip.exe       ;;I like to rename the downloaded "zip.exe"
+#RexxVar    '@@ZipCnt' = 0
+#DefineRexx 'RexxZipUpFiles'
+    ;--- Get "parameters" ---------------------------------------------------
+    {$!:List,ZipFileExp,Store,ZipOptions,DieOnError,AddToZip,IncludeList,InfoMsgExp}
+    @@DieOnError   = translate('{$DieOnError="Y"}');
+    @@AddToZip     = translate('{$AddToZip="N"}');
+    @@IncludeList  = translate('{$IncludeList="N"}');
+    @@Store        = '{$Store=''}';                     ;;Extensions to store only (won't work for -9)
+    if  @@Store = '' then
+        @@ZipOptions  = '{$ZipOptions=^-9 -o -j^}'
+    else
+        @@ZipOptions  = '{$ZipOptions=^-8 -o -j^}'
+    @@FileListStem = '{$List}';
+    @@ZipFileName  = {$ZipFileExp};
+    @@InfoMsg      = {$InfoMsgExp=^'Creating Zip: ' || {$ZipFileExp}^}
+    if  @@InfoMsg <> '' then
+        call Info @@InfoMsg
+    if  symbol(@@FileListStem || '.0') <> 'VAR' then
+        error('The specified zip list of "' || @@FileListStem || '" doesn''t seem to exist!');
+    if  @@AddToZip = 'N' then
+        call FileDelete  @@ZipFileName;         ;;Not adding to an existing zip, so make sure it doesn't exist!
+
+    ;--- Make sure Info Zip (freeware) is available ---------------------
+    <$Rexx2GetFullBuildTimeFileName RcVar="@@iZipExe" Macro="MAKEMSI_INFOZIP.EXE" File="<$SUNDRY_IZIP_EXE_SHORT_FILENAME>">
+
+    ;--- Create List of files to be zipped ------------------------------
+    @@ZipCnt  = @@ZipCnt + 1
+    @@ListRootDir = '<$MAKEMSI_OTHER_DIR>\IZIP'
+    @@ListDir     = @@ListRootDir || '\#' || @@ZipCnt || ' - ' || FilePart('basename', @@ZipFileName);
+    if  @@ZipCnt = 1 then
+        call AddressCmd 'rd "' || @@ListRootDir || '" /q /s >nul <$Stderr2Out>'
+    call MakeDirectoryTree @@ListDir;
+    @@ZipBatch  = @@ListDir || '\Zip.cmd';
+    @@ZipList   = @@ListDir || '\ZipThese.TXT';
+    @@ZipOutput = @@ListDir || '\ZipSaid.TXT';
+    @@FileCnt   = value(@@FileListStem || '.0');
+    call FileDelete  @@ZipBatch;
+    call FileDelete  @@ZipList;
+    call FileDelete  @@ZipOutput;
+    do  @@i = 1 to @@FileCnt
+        ;--- Process this file ----------------------------------------------
+        @@File = value(@@FileListStem || '.' || @@i);
+
+        ;--- Make sure the file exists --------------------------------------
+        if  verify(@@File, '*?', 'M') = 0 then
+        do
+            ;--- Doesn't contain wildcard characters ------------------------
+            @@FullName = FileQueryExists(@@File);
+            if  @@FullName = '' then
+                error('The file "' || @@File || '" doesn''t seem to exist so we can''t add it to the zip!');
+        end;
+
+        ;--- Add the file name to to the output -----------------------------
+        <$@@Rexx2EscapeFileNames FileVar=^@@File^>
+        call FileLineOut @@ZipList, @@File;
+    end;
+    if  @@IncludeList = 'Y' then
+    do
+        @@File = @@ZipList;
+        <$@@Rexx2EscapeFileNames FileVar=^@@File^>
+        call FileLineOut @@ZipList, @@File;      ;;user requested it be added
+    end;
+    call FileClose  @@ZipList;
+
+    ;--- Create the Zip command -----------------------------------------
+    @@Cmd =          '"' || @@iZipExe || '"';
+    @@Cmd = @@Cmd || ' -b "%TEMP%"'
+    @@Cmd = @@Cmd || ' ' || @@ZipOptions;
+    @@Cmd = @@Cmd || ' -@ "' || @@ZipFileName || '"'
+    if  @@Store <> '' then
+    do
+        ;--- Add to CMD -----------------------------------------------------
+        @@Cmd = @@Cmd || ' -n "' || @@Store || '"'
+
+        ;--- Validate "-9" --------------------------------------------------
+        if  pos('-9', @@ZipOptions) <> 0 then
+            call Info 'You indicated that you want to not compress these extensions: "' || @@Store || '", but you also used -9 compression level which prevents this from occuring...'
+    end;
+    @@Cmd = @@Cmd || ' < "' || @@ZipList || '"';
+
+    ;--- Record the command use (for debug only) ----------------------------
+    @@CurrDir = GetCurrentDirectory();
+    call FileLineOut @@ZipBatch, '@echo off';
+    call FileLineOut @@ZipBatch, 'title Info Zip debug Batch file';
+    call FileLineOut @@ZipBatch, 'SetLocal';
+    call FileLineOut @@ZipBatch, '';
+    call FileLineOut @@ZipBatch, 'cd    "' || @@CurrDir || '"'
+    call FileLineOut @@ZipBatch, 'cd /d "' || @@CurrDir || '" 2>&1'; ;;/d not supported every where
+    call FileLineOut @@ZipBatch, '';
+    call FileLineOut @@ZipBatch, 'del "' || @@ZipOutput   || '"'
+    call FileLineOut @@ZipBatch, 'del "' || @@ZipFileName || '"'
+    call FileLineOut @@ZipBatch, '';
+    call FileLineOut @@ZipBatch, '@cls';
+    call FileLineOut @@ZipBatch, '@echo ***';
+    call FileLineOut @@ZipBatch, '@echo *** Note that this batch file is not used by MAKEMSI, its for debugging only.';
+    call FileLineOut @@ZipBatch, '@echo ***';
+    call FileLineOut @@ZipBatch, '@echo.';
+    call FileLineOut @@ZipBatch, '';
+    call FileLineOut @@ZipBatch, '@echo on';
+    call FileLineOut @@ZipBatch, @@Cmd;
+    call FileLineOut @@ZipBatch, '@';
+    call FileLineOut @@ZipBatch, '@echo *** ZIP RC: %errorlevel%';
+    call FileLineOut @@ZipBatch, '@echo off';
+    call FileLineOut @@ZipBatch, '';
+    call FileLineOut @@ZipBatch, '@echo.';
+    call FileLineOut @@ZipBatch, 'dir "' || @@ZipFileName || '"'
+    call FileLineOut @@ZipBatch, '@pause';
+    call FileClose   @@ZipBatch;
+
+    ;--- Execute the zip ----------------------------------------------------
+    #ifdef IsDos
+        @@Cmd    = '"' || @@Cmd || '"';          ;;Windows Hack
+        @@Rc     = AddressCmd(@@Cmd)
+        @@Output = ''                            ;;Not captured...
+    #elseif
+        ;--- Record starting time -------------------------------------------
+        @@StartTime = GetAmPmTime()
+        call ColorCfg '?ZIPSRC', '<$SUNDRY_IZIP_EXE_COLOR_CONSOLE_OUTPUT>';
+        call ColorSet '?ZIPSRC';
+        @@Cmd = @@Cmd || " 2>&1 | <$NAME_REGINA.EXE> <$NAME_TEE.REX>  '" || @@ZipOutput || "'"
+        @@Cmd   = '"' || @@Cmd || '"';          ;;Windows Hack
+        @@Rc = AddressCmd(@@Cmd);
+        call ColorSet 'DEFAULT';
+        @@Output = charin(@@ZipOutput, 1, 9999999)
+        call FileClose @@ZipOutput;
+        @@Output = ReplaceString(@@Output, '0D'x, '');   ;;Has CR+LF, need LF, CR gets re-added
+        call Say2Logs ''
+        call Say2Logs '#### START: <$SUNDRY_IZIP_EXE_SHORT_FILENAME> OUTPUT (' || @@StartTime || ') ' || copies('#', 30)
+        call Say2Logs @@Output;
+        call Say2Logs '#### END:   <$SUNDRY_IZIP_EXE_SHORT_FILENAME> OUTPUT (' || GetAmPmTime() || ') ' || copies('#', 30)
+        call Say2Logs ''
+    #endif
+
+    ;--- Check for problems -------------------------------------------------
+    @@L4e = 'zip error:';
+    @@L4w = 'zip warning:';
+    select
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+       when @@Rc <> 0 then
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+           @@DieReason = "We got a non-zero return code."
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+       when pos(@@L4e, @@Output) <> 0 then
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+           @@DieReason = 'We found the text "' || @@L4e || '" in the zip output.'
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+       when pos(@@L4w, @@Output) <> 0 then
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+           @@DieReason = 'We found the text "' || @@L4w || '" in the zip output.'
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+       when FileQueryExists(@@ZipFileName) = '' then
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+            @@DieReason = "The zip file we were creating/updating doesn't exist!"
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+       otherwise
+       /*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+           @@DieReason = '';
+    end
+    if  @@DieReason <> '' then
+    do
+        ;--- An issue was detected, format the message ----------------------
+        @@T = 'Zipping appears to have failed...'          || '0A'x;
+        @@T = @@T || @@DieReason                           || '0A0A'x;
+        @@T = @@T || 'CREATING: "' || @@ZipFileName || '"' || '0A'x;
+        @@T = @@T || 'USING   : "' || @@iZipExe     || '"' || '0A'x;
+        @@T = @@T || 'RC      : ' || @@Rc;
+
+        ;--- Die if request, otherwise just log -----------------------------
+        if  @@DieOnError <> 'N' then
+        do
+            ;--- Normally terminate on any sort of error --------------------
+            <$RexxDebugViewFile FileVar="@@ZipOutput">   ;;Display in notepad (can be turned off)
+            call error @@T;                              ;;Display the error message
+        end;
+        else
+        do
+            ;--- NOT ABORTING, Output text to the log... --------------------
+            call Say2Logs ''
+            call Say2Logs copies('!', 78)
+            call Say2Logs 'WE HAVE BEEN TOLD NOT TO ABORT ON ZIP ERROR'
+            call Say2Logs copies('!', 78)
+            call Say2Logs @@T
+            call Say2Logs ''
+        end;
+    end;
+#DefineRexx
+#DefineRexx '@@Rexx2EscapeFileNames'
+        ;--- If the path contains a "[" then izip doesn't work with it escaped or not (make relative to reduce chance) ---
+        if  pos('\', {$FileVar}) <> 0 then
+            {$FileVar} = FileNameRelative({$FileVar})
+
+        ;--- Take care of info zip "character class" handling ---------------
+        ;{$FileVar} = ReplaceString({$FileVar}, '[', '[[]');
+                 ;izip.exe -h2
+                 ;For DOS and Windows, [list] is now disabled unless the new option
+                 ;  -RE       enable [list] (regular expression) matching
+                 ;  is used to avoid problems with file paths containing "[" and "]":
+                 ;    zip files_ending_with_number -RE foo[0-9].c
+#DefineRexx
+
+
+#DefineRexx 'CompareFileVersions'
+    ;--- Split 2 version numbers (will support up to 4 "bits" ---------------
+    call ArraySplit "@@V1", {$V1Exp} || '.0.0.0', '.';
+    call ArraySplit "@@V2", {$V2Exp} || '.0.0.0', '.';
+
+    ;--- Compare each of the 4 bits in turn ---------------------------------
+    @@Rc = 0                        ;;0=Same, -1=Ver1 < Ver 2, +1=Ver1 > Ver 2
+    do  @@b = 1 to 4
+        @@Bit1 = @@V1.@@b + 0;
+        @@Bit2 = @@V2.@@b + 0;
+        if  @@Bit1 > @@Bit2 then
+        do
+            ;--- Version 1 > version 2 --------------------------------------
+            @@Rc = 1
+            leave;
+        end;
+        if  @@Bit1 < @@Bit2 then
+        do
+            ;--- Version 2 > version 1 --------------------------------------
+            @@Rc = -1
+            leave;
+        end;
+    end;
+    {$ResultVar} = @@Rc
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Display file for debug -------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SUNDRY_VIEW_FILES_FOR_DEBUG             Y
+#define? SUNDRY_VIEW_FILES_FOR_DEBUG_TEXT_VIEWER notepad.exe
+#DefineRexx 'RexxDebugViewFile'
+    {$!:FileVar}
+    if translate('<$SUNDRY_VIEW_FILES_FOR_DEBUG>') = 'N' then
+        call Info 'Not displaying debug file in viewer (turned off)... File name was "' || {$FileVar} || '".'
+    else
+    do
+        ;--- Show info async ------------------------------------------------
+        call Info "Displaying debug file in viewer..."
+        @@Cmd = 'start "" "<$SUNDRY_VIEW_FILES_FOR_DEBUG_TEXT_VIEWER>" "' || {$FileVar} || '"';
+        call AddressCmd @@Cmd;
+    end;
+#DefineRexx
+
+;##################[4Doco-REXX_$$WI_FMT]############################################################################################
+;----------------------------------------------------------------------------
+;--- Define the "$$" transformation "$$WI_FMT" ------------------------------
+;----------------------------------------------------------------------------
+;    SEE:
+;         1. http://makemsi-manual.dennisbareis.com/formatted_strings.htm
+;         2. http://dennisbareis.com/ppwizard/dd_qm.htm
+;----------------------------------------------------------------------------
+#define  LSB  [\[]        ;;[
+#define  RSB  [\]]        ;;]
+#DefineRexx "REXX_$$WI_FMT"
+    ;--- Swap the problematic characters with pacemarkers -------------------
+    @@LSB_PM = "{@@LSB}"
+    @@RSB_PM = "{@@RSB}"
+    TheValue = ReplaceString(TheValue, '[',      @@LSB_PM);
+    TheValue = ReplaceString(TheValue, ']',      @@RSB_PM);
+
+    ;--- Replace the place markers with the codes ---------------------------
+    TheValue = ReplaceString(TheValue, @@LSB_PM, '<$LSB>');
+    TheValue = ReplaceString(TheValue, @@RSB_PM, '<$RSB>');
+#DefineRexx
+;##################[4Doco-REXX_$$WI_FMT]############################################################################################
+
+
+#NextId UNLOCK "SUNDRY.MMH"
+
+
+;--- Other headers ----------------------------------------------------------
+#include "List.MMH"
+#include "ImportTranslations.MMH"
+#include "ProductValidation.MMH"

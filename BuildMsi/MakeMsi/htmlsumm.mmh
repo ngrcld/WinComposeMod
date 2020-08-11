@@ -1,0 +1,681 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   HTMLSUMM.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.21  $
+;          $Date:   13 Oct 2017 13:07:26  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/htmlsumm.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;----------------------------------------------------------------------------
+;--- Display "MANGLED" GUIDs? -----------------------------------------------
+;----------------------------------------------------------------------------
+#(
+    #define?  HTMLSUMM_MANGLED_SHOW_TT
+    A &quot;mangled GUID&quot;.
+    Windows uses this to &quot;hide&quot; registry entries from prying eyes!.
+    Some locations worth looking at are HKLM and HKCU hives at
+    &quot;Software\Classes\Installer&quot;
+#)
+#(
+    #define?  HTMLSUMM_MANGLED_SHOW     ;;""to disable
+
+    #ifdef VBSRET.GUID-Mangled.{$GuidName}
+           <span title="<$HTMLSUMM_MANGLED_SHOW_TT>">&nbsp; &nbsp; (<i>&quot;<$VBSRET.GUID-Mangled.{$GuidName}>&quot;<i>)</span>
+    #endif
+#)
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? HTMLSUMM_BEFORE_BUTTON
+#define? HTMLSUMM_AFTER_BUTTON
+#(
+   #define? HTMLSUMM_BUTTON
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$HTMLSUMM_BEFORE_BUTTON>
+   <$BUTTON2 "SUMMARY" Text="Summary" CNT="-1" TT="Summary of main details">
+   <$HTMLSUMM_AFTER_BUTTON>
+#)
+
+;--- Handle some optional variables -----------------------------------------
+#define? HTMLSUMM_CREATED_BY <$MAKEMSI_USERNAME>
+
+
+;**      CommentBlock  /* (Thursday 08/05/2003, 22:04:00, by USER "Dennis") */
+;**+--------------------------------------------------------------------------
+;**|#define COMPUTERNAME
+;**+--------------------------------------------------------------------------
+;**                    /* (Thursday 08/05/2003, 22:04:00, by USER "Dennis") */
+
+
+;--- Processing Mode --------------------------------------------------------
+#define? HTMLSUMM_BEFORE_MMMODE
+#define? HTMLSUMM_AFTER_MMMODE
+#define? HTMLSUMM_MMMODE_TT                        \
+         <$HTMLRPT_TT 'This is the processing mode used to build the MSI (typically production or development).&#10;&#10;You may generate your MSI differently (alter compression or add debug info) for developer mode.'>
+#define? HTMLSUMM_PROCESSING_MODE_PRODUCTION       \
+         <$MMMODE_DESCRIPTION>
+#define? HTMLSUMM_PROCESSING_MODE_NON_PRODUCTION   \
+         <font color='red'><b><big><$MMMODE_DESCRIPTION></big></b></font>
+#(  ''
+   #define? HTMLSUMM_MMMODE
+   <TR<$HTMLSUMM_MMMODE_TT>>
+       <TD align="center">
+           Processing Mode
+       </TD>
+       <TD>
+            #if ['<$MmMode>' = '<$MMMODE_PRODUCTION>']
+                <$HTMLSUMM_PROCESSING_MODE_PRODUCTION>
+            #elseif
+                <$HTMLSUMM_PROCESSING_MODE_NON_PRODUCTION>
+            #endif
+       </TD>
+   </TR>
+#)
+
+
+;--- SUMMARY: Product name --------------------------------------------------
+#define? HTMLSUMM_BEFORE_PRODUCTNAME
+#define? HTMLSUMM_AFTER_PRODUCTNAME
+#(  ''
+   #define? HTMLSUMM_PRODUCTNAME
+   <TR>
+       <TD align="center">
+           Product Name
+       </TD>
+        <TD>
+           <$ProdInfo.Productname>
+        </TD>
+   </TR>
+#)
+
+;--- SUMMARY: Version Details -----------------------------------------------
+#define? HTMLSUMM_BEFORE_VERSION
+#define? HTMLSUMM_AFTER_VERSION
+#(  ''
+   #define? HTMLSUMM_VERSION
+   <TR>
+       <TD align="center">
+           Version
+       </TD>
+        <TD>
+           <$ProductVersion>
+        </TD>
+   </TR>
+#)
+
+;--- SUMMARY: Last Change ---------------------------------------------------
+#define? HTMLSUMM_BEFORE_LASTCHANGE
+#define? HTMLSUMM_AFTER_LASTCHANGE
+#(  ''
+   #define? HTMLSUMM_LASTCHANGE
+   <TR>
+       <TD align="center">
+           #if [<$VER_NumberOfChangeDetails> <= 1]
+               Last &amp; Only Change
+           #elseif
+               Last Change<br>
+               <a href="#CHANGE_HISTORY" Title="See the <$VER_NumberOfChangeDetails> change(s).">
+                   [others]
+               </a>
+           #endif
+       </TD>
+        <TD>
+           <$ProductChange>
+        </TD>
+   </TR>
+#)
+
+;--- SUMMARY: MSI Filename --------------------------------------------------
+#define? HTMLSUMM_BEFORE_MSI_NAME
+#define? HTMLSUMM_AFTER_MSI_NAME
+#define? HTMLSUMM_TIME_FORMAT       %c
+#(  ''
+   #define? HTMLSUMM_MSI_NAME
+   <TR>
+       <TD align="center">
+           MSI
+       </TD>
+        <TD>
+            #evaluate ^^ ^@@MsiName = Wbr('<$MSI_MSINAME>')^
+           <??@@MsiName>
+        </TD>
+   </TR>
+#)
+
+;--- SUMMARY: Built At ------------------------------------------------------
+#define? HTMLSUMM_BEFORE_BUILT_AT
+#define? HTMLSUMM_AFTER_BUILT_AT
+#(  ''
+   #define? HTMLSUMM_BUILT_AT
+   <TR>
+       <TD align="center">
+           Built At
+       </TD>
+        <TD>
+           <?CompileTime> (<$HTMLSUMM_CREATED_BY> on <$MAKEMSI_COMPUTERNAME>)
+        </TD>
+   </TR>
+#)
+
+;--- SUMMARY: Package Code -----------------------------------------------------------
+#define? HTMLSUMM_BEFORE_PACKAGE_CODE
+#define? HTMLSUMM_AFTER_PACKAGE_CODE
+#define? HTMLSUMM_PACKAGE_CODE_TT  \
+         <$HTMLRPT_TT 'The package code is unique, as no other MSI should have this code it is used an package identifier.'>
+#(  ''
+   #define? HTMLSUMM_PACKAGE_CODE
+   <TR<$HTMLSUMM_PACKAGE_CODE_TT>>
+       <TD align="center">
+           Package Code
+       </TD>
+       <TD>
+           <$VBSRET.GUID.PackageCode>
+           <$HTMLSUMM_MANGLED_SHOW GuidName=^PackageCode^>
+       </TD>
+   </TR>
+#)
+
+
+;--- SUMMARY: Product Code -----------------------------------------------------------
+#define? HTMLSUMM_BEFORE_PRODUCT_CODE
+#define? HTMLSUMM_AFTER_PRODUCT_CODE
+#define? HTMLSUMM_PRODUCT_CODE_TT  \
+         <$HTMLRPT_TT 'The product code identifies an application or product.'>
+#(  ''
+   #define? HTMLSUMM_PRODUCT_CODE
+
+   <TR<$HTMLSUMM_PRODUCT_CODE_TT>>
+       <TD align="center">
+           Product Code
+       </TD>
+       <TD>
+           <$VBSRET.GUID.ProductCode>
+           <$HTMLSUMM_MANGLED_SHOW GuidName=^ProductCode^>
+       </TD>
+   </TR>
+#)
+
+;--- SUMMARY: Upgrade Code -----------------------------------------------------------
+#define? HTMLSUMM_BEFORE_UPGRADE_CODE
+#define? HTMLSUMM_AFTER_UPGRADE_CODE
+#define? HTMLSUMM_UPGRADE_CODE_TT <$HTMLRPT_TT 'The upgrade code identifies related products, only one of which should be installed at any time.'>
+#(  ''
+   #define? HTMLSUMM_UPGRADE_CODE
+
+   <TR<$HTMLSUMM_UPGRADE_CODE_TT>>
+       <TD align="center">
+           Upgrade Code
+       </TD>
+       <TD>
+           <$UpgradeCodeValue>
+           <$HTMLSUMM_MANGLED_SHOW GuidName=^UpgradeCode^>
+
+       </TD>
+   </TR>
+#)
+
+;--- SUMMARY: NOTE -------------------------------------------------------------------
+#define? HTMLSUMM_BEFORE_NOTE
+#define? HTMLSUMM_AFTER_NOTE
+#(  ''
+    #define? HTMLSUMM_NOTE
+
+    #if ['<$ProdInfo.Note $$IsBlank>' = 'N']
+        <TR>
+            <TD align="center">
+                Note
+            </TD>
+            <TD>
+                <$ProdInfo.Note>
+            </TD>
+        </TR>
+    #endif
+#)
+
+;--- SUMMARY: Description ---------------------------------------------------
+#define? HTMLSUMM_BEFORE_SUMMARY_DESCRIPTION
+#define? HTMLSUMM_AFTER_SUMMARY_DESCRIPTION
+#(  ''
+    #define? HTMLSUMM_SUMMARY_DESCRIPTION
+
+    #ifdef ProdInfo.Description
+        <TR>
+            <TD align="center">
+                Description
+            </TD>
+            <TD>
+                <$ProdInfo.Description>
+            </TD>
+        </TR>
+    #endif
+#)
+
+
+;--- Extra upgrade codes ----------------------------------------------------
+#define? HTMLSUMM_BEFORE_EXTRA_UPGRADE_CODES
+#define? HTMLSUMM_AFTER_EXTRA_UPGRADE_CODES
+#define? HTMLSUMM_EXTRA_UPGRADE_CODES_TT  \
+         <$HTMLRPT_TT 'This lists upgrade codes for other products you would like this MSI to replace.'>
+#(  ''
+    #define? HTMLSUMM_EXTRA_UPGRADE_CODES
+
+    <$UPGRADECODE_ADD_SUMMARY_ROW>
+#)
+
+
+
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? HTMLSUMM_BEFORE_REPORT
+#define? HTMLSUMM_AFTER_REPORT
+#define? HTMLSUMM_HTMLRPT_WANT_QUERY_INSTALLED_BUTTON Y
+#( ''
+   #define? HTMLSUMM_REPORT
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$HTMLSUMM_BEFORE_REPORT>
+
+   ;--- Output target and heading -------------------------------------------
+   <A NAME="SUMMARY"></A>
+   #ifndef   MAKEMSI_CREATING_MERGE_MODULE
+        <$HTMLRPT_HEADING TEXT="SUMMARY">
+   #elseif
+        <$HTMLRPT_HEADING TEXT="MERGE MODULE SUMMARY">
+   #endif
+
+   ;--- Generate the report -------------------------------------------------
+   <table COLS="2" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+       <TR>
+           <TH align="center">Attribute</TH>
+           <TH align="left">Contents</TH>
+       </TR>
+
+       ;--- Product name ----------------------------------------------------
+       <$HTMLSUMM_BEFORE_PRODUCTNAME>
+       <$HTMLSUMM_PRODUCTNAME>
+       <$HTMLSUMM_AFTER_PRODUCTNAME>
+
+       ;--- Version Details -------------------------------------------------
+       <$HTMLSUMM_BEFORE_VERSION>
+       <$HTMLSUMM_VERSION>
+       <$HTMLSUMM_AFTER_VERSION>
+
+       ;--- Extra upgrade codes ---------------------------------------------
+       <$HTMLSUMM_BEFORE_SUMMARY_DESCRIPTION>
+       #ifdef  ProdInfo.Description
+           <$HTMLSUMM_SUMMARY_DESCRIPTION>
+       #endif
+       <$HTMLSUMM_AFTER_SUMMARY_DESCRIPTION>
+
+       ;--- Last Change -----------------------------------------------------
+       <$HTMLSUMM_BEFORE_LASTCHANGE>
+       <$HTMLSUMM_LASTCHANGE>
+       <$HTMLSUMM_AFTER_LASTCHANGE>
+
+       ;--- MSI Filename-----------------------------------------------------
+       <$HTMLSUMM_BEFORE_MSI_NAME>
+       <$HTMLSUMM_MSI_NAME>
+       <$HTMLSUMM_AFTER_MSI_NAME>
+
+       ;--- Built At --------------------------------------------------------
+       <$HTMLSUMM_BEFORE_BUILT_AT>
+       <$HTMLSUMM_BUILT_AT>
+       <$HTMLSUMM_AFTER_BUILT_AT>
+
+       ;--- Note ------------------------------------------------------------
+       <$HTMLSUMM_BEFORE_NOTE>
+       #if ['<$ProdInfo.Note $$IsBlank>' = 'N']
+           <$HTMLSUMM_NOTE>
+       #endif
+       <$HTMLSUMM_AFTER_NOTE>
+
+       ;--- Package Code ----------------------------------------------------
+       <$HTMLSUMM_BEFORE_PACKAGE_CODE>
+       #ifdef  VBSRET.GUID.PackageCode
+           <$HTMLSUMM_PACKAGE_CODE>
+       #endif
+       <$HTMLSUMM_AFTER_PACKAGE_CODE>
+
+       ;--- Product Code ----------------------------------------------------
+       <$HTMLSUMM_BEFORE_PRODUCT_CODE>
+       #ifdef  VBSRET.GUID.ProductCode
+           <$HTMLSUMM_PRODUCT_CODE>
+       #endif
+       <$HTMLSUMM_AFTER_PRODUCT_CODE>
+
+       ;--- Upgrade Code ----------------------------------------------------
+       <$HTMLSUMM_BEFORE_UPGRADE_CODE>
+       #ifdef  UpgradeCodeValue
+           <$HTMLSUMM_UPGRADE_CODE>
+       #endif
+       <$HTMLSUMM_AFTER_UPGRADE_CODE>
+
+       ;--- Extra upgrade codes ---------------------------------------------
+       <$HTMLSUMM_BEFORE_EXTRA_UPGRADE_CODES>
+       #ifdef  ProdInfo.UpgradeCodes
+           <$HTMLSUMM_EXTRA_UPGRADE_CODES>
+       #endif
+       <$HTMLSUMM_AFTER_EXTRA_UPGRADE_CODES>
+
+       ;--- MAKEMSI Processing mode -----------------------------------------
+       <$HTMLSUMM_BEFORE_MMMODE>
+       <$HTMLSUMM_MMMODE>
+       <$HTMLSUMM_AFTER_MMMODE>
+   </table>
+
+   ;--- Query Installed Button ----------------------------------------------
+   <$HTMLSUMM_GENERATE_INSTALLED_STATE_BUTTON_AND_CODE>
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$HTMLSUMM_AFTER_REPORT>
+#)
+
+
+;--- ? ----------------------------------------------------------------------
+#( '<?NewLine>'
+   #define? HTMLSUMM_HTML_NO_ENTRIES
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="HTMLSUMM FILES">
+       <P><B>
+       <CENTER>There are no binaries.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? HTMLSUMM_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="3" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>Key</TH>
+       <TH>Source<br>Directory</TH>
+       <TH>File<br>Name</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? HTMLSUMM_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+       <TD><??@@Key></TD>
+       <TD><??@@Directory></TD>
+       <TD><??@@ShortName></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? HTMLSUMM_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> binaries.
+   </CENTER>
+#)
+
+
+
+;----------------------------------------------------------------------------
+;--- INSTALLED STATE BUTTON CODE --------------------------------------------
+;----------------------------------------------------------------------------
+#define? HTMLSUMM_BUTTON_TEXT_INSTALLED_STATE Query Installed State
+#define  @@ID_INSTALLED_STATE_HEADING         IdInstalledStateHeading
+#define  @@ID_INSTALLED_STATE                 IdInstalledState
+#( '<?NewLine>'
+   #define? HTMLSUMM_GENERATE_INSTALLED_STATE_BUTTON_AND_CODE
+
+   <$HTMLSUMM_INSTALLED_STATE_BUTTON_CODE>
+   <$HTMLSUMM_INSTALLED_STATE_BUTTON_CODE_GENERATE_BUTTON>
+#)
+#( '<?NewLine>'
+   #define? HTMLSUMM_INSTALLED_STATE_BUTTON_CODE_GENERATE_BUTTON
+
+   ;--- Want button? --------------------------------------------------------
+    #if ['<$HTMLSUMM_HTMLRPT_WANT_QUERY_INSTALLED_BUTTON>' <> 'N']
+        ;--- Summary Contracts to here --------------------------------------
+        <$/HTMLRPT_HEADING>
+
+        ;--- Use script to generate button (only appears if script enabled) ---
+        <?NewLine>
+        <?NewLine>
+        <div ID="<$@@ID_INSTALLED_STATE_HEADING>">
+        </div>
+
+        <script LANGUAGE="VBSCRIPT">
+           ;--- Only create button if in IE ---------------------------------
+           document.write("<p><center>")
+           document.write("<input name='Button2CheckInstalledState' type='button' value='<$HTMLSUMM_BUTTON_TEXT_INSTALLED_STATE>' onClick='ButtonClickedQueryInstalledState()' TITLE='Is this product installed? Are there any related products installed?'>")
+           document.write("</center>")
+       </script>
+
+       ;--- Verification output goes here -----------------------------------
+       <?NewLine>
+       <div ID="<$@@ID_INSTALLED_STATE>" title="Installed State generated by the '<$HTMLSUMM_BUTTON_TEXT_INSTALLED_STATE>' button.">
+       </div>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? HTMLSUMM_INSTALLED_STATE_BUTTON_CODE
+
+   ;--- Start VBSCRIPT ------------------------------------------------------
+   <?NewLine>
+   <?NewLine>
+   <script LANGUAGE="VBSCRIPT">
+       ;--- Define some VBSCRIPT variables ----------------------------------
+       dim T
+       dim oInstaller, oFS
+
+       <?NewLine>
+       ;===========================================
+       function MoreProdInfo(ProductCode)
+       ;===========================================
+           ;--- Put install date into tooltip -------------------
+           on error resume next
+           dim YYYYMMDD, IdSerial, FmtDate
+           YYYYMMDD = oInstaller.ProductInfo(ProductCode, "InstallDate")
+           if  err.number <> 0 or YYYYMMDD = "" then
+               MoreProdInfo = ""
+           else
+               err.clear()
+               dim oID : oID  = DateSerial(left(YYYYMMDD, 4), mid(YYYYMMDD, 5,2), right(YYYYMMDD, 2))
+               if  err.number = 0 then
+                   FmtDate = FormatDateTime(oID, 1)
+               else
+                   FmtDate = YYYYMMDD & " (invalid format)"
+               end if
+               MoreProdInfo = " Installed " & FmtDate & "."
+           end if
+       end function
+
+
+       <?NewLine>
+       ;===========================================
+       function GetInstalledState()
+       ;===========================================
+           ;--- Start the report --------------------------------------------
+           on error resume next
+           dim T : T = ""
+
+           ;--- Is the product installed? -------------------------------
+           ProductState = oInstaller.ProductState(ProductCode)
+           StateClass = "FileVerifyProductErr"
+           select case ProductState
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+               case msiInstallStateUnknown
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                   Ts = "This product is not installed (or advertised)."
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+               case msiInstallStateAdvertised
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                   Ts = "This product is advertised but not yet installed."
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+               case msiInstallStateAbsent
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                   Ts = "This product is installed for a different user." & MoreProdInfo(ProductCode)
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+               case msiInstallStateDefault
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                   err.clear()
+                   dim InstType : InstType = oInstaller.ProductInfo(ProductCode, "AssignmentType")
+                   if   err.number <> 0 then
+                        Ts = "The product is installed for the current user (or per-machine)."
+                   else
+                        if  InstType = 0 then
+                            Ts = "The product is installed per-user (for this user)."
+                        else
+                            Ts = "The product is installed per-machine."
+                        end if
+                        Ts = Ts & MoreProdInfo(ProductCode)
+                   end if
+                   StateClass = "FileVerifyProductOK"
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+               case msiInstallStateBadConfig
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                   Ts = "The configuration data for the product is corrupt."
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+               case else
+               ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                   Ts = "Could not determine this products state as we got an unknown or undefined state of """ & ProductState & """"
+           end select
+           T = T & "<p><span class='" & StateClass & "'>"
+           T = T & Ts
+           T = T & "</span>"
+
+           ;--- Are there any related products --------------------------
+           err.clear()
+           set oRelated = oInstaller.RelatedProducts(UpgradeCode)
+           if  err.number = 0 then
+               ;--- Add all products to array ---------------------------
+               dim ProductCodes(999)
+               ProductCodesCnt = 0
+               for each RPCode in oRelated
+                   ;--- Make sure not this product! ---------------------
+                   if  RPCode <> ProductCode then
+                       ;--- Remember ------------------------------------
+                       ProductCodes(ProductCodesCnt) = RPCode
+                       ProductCodesCnt               = ProductCodesCnt + 1
+                   end if
+               next
+
+               ;--- Have we got any to display? -------------------------
+               if  ProductCodesCnt <> 0 then
+                   T = T & "<p><table border=0><tr><td align=left>"
+                   T = T & "The following " & ProductCodesCnt & " installed products are related to this one:"
+                    T = T & "<ol>"
+                   #ifdef COMPANY_PROPERTY_PRODUCTNAME
+                        ThisProductName = "<$COMPANY_PROPERTY_PRODUCTNAME>"  ;;Using "company.mmh"
+                   #elseif
+                        ThisProductName = "<$ProdInfo.ProductName>"          ;;Bypassing "Company.mmh"?
+                   #endif
+                   for i = 0 to ProductCodesCnt-1
+                       ;--- Init --------------------------------------------
+                       dim TT      : TT      = ""
+                       dim ProdCmt : ProdCmt = ""
+
+                       ;--- Get product name and version ----------------
+                       Pn = oInstaller.ProductInfo(ProductCodes(i), "InstalledProductName")
+                       Pv = oInstaller.ProductInfo(ProductCodes(i), "VersionString")
+
+                       ;--- Put install date into tooltip -------------------
+                       TT = MoreProdInfo(ProductCodes(i))
+
+                       ;--- See if just another version of this product ---
+                       #define? FILE_VERIFY_RELATED_PRODUCT_SEE_IF_ANOTHER_VERSION_OF_SAME       Y
+                       #define? FILE_VERIFY_RELATED_PRODUCT_ANOTHER_VERSION_OF_SAME_TEXT_EXP     " (<b><i>another build</i></b>)"
+                       #define? FILE_VERIFY_RELATED_PRODUCT_ANOTHER_VERSION_OF_SAME_TT_TEXT_EXP  "This is another build of this same product and version!"
+                       #if ['Y' = '<$FILE_VERIFY_RELATED_PRODUCT_SEE_IF_ANOTHER_VERSION_OF_SAME>']
+                           if  Pn = ThisProductName and Pv = "<$ProductVersion>" then
+                               ProdCmt = <$FILE_VERIFY_RELATED_PRODUCT_ANOTHER_VERSION_OF_SAME_TEXT_EXP>
+                               TT = trim(TT & " " & <$FILE_VERIFY_RELATED_PRODUCT_ANOTHER_VERSION_OF_SAME_TT_TEXT_EXP>)
+                           end if
+                       #endif
+
+                       ;--- Output the information ----------------------
+                       T = T & "<li><span title='" & TT & "'>" & Pn & " - v" & Pv & ProdCmt & "</span>"
+                   next
+                   T = T & "</ol></td></tr></table>"
+               end if
+           end if
+           GetInstalledState = T
+       end function
+
+       <?NewLine>
+       ;===========================================
+       function CreateObjects()
+       ;===========================================
+           ;--- Try to create FSO -------------------------------------------
+           on error resume next
+           dim T : T = ""
+           set oFS = CreateObject("Scripting.FileSystemObject")
+           if  err.Number <> 0 then
+                T = T & "We could not create the Active-X object ""Scripting.FileSystemObject"" (" & err.description & ").<br>"
+           end if
+           err.clear()
+           set oInstaller = CreateObject("WindowsInstaller.Installer")
+           if  err.Number <> 0 then
+                T = T & "We could not create the Active-X object ""WindowsInstaller.Installer"" (" & err.description & ").<br>"
+           end if
+           if  T <> "" then
+               ;--- Add more info -------------------------------------------
+               T = "<span class='FileVerifyNoActiveX'><p>" & T
+               T = T & "<i>"
+               T = T & "<p>The HTML page must be run from a local hard drive for the object to load!"
+               T = T & "<p>If you get prompted about allowing an ACTIVE-X control you must respond YES!"
+               T = T & "<br>You will probably need to refresh the browser to try again..."
+               T = T & "</i>"
+               T = T & "</span>"
+           end if
+
+           ;--- Return code of "" means OK ----------------------------------
+           CreateObjects = T
+       end function
+
+       <?NewLine>
+       ;===========================================
+       sub OutputInstalledState()
+       ;===========================================
+            ;--- Executed after a small delay -------------------------------
+            dim T
+            <$@@ID_INSTALLED_STATE_HEADING>.innerHTML = "<p><center><$HTMLRPT_HEADING Text='Check Installed State Report' VBSTR='Y'></center>"
+            T =     "<p><center>"
+            T = T & GetInstalledState()
+            T = T & "</center><p>"
+            <$@@ID_INSTALLED_STATE>.innerHTML = T
+
+            ;--- Finished! --------------------------------------------------
+            document.body.style.cursor = "auto"
+            window.status              = ""
+       end sub
+
+
+       <?NewLine>
+       ;===========================================
+       sub ButtonClickedQueryInstalledState()
+       ;===========================================
+           ;--- Clear any existing verification details ---------------------
+           on error resume next
+           <$@@ID_INSTALLED_STATE>.innerHTML = ""
+
+           ;--- Create required objects -------------------------------------
+           T = CreateObjects()
+           if   T <> "" then
+                ;--- Failed to create ---------------------------------------
+                <$@@ID_INSTALLED_STATE>.innerHTML = T
+           else
+                ;--- Small delay so user sees it happening... ---------------
+                window.status              = "Determining installed state..."
+                document.body.style.cursor = "wait"
+                window.setTimeout "OutputInstalledState()", 150
+           end if
+       end sub
+   </script>
+   <?NewLine>
+#)

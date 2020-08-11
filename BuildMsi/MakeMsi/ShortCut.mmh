@@ -1,0 +1,620 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SHORTCUT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.28  $
+;          $Date:   03 Apr 2018 13:05:04  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/ShortCut.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "SHORTCUT"
+
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4DocoMainShortcutRelatedOptions]---
+#define? DEFAULT_SHORTCUT_DIR                      [ProgramMenuFolder]   ;;Default shortcut dir
+#define? DEFAULT_SHORTCUT_ROWKEY_PREFIX            ScKey
+#define? DEFAULT_SHORTCUT_PROPERTY_PREFIX          SHORTCUT              ;;Should be UPPER case
+#define? DEFAULT_SHORTCUT_SHOWCMD                  SHOWNORMAL
+#define? DEFAULT_SHORTCUT_DisplayResourceDLL
+#define? DEFAULT_SHORTCUT_DisplayResourceId
+#define? DEFAULT_SHORTCUT_DescriptionResourceDLL
+#define? DEFAULT_SHORTCUT_DescriptionResourceId
+#define? SHORTCUT_COMPONENT_AUTOCREATE_ALLOWED     Y                     ;;Y/N - Allowed to create components for you?
+#define? SHORTCUT_COMPONENT_AUTOCREATE_INSTALLDIR                        ;;If blank MAKEMSI can't create its special advertised command line shortcuts
+#define? SHORTCUT_COMPONENT_AUTOCREATE_KEYPATH     CU="Y"                ;;Create autocreated Component's keypath
+#define? DEFAULT_SHORTCUT_OPTIONS4COMPONENT                              ;;Any options for autocreated components
+#define? DEFAULT_SHORTCUT_DOCO                     Y                     ;;"N" = Don't add to doco (by default)
+#define? SHORTCUT_COMPONENT_ROWKEY_REXXEXPRESSION  'AutoSC_' || {$RowKeyVar} ;;Key generated for autocreated components
+;---[4DocoMainShortcutRelatedOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Support macros/variables for ADVERTISED ANY COMMAND LINES --------------
+;----------------------------------------------------------------------------
+#(  '<?NewLine>'
+    ;--- The complete VBS ---------------------------------------------------
+    #define? SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_PARAMETER_PROCESSING
+
+    ;--- Work out the command line (work around major VBSCRIPT limitation...) ---
+    if  wscript.arguments.count = 0 then
+        Die("We expected at least one parameter!")
+    end if
+    for i =  0 to wscript.arguments.count-1
+        ;--- Space between parameters ---------------------------------------
+        if i <> 0 then CmdLine = CmdLine & " "
+
+        ;--- Add this parameter ---------------------------------------------
+        CmdLine = CmdLine & wscript.arguments(i)
+    next
+#)
+#define? SHORTCUT_CMDLINE_CODE_DOUBLE_QUOTE {'}
+#define? SHORTCUT_CMDLINE_CODE_AND          {and}
+#define? SHORTCUT_CMDLINE_CODE_OR           {or}
+#define? SHORTCUT_CMDLINE_CODE_GT           {gt}
+#define? SHORTCUT_CMDLINE_CODE_LT           {lt}
+#define? SHORTCUT_CMDLINE_CODE_PERCENT      {percent}
+#define? SHORTCUT_CMDLINE_CODE_HAT          {hat}
+#(  '<?NewLine>'
+    ;--- The complete VBS ---------------------------------------------------
+    #define? SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_CONVERSIONS
+    {$VbsVar} = replace({$VbsVar}, "<$SHORTCUT_CMDLINE_CODE_DOUBLE_QUOTE>", """")
+    {$VbsVar} = replace({$VbsVar}, "<$SHORTCUT_CMDLINE_CODE_AND>",          "&")
+    {$VbsVar} = replace({$VbsVar}, "<$SHORTCUT_CMDLINE_CODE_OR>",           "|")
+    {$VbsVar} = replace({$VbsVar}, "<$SHORTCUT_CMDLINE_CODE_GT>",           ">")
+    {$VbsVar} = replace({$VbsVar}, "<$SHORTCUT_CMDLINE_CODE_LT>",           "<")
+    {$VbsVar} = replace({$VbsVar}, "<$SHORTCUT_CMDLINE_CODE_PERCENT>",      "%")
+    {$VbsVar} = replace({$VbsVar}, "<$SHORTCUT_CMDLINE_CODE_HAT>",          "^")
+#)
+#(  '<?NewLine>'
+    #define? SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_EXEC_CMDLINE
+    Execute(CmdLine)
+#)
+#define? SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_HOOK_DIE
+#define? SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_HOOK_DIEONERR
+#(  '<?NewLine>'
+    ;--- The complete VBS ---------------------------------------------------
+    #define SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS
+
+    ;--- Get command line ---------------------------------------------------
+    dim CmdLine : CmdLine = ""
+    <$SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_PARAMETER_PROCESSING>
+
+    ;--- Convert any special in this command line ---------------------------
+    <$SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_CONVERSIONS VbsVar="CmdLine">
+
+    ;--- Execute the command line -------------------------------------------
+    <$SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_EXEC_CMDLINE>
+
+
+   <?NewLine>
+   ;============================================================================
+   sub Execute(CmdLine)
+   ;============================================================================
+       ;--- Any command that waits for completion will force update! --------
+       on error resume next
+       dim oShell : set oShell = CreateObject("WScript.Shell")
+       DieOnErr "CreateObject(""WScript.Shell"")"
+
+       ;--- Execute the command ---------------------------------------------
+       oShell.run CmdLine, 1, false
+
+       ;--- Clear shell object ----------------------------------------------
+       set oShell = Nothing
+   end sub
+
+   <?NewLine>
+   ;============================================================================
+   sub DieOnErr(Reason)
+   ;============================================================================
+       ;--- User Hook (user can override functionaility) --------------------
+       <$SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_HOOK_DIEONERR>
+
+       ;--- Normal processing -----------------------------------------------
+       if  err.number <> 0 then
+           Die "Failed on : " & Reason
+       end if
+   end sub
+
+
+   <?NewLine>
+   ;============================================================================
+   sub Die(Reason)
+   ;============================================================================
+       ;--- User Hook (user can override functionaility) --------------------
+       dim T : T = ""
+       <$SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS_HOOK_DIE>
+
+       ;--- Normal processing -----------------------------------------------
+       if  CmdLIne <> "" then
+           T = T & "We have been called to execute the command line:"
+           T = T & vbCRLF & vbCRLF
+           T = T & CmdLine
+           T = T & vbCRLF
+       end if
+       T = T & Reason
+       MsgBox T, vbCritical, "FAILED INVOKING COMMAND LINE"
+       wscript.quit 999
+   end sub
+
+#)
+#RexxVar @@ScAnyClCnt = 0
+#define? SHORTCUT_CMDLINE_GENERATED_VBS_NAME   <$MAKEMSI_VBSCRIPT_DIR $$DEL:\>\MakemsiAdvertisedCmdLine.VBS
+#(
+    #define AddScAnyCmdFileToCurrentComponent
+
+    #RexxVar @@ScAnyClCnt + 1
+    #if [@@ScAnyClCnt = 1]
+        ;--- VBS identical for all instances --------------------------------
+        <$FileMake "<$SHORTCUT_CMDLINE_GENERATED_VBS_NAME>">
+        #( '<?NewLine>'
+            <?SyntaxCheck>
+            <?NewLine>
+            <?NewLine>
+            '================================================================
+            ' Used to implement a special MAKEMSI advertised shortcut type
+            ' which allows the power of a non-advertised shortcut while
+            ' skill being advertised!
+            '
+            ' Product Name   : <$ProdInfo.ProductName>
+            ' Product Version: <$ProductVersion>
+            '================================================================
+            <?NewLine>
+            <?NewLine>
+            <$SHORTCUT_ADVERTISE_ANY_COMMAND_LINE_VBS>
+        #)
+        <$/FileMake>
+    #endif
+    <$File DESTINATION="MmAny<??@@ScAnyClCnt>.vbs" 8.3=^MmAny<??@@ScAnyClCnt>.vbs^ SOURCE="<$SHORTCUT_CMDLINE_GENERATED_VBS_NAME>" KeyPath="Y" Doco="N">
+#)
+
+
+;----------------------------------------------------------------------------
+;--- VBS constants ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define ShortCutVbsVariables
+   const SW_SHOWNORMAL      = 1
+   const SW_SHOWMAXIMIZED   = 3
+   const SW_SHOWMINNOACTIVE = 7
+#)
+#RexxVar SW_SHOWNORMAL      = ''
+#RexxVar SW_SHOWMAXIMIZED   = ''
+#RexxVar SW_SHOWMINNOACTIVE = ''
+
+
+;----------------------------------------------------------------------------
+;--- ADD SHORTCUT -----------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@RowKeyCnt   = 0        ;;Incremented for each GENERATED registry key
+#RexxVar @@PropertyCnt = 0        ;;Incremented for each GENERATED property
+#( ''
+   #define SHORTCUT
+   <$UpdateMmLocation>
+   {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+   ;--- Execute REXX code ---------------------------------------------------
+   #evaluate ^^ ^<$Rexx4Shortcut {$?}>^
+   <??@@Vbs><?RestartLine>
+#)
+#RexxVar @@HtmlItemCnt = 0        ;;#items for the HTML report
+#RexxVar @@CreatedCnt  = 0        ;;Number of components we created
+#DefineRexx 'Rexx4Shortcut'
+   ;--- Get some parameters -------------------------------------------------
+   @@Feature = '{$Feature=^^}';
+   {$Title          $$RxVar:@@Title}
+   {$Target=^^      $$RxVar:@@Target}
+   {$Arguments=^^   $$RxVar:@@Arguments}
+   {$Description=^^ $$RxVar:@@Description}
+   @@Arguments4Html = @@Arguments;            ;;May get modified...
+   @@Vbs = '';
+
+   ;--- What should the row's key be? ---------------------------------------
+   @@RowKey     = '{$RowKey=^^}'        ;;Key into Shortcut table
+   if  @@RowKey = '' then
+   do
+       ;--- User did not supply a registry key (generate one) ---------------
+       @@RowKeyCnt = @@RowKeyCnt + 1
+       if  @@RowKeyCnt > 999 then
+           @@RowKey = '<$DEFAULT_SHORTCUT_ROWKEY_PREFIX>' || @@RowKeyCnt;
+       else
+           @@RowKey = '<$DEFAULT_SHORTCUT_ROWKEY_PREFIX>' || right(@@RowKeyCnt, 3, '0');
+       @@RowKey = @@RowKey || RxGeneratedKeySuffix;
+   end;
+
+   ;--- Shortcut for which component? ---------------------------------------
+   if  '{$Component='' $$IsPassed}' = 'Y' then
+       @@Component = '{$Component}';       ;;User supplied a value
+   else
+   do
+       ;--- Defaulting ------------------------------------------------------
+       ;<$Rexx4ValidateInComponent>
+       @@Component = RxComponent.RxComponentNestingLevel;
+   end;
+
+   ;--- Look for missing component name -------------------------------------
+   @@Vbs4ComponentEnd = ''
+   if   @@Component = '' then
+   do
+        ;--- Can't create components for "normal" advertised shortcuts ------
+        if  @@Target = '' then
+            error('The "Shortcut" command can''t create the required component.', 'It can not create components unless the "TARGET" parameter was supplied!');
+        if  translate( '<$SHORTCUT_COMPONENT_AUTOCREATE_ALLOWED>') <> 'Y' then
+            error('The "Shortcut" command can''t create components for you.', 'You have disallowed component creation!');
+
+        ;--- Work out if we will be installing files we also create ---------
+        @@CompDestDir = '<$AnyDir>'                                  ;;Normally doesn't matter as we aren't creating files
+        @@CompKeyPath  = '<$SHORTCUT_COMPONENT_AUTOCREATE_KEYPATH>'  ;;Needed UNLESS we are creating a file!
+        if  @@Feature <> '' then
+        do
+            ;--- We have both TARGET & FEATURE so will be creating a file ---
+            @@CompDestDir = '<$SHORTCUT_COMPONENT_AUTOCREATE_INSTALLDIR>';
+            @@CompKeyPath = '';             ;;The file will be the keypath
+            if  @@CompDestDir = '' then
+                error('The "Shortcut" command can''t create the required component as the', '"SHORTCUT_COMPONENT_AUTOCREATE_INSTALLDIR" macro doesn''t provide an', 'installation directory key (where should created files go?)!');
+        end;
+
+        ;--- OK we can create components and user hasn't disabled this ------
+        @@CreatedCnt = @@CreatedCnt + 1 ;;Keep count of created components
+        @@Component = <$SHORTCUT_COMPONENT_ROWKEY_REXXEXPRESSION CntVar=^@@CreatedCnt^ RowKeyVar=^@@RowKey^>
+        @@Vbs = @@Vbs || '<' || '$Component "' || @@Component || '"';
+        @@Vbs = @@Vbs ||         ' CREATE=^Y^';
+        @@Vbs = @@Vbs ||         ' Directory_=^' || @@CompDestDir || '^';
+        @@Vbs = @@Vbs ||         ' ' || @@CompKeyPath;
+        {$Options4Component=^<$DEFAULT_SHORTCUT_OPTIONS4COMPONENT>^ $$RxVar:@@CompOpt}  ;;Any component options
+        if  @@CompOpt <> '' then
+            @@Vbs = @@Vbs || ' ' || @@CompOpt
+        @@Vbs = @@Vbs || '>'
+        @@Vbs4ComponentEnd = '<' || '$/Component>'
+   end
+
+   ;--- Handle the working directory ----------------------------------------
+   @@WorkDir = '{$WorkDir=^^}'
+   if  @@WorkDir <> '' then
+   do
+       ;--- Passed the directory  (or name of) ------------------------------
+       <$Rexx4MakeDirectoryTree DIR=^{$WORKDIR}^>;
+       @@Vbs     = @@Vbs || DTVBS;
+       @@WorkDir = DT_KEYNAME;
+   end;
+
+   ;--- Advertised "Feature" Shortcut? --------------------------------------
+   if  @@Feature <> "" then
+   do
+       ;--- Advertised shortcut, "Target" will hold feature name ------------
+       ;if  @@Target <> '' then
+       ;    Error('You should not use both "Target" and "Feature" parameters!')
+       <$Rexx2ResolveFeatureName FeatVar="@@Feature">
+       @@TargetSupplied = @@Target;
+       @@Target         = @@Feature;
+       @@TargetDesc     = 'Feature "' || @@Feature || '"';
+
+       ;--- See if this is a ADVERTISE ANY COMMAND LINE ---------------------
+       if   @@TargetSupplied = '' then
+            @@ScType = 'Advertised shortcut';
+       else
+       do
+            ;--- Build complete command line --------------------------------
+            @@ScType = 'Special MAKEMSI advertised shortcut';
+            @@FullArgs = '"' || @@TargetSupplied || '"'
+            if  @@Arguments <> '' then
+                @@FullArgs = @@FullArgs || ' ' || @@Arguments
+
+            ;--- Encode some characters to make it easier to pass command line intact ---
+            @@Arguments4Html = @@FullArgs;
+            @@Arguments      = ReplaceString(@@FullArgs,  '"', "<$SHORTCUT_CMDLINE_CODE_DOUBLE_QUOTE>");
+            @@Arguments      = ReplaceString(@@Arguments, '&', "<$SHORTCUT_CMDLINE_CODE_AND>");
+            @@Arguments      = ReplaceString(@@Arguments, '|', "<$SHORTCUT_CMDLINE_CODE_OR>");
+            @@Arguments      = ReplaceString(@@Arguments, '>', "<$SHORTCUT_CMDLINE_CODE_GT>");
+            @@Arguments      = ReplaceString(@@Arguments, '<', "<$SHORTCUT_CMDLINE_CODE_LT>");
+            @@Arguments      = ReplaceString(@@Arguments, '%', "<$SHORTCUT_CMDLINE_CODE_PERCENT>");
+            @@Arguments      = ReplaceString(@@Arguments, '^', "<$SHORTCUT_CMDLINE_CODE_HAT>");
+
+            ;--- Now generate Execution VBS and add to the component --------
+            @@Vbs = @@Vbs || '<' || '$AddScAnyCmdFileToCurrentComponent>'
+       end;
+   end;
+   else
+   do
+       ;--- Not advertised, make sure a non-blank target was suppled --------
+       @@ScType = 'Non-advertised shortcut';
+       if  @@Target = '' then
+           error('You should pass a non blank value using the "FEATURE" or "TARGET" parameters!');
+
+       ;--- Target accessed via property (already in one?) ------------------
+       @@TargetDesc = @@Target;
+;**      CommentBlock  /* (Tuesday 27/05/2003, 21:33:42, by USER "Dennis") */
+;**+--------------------------------------------------------------------------
+;**|       if  left(@@Target, 1) <> '[' | right(@@Target, 1) <> ']' then
+;**+--------------------------------------------------------------------------
+;**                    /* (Tuesday 27/05/2003, 21:33:42, by USER "Dennis") */
+       if  left(@@Target, 1) =  '{' | pos('[', @@Target) = 0 then
+       do
+           ;--- the TARGET is NOT in a property, need to create one ---------
+           parse var @@Target '{' @@Property '}' @@Target2;
+           if  @@Target2 = '' then
+               @@Property = '';            ;;Play safe, who knows...
+           else
+           do
+               ;--- User did supply a property name -------------------------
+               @@Target     = @@Target2;
+               @@TargetDesc = @@Target;
+           end;
+           if  @@Property = '' then
+           do
+               ;--- User did not supply a registry key (generate one) -------
+               @@PropertyCnt = @@PropertyCnt + 1
+               if  @@PropertyCnt > 99 then
+                   @@Property = '<$DEFAULT_SHORTCUT_PROPERTY_PREFIX>' || @@PropertyCnt;
+               else
+                   @@Property = '<$DEFAULT_SHORTCUT_PROPERTY_PREFIX>' || right(@@PropertyCnt, 2, '0');
+           end;
+           @@Vbs    = @@Vbs || '<' || '$Property #1=^' || @@Property || '^ Value=' || Quoted(@@Target) || '>'
+           @@Target = '[' || @@Property || ']';
+       end;
+   end;
+
+   ;--- Show Command? -------------------------------------------------------
+   @@ShowCmd = '{$ShowCmd=^<$DEFAULT_SHORTCUT_SHOWCMD>^}';
+   if  symbol('SW_' || @@ShowCmd) <> 'VAR' then
+       error('Invalid ShowCmd value of "' || @@ShowCmd || '"')
+
+   ;--- Handle the extra 4 columns introduced by Windows Version 4.0 --------
+   @@DisplayResourceDLL     = '{$DisplayResourceDLL=^<$DEFAULT_SHORTCUT_DisplayResourceDLL>^}'
+   @@DisplayResourceId      = '{$DisplayResourceId=^<$DEFAULT_SHORTCUT_DisplayResourceId>^}'
+   @@DescriptionResourceDLL = '{$DescriptionResourceDLL=^<$DEFAULT_SHORTCUT_DescriptionResourceDLL>^}'
+   @@DescriptionResourceId  = '{$DescriptionResourceId=^<$DEFAULT_SHORTCUT_DescriptionResourceId>^}'
+   #if  ['<$TABLES_SHORTCUT_DEFINE_WI_4_COLS $$UPPER>' = 'N']
+         ;--- User should not pass the extra parameters! --------------------
+         @@Test = @@DisplayResourceDLL || @@DisplayResourceId || @@DescriptionResourceDLL || @@DescriptionResourceId;
+   #endif
+
+   ;--- Start Shortcut TABLE ------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$Table "Shortcut">'
+
+   ;--- What should the DEFAULT for the icon number be? ---------------------
+   @@Icon = '{$Icon=^^}'
+   if @@Icon = '' then
+      @@IconIndex = '{$IconIndex=^^}';     ;;Icon name not passed
+   else
+   do
+      ;--- Icon name was passed, default index to 0 ------------------------
+      @@IconIndex = '{$IconIndex=^0^}';
+      if  left(@@Icon, 1) = '@' then
+      do
+           ;--- Icon value is an alias reference (not a key) ----------------
+          @@Alias = substr(@@Icon, 2);
+          @@Cmt = "This icon was added by the 'Shortcut' command at " || RxMmLocation;
+          <$Rexx2GetIconKeyGivenAlias AliasVar="@@Alias" KeyVar="@@Icon" CmtVar="@@Cmt" CodeVar="@@Code">;
+          @@Vbs = @@Code || @@Vbs;              ;;Define alias (do first)
+      end
+   end;
+
+
+   ;--- Create the directory for the shortcut -------------------------------
+   ;<$Rexx4MakeDirectoryTree DIR=^{$DIR="<$DEFAULT_SHORTCUT_DIR>"}^>;
+   ;@@Vbs    = @@Vbs || DTVBS;
+   ;@@DirKey = DT_KEYNAME;
+
+   ;--- The user can pass a ";" delimitered list of directories -------------
+   @@DirList = '{$DIR=^^}';
+   if   @@DirList = "" then
+        @@DirList = '<$DEFAULT_SHORTCUT_DIR>';
+   <$DBG_SAY> '$Shortcut Directory List: ' || @@DirList
+   <$DBG_INC>
+       @@BaseRowKey = @@RowKey
+       @@Dirs       = @@DirList
+       @@DirCnt     = 0
+       do while @@Dirs <> ''
+           ;--- Get next directory --------------------------------------------------
+           parse var @@Dirs @@Dir1 ';' @@Dirs;
+           <$DBG_SAY> '$Shortcut Directory: ' || @@Dir1
+           <$DBG_INC>
+               ;--- Get a directory key ---------------------------------------------
+               <$Rexx4MakeDirectoryTree DirExp=^@@Dir1^>;  ;;Turn into a dir key if required
+                       @@Vbs    = @@Vbs || DTVBS;
+                       @@DirKey = DT_KEYNAME;
+
+               ;--- Adjust Row key ------------------------------------------
+               @@DirCnt = @@DirCnt + 1
+               if   @@DirCnt > 1 then
+                    @@RowKey = @@BaseRowKey || '_' || @@DirCnt
+
+               ;--- Create the row ------------------------------------------------------
+               @@TitleQ = ReplaceString(@@Title, '"', '""');
+               @@TtVbs = """" || ReplaceString(@@Description, '"', '""') || """"
+               @@TtVbs = ReplaceString(@@TtVbs, '{NL}', '" & vbCRLF & "');
+               @@Vbs = @@Vbs || '<' || '$Row'
+               @@Vbs = @@Vbs || ' Shortcut="'     || @@RowKey              || '"'
+               @@Vbs = @@Vbs || ' Directory_="'   || @@DirKey              || '"'
+               @@Vbs = @@Vbs || ' *Name='         || Quoted('MakeSfnLfn("' || @@DirKey || '", "' || @@TitleQ || '")')
+               @@Vbs = @@Vbs || ' Component_="'   || @@Component           || '"'
+               @@Vbs = @@Vbs || ' Target="'       || @@Target              || '"'
+               @@Vbs = @@Vbs || ' Arguments='     || Quoted(@@Arguments)
+               ;@@Vbs = @@Vbs || ' Description='   || Quoted(@@Description)
+               @@Vbs = @@Vbs || ' *Description='   || Quoted(@@TtVbs)
+               @@Vbs = @@Vbs || ' Hotkey="{$HotKey=^^}"'
+               @@Vbs = @@Vbs || ' Icon_="'        || @@Icon                || '"'
+               @@Vbs = @@Vbs || ' IconIndex="' || @@IconIndex || '"'
+               @@Vbs = @@Vbs || ' ShowCmd="SW_' || @@ShowCmd || '"'
+               @@Vbs = @@Vbs || ' WkDir="' || @@WorkDir || '"'
+               #if  ['<$TABLES_SHORTCUT_DEFINE_WI_4_COLS $$UPPER>' <> 'N']
+                     ;--- We do need to handle the extra parameters ---------------------
+                     if @@DisplayResourceDLL <> '' then
+                        @@Vbs = @@Vbs || ' DisplayResourceDLL="'     || @@DisplayResourceDLL     || '"';
+                     if @@DisplayResourceId <> '' then
+                        @@Vbs = @@Vbs || ' DisplayResourceId="'      || @@DisplayResourceId      || '"';
+                     if @@DescriptionResourceDLL <> '' then
+                        @@Vbs = @@Vbs || ' DescriptionResourceDLL="' || @@DescriptionResourceDLL || '"';
+                     if @@DescriptionResourceId <> '' then
+                        @@Vbs = @@Vbs || ' DescriptionResourceId="'  || @@DescriptionResourceId  || '"';
+               #endif
+               @@Vbs = @@Vbs || '>'
+           <$DBG_DEC>
+       end;             ;;do while @@Dirs <> ''
+   <$DBG_DEC>
+
+   ;--- End table -----------------------------------------------------------
+   @@Vbs = @@Vbs || '<' || '$/Table>'
+
+   ;--- We may have created a component -------------------------------------
+   @@Vbs = @@Vbs || @@Vbs4ComponentEnd;
+
+   ;--- Add to SHORTCUT report ------------------------------------------------
+   if  '{$Doco='<$DEFAULT_SHORTCUT_DOCO>'}' <> 'N' then
+   do
+       ;--- User wants this in the doco -------------------------------------
+       @@Dirs   = @@DirList
+       @@DirCnt = 0
+       do while @@Dirs <> ''
+           ;--- Get next directory --------------------------------------------------
+           parse var @@Dirs @@Dir1 ';' @@Dirs;
+
+           ;--- Adjust Row key ------------------------------------------
+           @@DirCnt = @@DirCnt + 1
+           if   @@DirCnt > 1 then
+                @@RowKey = @@BaseRowKey || '_' || @@DirCnt
+
+           ;--- Save for HTML report ----------------------------------------
+           @@SortKey = @@Title || 'FF'x || @@RowKey;
+           @@All     = @@SortKey || '00'x || @@RowKey || '00'x || @@TargetDesc || '00'x || @@Arguments4Html || '00'x || @@Dir1 || '00'x || '{$WorkDir}' || '00'x || @@Title || '00'x || @@Description  || '00'x || @@Component  || '00'x || @@Icon || '00'x || @@IconIndex || '00'x || @@ScType || '00'x || RxMmLocation;
+           @@HtmlItemCnt            = @@HtmlItemCnt + 1;
+           @@HtmlItem.@@HtmlItemCnt = @@All;
+           @@HtmlItem.0             = @@HtmlItemCnt;
+       end;             ;;do while @@Dirs <> ''
+   end;
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!}
+#DefineRexx
+
+
+
+
+
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? SHORTCUT_BEFORE_BUTTON
+#define? SHORTCUT_AFTER_BUTTON
+#(
+   #define? SHORTCUT_BUTTON
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$SHORTCUT_BEFORE_BUTTON>
+   <$BUTTON2 "SHORTCUTS" Text="Shortcuts" CNT="@@HtmlItemCnt">
+   <$SHORTCUT_AFTER_BUTTON>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? SHORTCUT_BEFORE_REPORT
+#define? SHORTCUT_AFTER_REPORT
+#( ''
+   #define? SHORTCUT_REPORT
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$SHORTCUT_BEFORE_REPORT>
+
+   ;--- Generate Environment report -----------------------------------------
+   <A NAME="SHORTCUTS"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$SHORTCUT_HTML_NO_ENTRIES>
+   #elseif
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="SHORTCUTS">
+      <$SHORTCUT_HTML_REPORT_START>
+
+      ;--- Sort shortcut table entries --------------------------------------
+      #evaluate ^^ ^call SortArray '@@HtmlItem'^
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Index = 1 to @@HtmlItemCnt
+          ;--- Split off components -----------------------------------------
+          #DefineRexx '' NOPACK
+               parse var @@HtmlItem.@@Index . '00'x @@RowKey '00'x @@Target '00'x @@Arguments '00'x @@Dir '00'x @@WorkDir '00'x @@Title '00'x @@Description  '00'x @@Component '00'x @@Icon '00'x @@IconInex '00'x @@ScType '00'x @@MmLocation;
+               @@Dir     = wbr(@@Dir);
+               @@WorkDir = wbr(@@WorkDir);
+               @@Target  = wbr(@@Target);
+               if @@Arguments = "" then @@Arguments = '&nbsp;';
+               if @@WorkDir   = "" then @@WorkDir   = '&nbsp;';
+          #DefineRexx
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$SHORTCUT_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$SHORTCUT_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$SHORTCUT_AFTER_REPORT>
+#)
+
+
+#( '<?NewLine>'
+   #define? SHORTCUT_HTML_NO_ENTRIES
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="SHORTCUTS">
+       <P><B>
+       <CENTER>There are no shortcuts.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? SHORTCUT_HTML_REPORT_START
+   <CENTER>
+   <TABLE COLS="6" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>Where</TH>
+       <TH>Title</TH>
+       <TH>Target</TH>
+       <TH>Arguments</TH>
+       <TH>Working<br>Directory</TH>
+       <TH>Component</TH>
+   </TR>
+   </thead>
+#)
+#( '&#10'
+    #define @@ExtraToolTip
+    Type: <??@@ScType>
+#)
+#( '<?NewLine>'
+   #define? SHORTCUT_HTML_REPORT_ROW
+   <?NewLine>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@' After=^<$@@ExtraToolTip>^>>
+       <TD><??@@Dir></TD>
+       <TD><span title='Shortcut title'><??@@Title></span><hr><span title='Shortcut Description/tooltip'><??@@Description></span></TD>
+       <TD><??@@Target></TD>
+       <TD><??@@Arguments></TD>
+       <TD><??@@WorkDir></TD>
+       <TD><??@@Component></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? SHORTCUT_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> shortcut(s).
+   </CENTER>
+#)
+
+
+
+
+#NextId UNLOCK "SHORTCUT"
+

@@ -1,0 +1,195 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SEQ#.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.8  $
+;          $Date:   16 Aug 2008 13:44:14  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Seq#.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+
+#NextId LOCK "SEQ#.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- This macro used by other CUSTOM ACTION modules -------------------------
+;----------------------------------------------------------------------------
+#DefineRexx 'SeqNumberRexx2CreateSequenceNumberExpression'
+   if   datatype({$Seq}, 'W') = 1 then
+        {$Macro} = {$Seq};            ;;Value is integer (use as is)
+   else
+   do
+       ;--- Not an integer, VBS expression? ---------------------------------
+       if   left({$Seq}, 1) = '@' then
+            {$Macro}  = substr({$Seq}, 2);  ;;Remove '@' - value is simple vb expression or variable
+       else
+       do
+            ;--- MAKEMSI sequence spec --------------------------------------
+            {$Macro} = 'GetSeqNumber("{' || '$#1}", "' || {$Seq} || '", ' || {$Number} || ')'
+       end;
+   end;
+   call MacroSet '{$Macro}', {$Macro}, "Y";  ;;Create macro with same name as Rexx variable
+#DefineRexx
+
+
+
+
+;----------------------------------------------------------------------------
+;--- VBS constants and variables --------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define SeqNumberVbsVariables
+
+   ;--- Some variables (used by other custom action related macros) ---------
+   dim SeqNo, SeqCad, SeqProp
+#)
+
+
+;----------------------------------------------------------------------------
+;--- VBS functions ----------------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define SeqNumberVbsFunctions
+
+    <?NewLine>
+    '============================================================================
+    function GetSeqNumber(ByVal TableName, ByVal How, ByVal NumbSlots)
+    ' This code will fail if a sequence table is not current when called!
+    '============================================================================
+        ;--- "Backwards" Range search? --------------------------------------
+        #define MAX_SEQ  32767
+        dim SeqFirst   : SeqFirst = 1
+        dim SeqLast    : SeqLast   = <$MAX_SEQ>
+        dim ForStep
+        How = trim(How)
+        if  left(How, 1) <> "<" then
+            ;--- Normal "forwards" search (want lowest match) ---------------
+            ForStep  = 1
+        else
+            ;--- "Backwards" search (want highest match) --------------------
+            How      = mid(How, 2)
+            ForStep  = -1
+        end if
+
+        ;--- Work out what we are looking for -------------------------------
+        dim Bits, AfterAction, BeforeAction
+        Bits = split(How & " ", "-")        ;;Split fails on empty strings
+        AfterAction = trim(Bits(0))
+        if  ubound(Bits) = 0 then
+            BeforeAction = ""
+        else
+            BeforeAction = trim(Bits(1))
+        end if
+        dim BeforeActionT : BeforeActionT = BeforeAction
+        dim AfterActionT  : AfterActionT  = AfterAction
+
+        ;--- Specific sequence numbers can be specified instead of actions ---
+        if  IsNumeric(AfterAction) then
+            SeqFirst    = cint(AfterAction)
+            AfterAction = ""
+        end if
+        if  IsNumeric(BeforeAction) then
+            SeqLast       = cint(BeforeAction)
+            BeforeAction = ""
+        end if
+
+        ;--- Get sequence number information --------------------------------
+        dim SeqNumbers(<$MAX_SEQ>), oRecord
+        dim AfterSeq, BeforeSeq, AfterFound, BeforeFound
+        AfterFound  = (AfterAction = "")
+        BeforeFound = (BeforeAction = "")
+        SqlOpenExec("SELECT * FROM `" & TableName & "`")
+        do
+            ;--- Get record, exit loop at end -------------------------------
+            set oRecord = SqlViewFetch()
+            if  oRecord is Nothing then exit do
+
+            ;--- Get record details -----------------------------------------
+            dim SeqNumber : SeqNumber = oRecord.IntegerData(3)
+            dim SeqAction : SeqAction = oRecord.StringData(1)
+
+            ;--- Save in table ----------------------------------------------
+            if  SeqNumber >= 0 then
+                ;--- Ignore negative sequence numbers -----------------------
+                SeqNumbers(SeqNumber) = SeqAction
+            end if
+
+            ;--- Is this one of the actions we are looking for? -------------
+            if  SeqAction = AfterAction then
+                SeqFirst   = SeqNumber + 1
+                AfterFound = true
+            end if
+            if  SeqAction = BeforeAction then
+                SeqLast     = SeqNumber - 1
+                BeforeFound = true
+            end if
+        loop
+        SqlViewClose()
+
+        ;--- Validate results -----------------------------------------------
+        if  not AfterFound then
+            error("We could not find the action """ & AfterActionT & """ in the table """ & TableName & """!")
+        end if
+        if  not BeforeFound then
+            error("We could not find the action """ & BeforeActionT & """ in the table """ & TableName & """!")
+        end if
+        if  (SeqLast < SeqFirst) then
+            error("The action """ & AfterActionT & """ needs to be before the action """ & BeforeActionT & """!")
+        end if
+        if  (SeqLast - SeqFirst)+1 < NumbSlots then     ;;Also need at least a gap of #slots wanted!
+            error("The sequence number range (" & SeqFirst & " - " & SeqLast & ") is too small to search for " & NumbSlots & " slots!")
+        end if
+
+        ;--- Now find free "slot(s)" ----------------------------------------
+        dim ForStart, ForEnd, i
+        if  ForStep = 1 then
+            ;--- Normal "forwards" search (want lowest match) ---------------
+            ForStart = SeqFirst
+            ForEnd   = SeqLast - (NumbSlots - 1)      ;;All slots must fit in range...
+        else
+            ;--- "Backwards" search (want highest match) --------------------
+            ForStart = SeqLast - (NumbSlots - 1)      ;;All slots must fit in range...
+            ForEnd   = SeqFirst
+        end if
+        for i = ForStart to ForEnd step ForStep
+            ;--- We are looking for an empty "slot" -------------------------
+            if  SeqNumbers(i) = "" then
+                ;--- Found a free spot (if a range check following slots) ---
+                dim j, FreeSlots
+                FreeSlots = 0
+                for j = 1 to NumbSlots          ;;Loop executed zero or more times
+                    if  SeqNumbers(i+j-1) = "" then
+                        FreeSlots = FreeSlots + 1
+                    else
+                        exit for
+                    end if
+                next
+                if  FreeSlots = NumbSlots then
+                    ;--- Found a free slot or slot range --------------------
+                    GetSeqNumber = i
+                    exit function
+                end if
+            end if
+        next
+
+        ;--- If we get here we failed to find a free "slot" (pretty unusual) ---
+        dim SlotTxt
+        if  NumbSlots = 1 then
+            SlotTxt = "a single empty ""slot"""
+        else
+            SlotTxt = NumbSlots & " consecutive empty ""slots"""
+        end if
+        error("We did not find " & SlotTxt & " between " & SeqFirst & " and " & SeqLast &  " in the table """ & TableName & """!")
+    end function
+#)
+
+#NextId UNLOCK "SEQ#.MMH"
+

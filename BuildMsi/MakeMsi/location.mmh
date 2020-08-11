@@ -1,0 +1,184 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   LOCATION.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.14  $
+;          $Date:   16 Nov 2017 11:28:32  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/location.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "LOCATION.MMH"
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? LOCATION_COMMAND_VERBOSE_OUTPUT_ALLOWED Y
+#define? LOCATION_COMMAND_VERBOSE_FREQUENCY      10   ;;Number of seconds before displaying another (0=NEVER)
+#ifndef  LOCATION_PROGRESS_MSG
+    #DefineRexx 'LOCATION_PROGRESS_MSG'               ;;Progress information "RxProgressText"
+         ;--- Formats the message to be displayed periodically if looping/busy ---
+         @@ProgressMsgS   = ReadingIndent() || "  " || GetAmPmTime() || ' @' || {$LocnVar}
+         @@ProgressMsgLng = length(@@ProgressMsgS);
+         @@ProgressMsgL   = @@ProgressMsgS || ': ' || RxProgressText;    ;;Long version
+         if @@ProgressMsgLng < 60 then                                  ;;Can we add to the short version?
+            @@ProgressMsgS = @@ProgressMsgS || ': ' || left(RxProgressText, 77-@@ProgressMsgLng);
+         call say @@ProgressMsgS, @@ProgressMsgL        ;;"Short" to screen, "long" to console log
+     #DefineRexx
+#endif
+
+
+;--- Verbose MODE -----------------------------------------------------------
+#RexxVar @@VerboseLastTime       = 0           ;;Time last message was displayed
+#RexxVar @@VerboseLastCntr       = 0
+#RexxVar @@VerboseOutputAllowed  = 'N'         ;;If verbose mode is on, is verbose output allowed?
+#RexxVar @@VerboseOutputFrequency = <$LOCATION_COMMAND_VERBOSE_FREQUENCY>
+#define VerboseReset              @@VerboseLastCntr = ConsoleCount(); @@VerboseLastTime = time('S');
+#(
+    #define LocationVerboseOn
+    #evaluate ^^  ^<$VerboseReset>^
+    #RexxVar @@VerboseOutputAllowed  = 'Y'
+#)
+
+
+
+
+;--- Variable any macro might access after using "UpdateMmLocation" ---------
+#RexxVar RxMmLocation = ''
+
+#( '<?NewLine>'
+   #define LocationVbsVariables
+
+   ;--- Hold "MM" script location details -----------------------------------
+   public MmLL : MmLL = "Start"           ;;Location - example: Line 56 of D:\DBAREIS\PROJECTS\Win32\MakeMsi\test.v
+   public MmLT : MmLT = "Initializing..." ;;Text of the line
+   public MmID : MmID = ""                ;;A unique ID search the code for this
+#)
+
+
+;----------------------------------------------------------------------------
+;--- "COMMENT" generated VBS (also reported in errors) ----------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define UpdateMmLocation         ;;Only call when generating VBSCRIPT code
+
+   ;--- Get info about where we are and what we are doing -------------------
+   #evaluate ^^ ^<$Rexx4UpdateMmLocation {$?}>^
+
+   ;--- Generate the "code" -------------------------------------------------
+   <??@@Vb>
+#)
+#RexxVar    @@CurrentMacroID = 0
+#RexxVar    @@PrevSrcLineMarker = ''
+#RexxVar    @@SrcLineOverride = ''
+#define LocationSrcLineOverride \
+        #RexxVar @@SrcLineOverride = ^{$Line=''}^
+#RexxVar 'RxProgressText' = ''
+#DefineRexx 'Rexx2SetProgressText' NOPACK
+    RxProgressText = {$ProgressExp=''}
+#DefineRexx
+#if  ['<$LOCATION_COMMAND_VERBOSE_OUTPUT_ALLOWED>' = 'N']
+    ;--- Does nothing! ------------------------------------------------------
+    #define Rexx2ShowProgress
+#elseif
+    ;--- We do output progress ----------------------------------------------
+    #DefineRexx 'Rexx2ShowProgress' NOPACK
+        ;--- We are allowed to output status, Do we want to? ----------------
+        if  @@VerboseOutputAllowed = 'Y' then
+        do
+            ;--- Need to reset counter --------------------------------------
+            if  @@VerboseLastCntr <> ConsoleCount() then
+            do
+                ;--- Some output was displayed ------------------------------
+                <$VerboseReset>
+            end;
+
+            ;--- We want verbose output -------------------------------------
+            @@Diff = abs(time('S') - @@VerboseLastTime);     ;;Handle midnight reasonably well!
+            if  @@Diff >= @@VerboseOutputFrequency then
+            do
+                <$LOCATION_PROGRESS_MSG LocnVar="RxMmLocation">
+                <$VerboseReset>
+            end;
+        end;
+    #DefineRexx
+#endif
+#DefineRexx 'Rexx4UpdateRxMmLocationOnly' NOPACK
+   ;--- Create a SHORT file location string ---------------------------------
+   @@F  = InputComponentLevel();
+   @@Fl = InputComponentLineLevel();
+   RxMmLocationFSN = _Filespec('name', @@F);
+   RxMmLocation    = RxMmLocationFSN || '(' || @@Fl || ')';
+#DefineRexx
+#DefineRexx 'Rexx4UpdateMmLocation' NOPACK
+   ;--- See if this makes a difference (huge improvement) -------------------
+   call FlushQueuedOutput;
+
+   ;--- Create a SHORT file location string ---------------------------------
+   @@F  = InputComponentLevel();
+   @@Fl = InputComponentLineLevel();
+   RxMmLocationFSN = _Filespec('name', @@F);
+   RxMmLocation    = RxMmLocationFSN || '(' || @@Fl || ')';
+
+   ;--- Work out what we wish to show as the "source line" ------------------
+   if   @@SrcLineOverride <> '' then
+        @@SrcLine = @@SrcLineOverride;
+   else
+        @@SrcLine = space(GetFileLineBeingProcessed())
+
+   ;--- Work out the Unique VBS Marker --------------------------------------
+   @@CurrentMacroID = @@CurrentMacroID + 1
+   @@Id = @@CurrentMacroID
+   if  @@Id < 1000 then
+       @@Id = right(@@Id, 4, '0');
+   @@VbsMarker = '@VBS' || @@Id;
+
+   ;--- Output PPWIZARD debug -----------------------------------------------
+   call debug "AT: " || RxMmLocation || ' - ' || @@VbsMarker
+
+   ;--- Already output info once? -------------------------------------------
+   @@Vb = ''
+   @@SrcLineMarker = RxMmLocation || ':' || @@SrcLine;
+   if @@SrcLineMarker <> @@PrevSrcLineMarker then
+   do
+       ;--- Generate VB Separator -------------------------------------------
+       @@VB = @@VB || '<?NewLine><?NewLine><?NewLine>'
+       @@VB = @@VB || "'" || copies('#', 70) || '<?NewLine>'
+       @@VB = @@VB || 'MmLL = "' || RxMmLocation || '"<?NewLine>'
+       @@VB = @@VB || 'MmLT = "' || ReplaceString(@@SrcLine, '"', '""') || '"<?NewLine>'
+       @@VB = @@VB || "'" || copies('#', 70) || '<?NewLine>'
+       @@VB = @@VB || '<?NewLine>'
+       @@PrevSrcLineMarker = @@SrcLineMarker;
+
+       ;--- Info changed, remove any cached progress info -------------------
+       <$Rexx2SetProgressText ProgressExp=^@@SrcLine^>
+
+       ;--- Debug output ----------------------------------------------------
+       #if  ['<$DBG_LOCATION>' <> 'N']
+            <$DBG_NEWLINE>
+            <$DBG_SAY_LOCATION> 'Script : ' || RxMmLocation || ' - ' || @@VbsMarker
+            if  pos('$Rexx4UpdateMmLocation', @@SrcLine) = 0 then
+            do
+                <$DBG_SAY_LOCATION> 'Command: ' || @@SrcLine
+            end;
+            <$DBG_NEWLINE>
+       #endif
+   end;
+
+   ;--- Simple indicator or progress ----------------------------------------
+   <$Rexx2ShowProgress>
+
+   ;--- Put unique marker into VBS ------------------------------------------
+   @@VB = @@VB || '<?NewLine>MmID = "' || @@VbsMarker || '"<?NewLine>'
+#DefineRexx
+
+
+#NextId UNLOCK "LOCATION.MMH"
+

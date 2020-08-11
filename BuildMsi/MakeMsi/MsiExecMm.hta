@@ -1,0 +1,270 @@
+<script language="vbscript">
+'---
+'--- $Header:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MsiExecMm.hta.pvcs   1.5   15 Nov 2008 13:58:08   USER "Dennis"  $
+'---
+BoxWidth  = 800 : if BoxWidth  > screen.availWidth  then BoxWidth  = screen.availWidth  - 20
+BoxHeight = 350 : if BoxHeight > screen.availHeight then BoxHeight = screen.availHeight - 20
+BoxX      = (screen.availWidth  - BoxWidth)  / 2
+BoxY      = (screen.availHeight - BoxHeight) / 2
+moveto   BoxX,     BoxY
+resizeto BoxWidth, BoxHeight
+</script>
+<html>
+<head>
+<HTA:APPLICATION
+ID="oMsiExecMm"
+APPLICATIONNAME="MSI MENU v08.320"
+SCROLL="auto"
+SINGLEINSTANCE="no"
+WINDOWSTATE="normal"
+ContextMenu="no"
+CAPTION="no"
+maximizeButton="no"
+minimizeButton="no"
+ICON="MsiExecMm.ico"
+SHOWINTASKBAR="Yes"
+>
+
+<title>MSI MENU v08.320</title>
+
+<style>
+textarea
+{
+font-family: arial;
+font-size: 9pt;
+color: blue;
+margin-left: 3px;
+}
+</style>
+</head>
+
+<body ID="IdBody" bgcolor="#FFFED3">
+<center>
+<h1>MSI MENU</h1>
+
+
+<script language="vbscript">
+function MkObject(ObjectId)
+on error resume next
+set MkObject = CreateObject(Objectid)
+if  err.number <> 0 then
+MsgBox "Probably windows Issue. We could not create the object """ & ObjectId & """!", vbCritical, "WINDOWS BUG?"
+window.close()
+end if
+end function
+
+
+function ReplaceTextCodes(byVal Text)
+Text = replace(Text, "{?:MSIEXEC.EXE}",        "msiexec.exe")
+Text = replace(Text, "{?}",      DbFile)
+Text = replace(Text, "{?:P}",  oFS.GetParentFolderName(DbFile))
+Text = replace(Text, "{?:B}",      oFS.GetFileName(DbFile))
+ReplaceTextCodes = Text
+end function
+
+
+function RemoveControlCodes(byVal Text)
+Text = replace(Text, "{!:MD}", "")
+RemoveControlCodes = Text
+end function
+
+
+sub CreateDir(byVal DirName)
+if  DirName = "" then exit sub
+on error resume next
+dim ParentDir : ParentDir = oFS.GetParentFolderName(DirName)
+if  not oFS.FolderExists(ParentDir) then
+CreateDir ParentDir
+end if
+if  not oFS.FolderExists(DirName) then
+oFS.CreateFolder DirName
+end if
+end sub
+
+
+sub OptionSelected()
+dim Index      : Index = TaskSelectPulldown.SelectedIndex
+dim OptionKey  : OptionKey = TaskSelectPulldown.options(Index).value
+dim OptionInfo : OptionInfo = split(oINI(OptionKey), "|", 2)
+dim CmdLine : CmdLine = ReplaceTextCodes(OptionInfo(1))
+CommandLine.Value = CmdLine
+end sub
+
+
+sub Wait(StartWait)
+if  StartWait then
+IdBody.style.cursor = "wait"
+ExecuteButton.Title = "Already executing a task, can't start another until it completes!"
+CloseButton.Title   = "Sorry but you can't close this application until the executing task completes!"
+else
+IdBody.style.cursor = ""
+ExecuteButton.Title = "Execute the command currently displayed in the text box below!"
+CloseButton.Title   = "Close this menu program!"
+end if
+ExecuteButton.disabled      = StartWait
+CloseButton.disabled        = StartWait
+CommandLine.disabled        = StartWait
+TaskSelectPulldown.disabled = StartWait
+end sub
+
+
+sub Execute()
+Wait(true)
+dim Index      : Index = TaskSelectPulldown.SelectedIndex
+dim OptionKey  : OptionKey = TaskSelectPulldown.options(Index).value
+dim OptionInfo : OptionInfo = split(oINI(OptionKey), "|", 2)
+dim CmdLine : CmdLine = CommandLine.Value
+if  instr(CmdLine, vbCR) <> 0 or instr(CmdLine, vbLF) <> 0 then
+MsgBox "Newlines are not allowed in the command!", vbCritical, "DON'T PRESS ENTER!"
+Wait(false)
+exit sub
+end if
+if  trim(CmdLine) = "" then
+MsgBox "The text box is empty!", vbCritical, "EXECUTE WHAT?"
+Wait(false)
+exit sub
+end if
+dim DirMarker : DirMarker = "{!:MD}"
+do
+dim Bits : Bits = split(CmdLine, DirMarker, 3)
+if  ubound(Bits) < 1 then
+exit do
+end if
+dim MkDir : MkDir = Bits(1)
+on error resume next
+ExecRc = oShell.run("cmd.exe /c rd """ & MkDir & """ /s /q",0, true)
+oFS.DeleteFolder MkDir
+CreateDir        MkDir
+if  not oFS.FolderExists(MkDir) then
+MsgBox "Could not create the """ & MkDir & """ directory!", vbCRITICAL
+Wait(false)
+exit sub
+end if
+if  ubound(Bits) = 1 then
+CmdLine = Bits(0) & Bits(1)
+else
+CmdLine = Bits(0) & Bits(1) & Bits(2)
+end if
+loop
+dim T : T = ""
+T = T & "We are about to execute the command:"  & vbCRLF & vbCRLF
+T = T & CmdLine
+'        T = T & "Please confirm it (with or without change). "
+'        T = T & "A blank value or the ""Cancel"" button aborts execution!"  & vbCRLF
+on error resume next
+dim ExecRc : ExecRc = oShell.run(CmdLine, 1, true)
+if  err.number <> 0 then
+T = "The command failed to start!"
+T = T & vbCRLF & vbCRLF
+T = T & vbTab & "* Does the executable exist?"
+T = T & vbCRLF
+T = T & vbTab & "* Is it in the PATH?"
+T = T & vbCRLF & vbCRLF & vbCRLF
+T = T & "The full command was:"  & vbCRLF & vbCRLF
+T = T & CmdLine
+MsgBox T, vbCritical, "COULD NOT START THE COMMAND"
+Wait(false)
+exit sub
+end if
+on error goto 0
+T = CmdLine & vbCRLF & vbCRLF & "The above command has completed execution with a return code of " & ExecRc & "."
+MsgBox T, vbInformation, "FINISHED: RC = " & ExecRc
+Wait(false)
+end sub
+
+
+
+
+dim Arguments : Arguments = split(oMsiExecMm.commandLine, "(=)")
+if  ubound(Arguments) < 2 then
+MsgBox "Invalid arguments ('(=)' used as separator):" & vbCRLF  & vbCRLF & oMsiExecMm.commandLine, vbCritical, "Command line Error"
+window.close()
+end if
+dim oShell  : set oShell  = MkObject("WScript.Shell")
+dim oFS     : set oFs     = MkObject("Scripting.FileSystemObject")
+dim oIniMm  : set oIniMm  = MkObject("Scripting.Dictionary")
+dim oIni    : set oIni    = MkObject("Scripting.Dictionary")
+dim DbFile  : DbFile      = oFS.GetAbsolutePathName(Arguments(1))
+dim IniFile : IniFile     = oFS.GetAbsolutePathName(Arguments(2))
+if  not oFS.FileExists(DbFile) then
+MsgBox "The windows installer file """ & DbFile & """ doesn't exist!", vbCritical, "Command line Error"
+window.close()
+end if
+if  not oFS.FileExists(IniFile) then
+MsgBox "The configuration file """ & IniFile & """ doesn't exist!", vbCritical, "Command line Error"
+window.close()
+end if
+const ForReading            = 1
+dim Section    : Section    = ""
+dim OptionsCnt : OptionsCnt = 0
+dim Options()
+dim oStream  : set oStream = oFS.OpenTextFile(IniFile, ForReading)
+do  while oStream.AtEndOfStream <> true
+dim FileLine : FileLine = trim(oStream.ReadLine())
+if  FileLine <> "" and left(FileLine, 1) <> ";" then
+if   left(FileLine, 1) = "[" then
+Section = ucase(FileLine)
+else
+dim LineInfo : LineInfo = split(FileLine, "=", 2)
+if  ubound(LineInfo) <> 0 then
+if  Section = "[MAKEMSI]" then
+oIniMm.add LineInfo(0), LineInfo(1)
+else
+oIni.add LineInfo(0), LineInfo(1)
+redim preserve Options(OptionsCnt)
+Options(OptionsCnt) = LineInfo(0) & chr(0) & LineInfo(1)
+OptionsCnt = OptionsCnt + 1
+end if
+end if
+end if
+end if
+loop
+oStream.close
+oKeys = oIniMm.Keys
+for i = 0 to oIniMm.count-1
+MmKey  = oKeys(i)
+if  not oIni.exists(MmKey) then
+redim preserve Options(OptionsCnt)
+Options(OptionsCnt) = MmKey & chr(0) & oIniMm(MmKey)
+OptionsCnt = OptionsCnt + 1
+oIni.add MmKey, oIniMm(MmKey)
+end if
+next
+if  OptionsCnt = 0 then
+MsgBox "Didn't find any MSIEXEC option in the INI file """ & IniFile & """!", vbCritical, "NO OPTIONS!"
+window.close()
+end if
+for i = OptionsCnt-1-1 To 0 Step -1
+for j = 0 to i
+if  Options(j) > Options(j+1) then
+temp         = Options(j+1)
+Options(j+1) = Options(j)
+Options(j)   = temp
+end if
+next
+next
+document.write "<select name='TaskSelectPulldown' onChange='OptionSelected()'>"
+for i = 0 to OptionsCnt-1
+OptionInfo1 = split(Options(i), chr(0), 2)
+OptionKey  = OptionInfo1(0)
+OptionInfo2 = split(OptionInfo1(1), "|", 2)
+if  OptionKey = "Install" then
+Selected = " SELECTED"
+else
+Selected = ""
+end if
+document.write "<option value='" & OptionKey & "'" & Selected & ">" & ReplaceTextCodes(OptionInfo2(0)) & "</option>"
+next
+document.write "</select>"
+document.write "&nbsp;"
+document.write "<input type='button' name='ExecuteButton' value='Execute'onClick='Execute()'>"
+document.write "<p>"
+document.write "<textarea rows='6' name='CommandLine' cols='140' wrap='soft' title='This is the command to be executed when the EXECUTE button is pressed. You can modify it if you wish.&#10;&#10;This command may contain some codes, do not touch these until you have read the manual and understand what they are!'></textarea>"
+OptionSelected()
+document.write "<p><input type='button' name='CloseButton' value='Close' onClick='window.close'>"
+document.write "<hr color=red><small>" & DbFile & "</small>"
+Wait(False)
+</script>
+</center>
+</body>
+</html>

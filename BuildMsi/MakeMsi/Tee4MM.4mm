@@ -1,0 +1,204 @@
+/**+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+
+* Generator   : PPWIZARD version 03.246
+*             : FREE tool for Windows, OS/2, DOS and UNIX by Dennis Bareis (dbareis@labyrinth.net.au)
+*             : http://www.labyrinth.net.au/~dbareis/ppwizard.htm
+* Time        : Saturday, 13 Sep 2003 2:26:15pm
+* Input File  : D:\DBAREIS\PROJECTS\Win32\Tee\Tee.X
+* Output File : D:\DBAREIS\PROJECTS\Win32\Tee\out\Tee.REX
+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*/
+
+if arg(1)="!CheckSyntax!" then exit(21924)
+
+PgmVersion = '03.256'
+Parms  = strip(arg(1))
+ParmsU = translate(Parms)
+if ParmsU = '/?' | ParmsU = '/HELP' | ParmsU = '-?' | ParmsU = '-HELP' then
+ShowSyntax()
+if Parms = '' then
+Parms = 'tee.out'
+if left(Parms, 1) <> "'" then
+parse var Parms OutFile Parms
+else
+parse var Parms "'" OutFile "'" Parms
+OutFile = ReplaceCodes(OutFile)
+if stream(OutFile, 'c', 'query exists') <> '' then
+do
+address system 'del "' || OutFile || '" >nul 2>&1'
+if  stream(OutFile, 'c', 'query exists') <> '' then
+do
+Text = 'Could not delete "' || OutFile || '"'
+call Beep 800,100
+call Beep 900,100
+call Beep 800,100
+say  Text
+say  copies('~', length(Text))
+call Sleep 2
+end
+end
+ErrorCnt = 0
+GoodCnt  = 0
+OkCnt    = 0
+do while Parms <> ''
+Parms = strip(Parms)
+if left(Parms, 1) <> "'" then
+parse var Parms ThisOne Parms
+else
+parse var Parms "'" ThisOne "'" Parms
+ThisOne = ReplaceCodes(space(ThisOne))
+if  left(ThisOne, 1) <> '!' then
+do
+ErrorCnt           = ErrorCnt + 1
+ErrorText.ErrorCnt = ThisOne
+end
+else
+do
+GoodCnt          = GoodCnt + 1
+GoodText.GoodCnt = substr(ThisOne, 2)
+GoodSeen.GoodCnt = 'N'
+end
+end
+ReadWhat        = '<stdin>'
+LinesWithErrors = 0
+LineNumber      = 1
+ColNumber       = 0
+CurrentLine     = ''
+do  while chars(ReadWhat) <> 0
+CurrentChar = charin(ReadWhat)
+ColNumber   = ColNumber + 1
+FileState   = stream(ReadWhat, 'State')
+if  FileState <> 'READY' & FileState <> '' then
+CantReadFromStdin(LineNumber, FileState)
+call charout        , CurrentChar
+call charout OutFile, CurrentChar
+if  pos(CurrentChar, '0D0A1A'x) = 0 then
+CurrentLine = CurrentLine || CurrentChar
+else
+do
+LineNumber = LineNumber + 1
+ColNumber  = 0
+if  GoodCnt <> 0 | ErrorCnt <> 0 then
+do
+LookIn = space(CurrentLine)
+if  GoodCnt <> 0 then
+do
+do  Index = 1 to GoodCnt
+Look4 = GoodText.Index
+if  pos(Look4, LookIn) <> 0 then
+do
+GoodSeen.Index = 'Y'
+end
+end
+end
+if  ErrorCnt <> 0 then
+do
+do  Index = 1 to ErrorCnt
+Look4 = ErrorText.Index
+if  pos(Look4, LookIn) <> 0 then
+do
+LinesWithErrors = LinesWithErrors + 1
+leave
+end
+end
+end
+end
+CurrentLine = ''
+end
+end
+if LinesWithErrors <> 0 then
+TeeExit(LinesWithErrors)
+if  GoodCnt <> 0 then
+do
+ExitRc = 0
+do  Index = 1 to GoodCnt
+if  GoodSeen.Index = 'N' then
+ExitRc = ExitRc + 1
+end
+if  ExitRc <> 0 then
+TeeExit(ExitRc)
+end
+TeeExit(0)
+
+TeeExit:
+exit(arg(1))
+
+ReplaceCodes:
+NewString = ReplaceString(arg(1),    '%spc',   ' ')
+NewString = ReplaceString(NewString, '%caret', '^')
+NewString = ReplaceString(NewString, '%_',     ' ')
+NewString = ReplaceString(NewString, '%{',     '<')
+NewString = ReplaceString(NewString, '%}',     '>')
+NewString = ReplaceString(NewString, '%!',     '|')
+NewString = ReplaceString(NewString, '%%',     '%')
+return(NewString)
+
+ReplaceString:
+TheString    = arg(1)
+ChangeFrom   = arg(2)
+ChangeTo     = arg(3)
+ChangeFromLength = length(ChangeFrom)
+ChangeToLength   = length(ChangeTo)
+FoundPosn = pos(ChangeFrom, TheString)
+do  while FoundPosn <> 0
+TheString = left(TheString, FoundPosn-1) || ChangeTo || substr(TheString, FoundPosn+ChangeFromLength)
+FoundPosn = pos(ChangeFrom, TheString, FoundPosn+ChangeToLength)
+end
+return(TheString)
+
+ShowCopyrightHeader:
+say '[]-------------------------------------------------------------------------[]'
+say '| TEE: Version ' || PgmVersion || ' (C)opyright Dennis Bareis 2000-2003                   |'
+say '| http://www.labyrinth.net.au/~dbareis/index.htm (dbareis@labyrinth.net.au) |'
+say '[]-------------------------------------------------------------------------[]'
+say ''
+return
+
+ShowSyntax:
+Location = SIGL
+call ShowCopyrightHeader
+say 'SYNTAX'
+say '~~~~~~'
+say "    AnyCommand 2>&1 | REGINA.EXE TEE[.REX]  ['][path]LogName['] [GbSpecs]"
+say ''
+say 'DETAILS'
+say '~~~~~~~'
+say '    This command is used to intercept stdout, stderr or both and send it to'
+say '    the specified file as well as outputting it to stdout.'
+say ''
+say '    Whenever a pipe is used the original commands return code is lost, the'
+say '    "GbSpecs" parameters allow you to build your own return code based on'
+say '    on the output text.'
+say ''
+say '    A simple string such as "ERROR" or "WARNING" is what I call a "BAD" spec'
+say '    since if the strings are found then the return code will be non-zero.'
+say '    When a string is preceeded by "!" I call this a good spec as this string'
+say '    must be present for a 0 return code.  You can mix good and bad specs.'
+say d2c(7)
+exit(Location)
+
+CantReadFromStdin:
+Location   = SIGL
+LineNumber = arg(1)
+FileState  = arg(2)
+call ShowCopyrightHeader
+say "Can't read from stdin!"
+LineNumber = 1 then
+do
+say ''
+say "Note one of window's many bugs is that while output can look OK when not"
+say 'redirected it can fail when it is redirected.  This is very common when'
+say "you are relying on it's associations working!"
+say ''
+say 'To overcome this problem if you have not already directly told regina to'
+say 'load this program you should do so, DO NOT rely on windows doing the right'
+say 'thing!'
+end
+say d2c(7)
+call DelayExit
+exit(Location)
+
+DelayExit:
+do  Index = 1 to 5
+call Sleep 3
+call charout ,d2c(7)
+end
+return

@@ -1,0 +1,457 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FileInfo.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.14  $
+;          $Date:   14 Feb 2009 09:40:38  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/FileInfo.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "FileInfo.MMH"
+
+;----------------------------------------------------------------------------
+;--- Allow developer to set options based on the number of files ------------
+;----------------------------------------------------------------------------
+#define? FILEINFO_HOOK_FOR_INITIALIZATION
+<$FILEINFO_HOOK_FOR_INITIALIZATION FileCnt="<$FILE_NUMBER_OF_FILES_IN_THE_HTML_REPORT>">
+
+
+;----------------------------------------------------------------------------
+;--- GENERAL OPTIONS --------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? FILEINFO_GET_STRFILEINFO              Y
+#define? FILEINFO_GET_PROGIDS                  N        ;;Experimental to say the least...
+#ifdef  IsDos
+    #define? FILEINFO_GET_DOCUMENTINFO         N        ;;Some issue, probably minor... Anyone want to work it out?
+#elseif
+    #define? FILEINFO_GET_DOCUMENTINFO         Y
+#end if
+#define? FILEINFO_DOCUMENTINFO_OUTPUT_REXXEXP "<span class='FileCmtName'>{N}</span> <span class='FileCmtValue'>{V}</span> "
+#define? FILEINFO_PROPERTIES_GRAPHICS          Dimensions
+#define? FILEINFO_PROPERTIES_VIDEO             Dimensions, Duration, Bit Rate, Author
+#define? FILEINFO_PROPERTIES_AUDIO             Duration, Bit Rate, Author
+#define? FILEINFO_PROPERTIES_OFFICE            Author, Title, Subject, <$FILEINFO_MSSTUPIDITY_ON_COMMENTS>
+#define? FILEINFO_PROPERTIES_WINDOWS_INSTALLER Author, Title, Subject, <$FILEINFO_MSSTUPIDITY_ON_COMMENTS>
+
+
+;----------------------------------------------------------------------------
+;--- Perform Initialization for STRFINFO Properties -------------------------
+;----------------------------------------------------------------------------
+#( ';'
+    #define? FILEINFO_STRFILEINFO_DISPLAY_THESE
+
+    ;--- Keyword[|Displayed Text] -------------------------------------------
+    FileDescription|File Description
+    FileVersion|File Version
+    ProductName|Product Name
+    ProductVersion|Product Version
+    CompanyName|Company Name
+    Author
+    Maintainer
+    OriginalFileName|Original Filename
+    Proc. Architecture|Processor Architecture
+    Language
+    Package Type
+    Applies To
+    KB Article Number
+    Build Date
+    Installer Engine
+    Installation Type
+    Installer Version
+    Self-Extractor Version
+    Support Link
+#)
+#DefineRexx ''
+    ;--- Get Info array -----------------------------------------------------
+    call ArraySplit '@@sfiKeyWords', '<$FILEINFO_STRFILEINFO_DISPLAY_THESE>', ';'
+
+    ;--- Build end of strfinfo command line ---------------------------------
+    @@sfiCmdLine = ''
+    do  @@x = 1 to @@sfiKeyWords.0
+        ;--- Get query and display versions of the keyword ------------------
+        @@KeyWrd = @@sfiKeyWords.@@x;
+        parse var @@KeyWrd @@KeyWrd '|' @@KeyWrdDisplay;
+        if @@KeyWrdDisplay = '' then
+           @@KeyWrdDisplay = @@KeyWrd;
+        @@sfiKeyWrdDisplay.@@x = @@KeyWrdDisplay;
+
+        ;--- Work out command line parameters -------------------------------
+        if  pos(' ', @@KeyWrd) <> 0 then
+            @@KeyWrd = '"' || @@KeyWrd || '"';
+        @@sfiCmdLine = @@sfiCmdLine || ' ' || @@KeyWrd;
+    end;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- Idiots.... -------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? FILEINFO_MSSTUPIDITY_ON_COMMENTS      Comments, Comment
+
+;----------------------------------------------------------------------------
+;--- Properties used if non specified for specific extension ----------------
+;----------------------------------------------------------------------------
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.D    DUMP  ;;In development mode dump all values
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.P          ;;In production mode don't do anything (for extensions we didn't define)
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES      <$FILEINFO_DOCUMENTINFO_PROPERTIES.[MMMODE]>
+
+
+;-------------------------------------------------------------------------------------
+;--- What properties do you wish to display for different extensions?              ---
+;--- Individual attributes validated against those available (dropped if required) ---
+;-------------------------------------------------------------------------------------
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.BMP  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.ICO  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.GIF  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.JPG  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.PNG  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.TIF  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.PCX  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.PIC  <$FILEINFO_PROPERTIES_GRAPHICS>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.AVI  <$FILEINFO_PROPERTIES_VIDEO>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.DOC  <$FILEINFO_PROPERTIES_OFFICE>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.XLS  <$FILEINFO_PROPERTIES_OFFICE>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.PPS  <$FILEINFO_PROPERTIES_OFFICE>  ;;Power Point SlideShow
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.PPT  <$FILEINFO_PROPERTIES_OFFICE>  ;;Power Point
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.MP3  <$FILEINFO_PROPERTIES_AUDIO>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.WAV  <$FILEINFO_PROPERTIES_AUDIO>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.WMA  <$FILEINFO_PROPERTIES_AUDIO>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.MID  <$FILEINFO_PROPERTIES_AUDIO>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.MSI  <$FILEINFO_PROPERTIES_WINDOWS_INSTALLER>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.MSM  <$FILEINFO_PROPERTIES_WINDOWS_INSTALLER>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.PCP  <$FILEINFO_PROPERTIES_WINDOWS_INSTALLER>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.CUB  <$FILEINFO_PROPERTIES_WINDOWS_INSTALLER>
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.EXE  IGNORE ;;Use STRFINFO
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.DLL  IGNORE ;;Use STRFINFO
+#define? FILEINFO_DOCUMENTINFO_PROPERTIES.OCX  IGNORE ;;Use STRFINFO
+
+
+
+;----------------------------------------------------------------------------
+;--- Macro ------------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@AvailableAttributes = ''         ;;List of attributes separated by "|", starts and ends with delimiter
+#RexxVar @@DumpThese           = ''         ;;Used if "DUMP selected ("{Attr1?} {Attr2?} ... {AttrN?}"
+#DefineRexx 'FileInfoRexx2ExtractDocumentProperties'
+   ;--- Getting file information --------------------------------------------
+   #if  ['<$DBG_FILEINFO>' <> 'N']
+        <$DBG_NEWLINE>
+        <$DBG_SAY> 'FileInfoRexx2ExtractDocumentProperties() ' || {$FileVar};
+        <$DBG_INC>
+   #endif
+   @@SFI      = "";
+   @@FileName = {$FileVar};
+
+   ;--- Compile STRFINFO out? -----------------------------------------------
+   #if  ['<$FILEINFO_GET_STRFILEINFO>' = 'Y']
+       ;--- Check this file? ------------------------------------------------
+       #if  ['<$DBG_FILEINFO>' <> 'N']
+            <$DBG_SAY> 'Look for "STRFILEINFO" in executables...';
+            <$DBG_INC>
+       #endif
+       if  translate(@@FileName) = translate('<?InputFile>') then
+           @@Mz = '';              ;;Never close the base file!!!!!!!
+       else
+       do
+           ;--- Check the first 2 bytes of this file ------------------------
+           @@Mz = charin(@@FileName, 1, 2);            ;;Expect "MZ" for executable
+           call FileClose @@FileName, "N";             ;;Above fails on files 0 or 1 bytes long
+       end;
+       if  @@Mz = 'MZ' then
+       do
+           ;--- Looks like an executable ------------------------------------
+           @@Try = 'Y'
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_SAY> 'The file begins with "MZ" (probably an executable)';
+           #endif
+       end;
+       else
+       do
+           ;--- No go! ------------------------------------------------------
+           @@Try = 'N'
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_SAY> 'The file does not begin with "MZ" (so can''t contain STRFILEINFO)';
+           #endif
+       end;
+
+       ;--- Want to try? ----------------------------------------------------
+       if  @@Try = 'Y' then
+       do
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_SAY> 'Looks like it could contain STRFILEINFO... Will try to obtain...'
+                <$DBG_INC>
+           #endif
+           @@TempFile  = RexGetTmpFileName('FI?????.TMP');
+           @@Cmd       = 'StrFInfo.exe "' || @@FileName || '"' || @@sfiCmdLine;
+           @@Rc = AddressCmd(@@Cmd || ' > "' || @@TempFile || '" <$Stderr2Out>');
+           if  @@Rc = 0 then
+           do
+               ;--- Read the programs output --------------------------------
+               @@x = 0
+               do   while lines(@@TempFile) <> 0
+                    ;--- Read the next line ---------------------------------
+                    @@ThisLine = strip(linein(@@TempFile));
+                    #if  ['<$DBG_FILEINFO>' <> 'N']
+                         <$DBG_SAY> @@ThisLine;
+                    #endif
+                    @@x        = @@x + 1;
+                    parse var @@ThisLine @@KeyWord '=' @@KeyValue;
+                    if  @@KeyValue <> 'FAILED' & @@KeyValue <> '' then
+                    do
+                        if  @@Sfi <> '' then
+                            @@Sfi = @@Sfi || ' ';
+                        @@Sfi = @@Sfi || "<span class='FileCmtName'>"
+                        @@Sfi = @@Sfi ||        @@sfiKeyWrdDisplay.@@x
+                        @@Sfi = @@Sfi || '</span> ';
+                        @@Sfi = @@Sfi || "<span class='FileCmtValue'>"
+                        @@Sfi = @@Sfi ||        @@KeyValue;
+                        @@Sfi = @@Sfi || '</span>';
+                    end;
+               end;
+               call FileClose @@TempFile
+           end;
+
+           ;--- Now delete the temporary file -------------------------------
+           call _SysFileDelete @@TempFile;
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_DEC>
+           #endif
+       end;
+       #if  ['<$DBG_FILEINFO>' <> 'N']
+            <$DBG_DEC>
+       #endif
+   #endif
+
+   ;--- Compile PROGID out? -------------------------------------------------
+   #if  ['<$FILEINFO_GET_PROGIDS>' = 'Y']
+        #if  ['<$FILEINFO_GET_STRFILEINFO>' = 'N']
+             ;--- Sorry for now weRely on info from above... ----------------
+             #if  ['<$DBG_FILEINFO>' <> 'N']
+                    <$DBG_SAY> 'WARNING: Can't get ProgIds unless "STRFILEINFO" gathering is active...'
+             #endif
+        #elseif
+             ;--- We want PROGID info ---------------------------------------
+             if  @@Try = 'Y' then
+             do
+                 ;--- This file may also contain some... --------------------
+             end;
+        #endif
+   #endif
+
+   ;--- Get document Information --------------------------------------------
+   #if  ['<$FILEINFO_GET_DOCUMENTINFO>' = 'Y']
+       #if  ['<$DBG_FILEINFO>' <> 'N']
+            <$DBG_SAY> 'Will try to get document properties from explorer...'
+            <$DBG_INC>
+       #endif
+
+       ;--- Initialization --------------------------------------------------
+       #define? FILEINFO_DOCUMENT_PROPERTIES_INIT_TIMEOUT_IN_SECONDS 5
+       @@TempFile  = RexGetTmpFileName('FI?????.TMP');
+       @@Pgm       = "<??*MAKEMSI_DIR $$Del:\>MmDocumentProperties.VBS"
+       if   @@AvailableAttributes = '' then
+       do
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_SAY> 'Document properties initialization...'
+                <$DBG_INC>
+           #endif
+
+           ;--- Need to get a list of available attributes (Windows crap...) ---
+           #if  ['<$FILEINFO_DOCUMENT_PROPERTIES_INIT_TIMEOUT_IN_SECONDS>' = '0']
+                ;--- Don't want a time out ----------------------------------
+                @@CsInvoke = '<$MAKEMSI_CSCRIPT.EXE>';
+           #elseif
+                ;--- We want protection against hangs (Runprocess.exe a bit quirky) ---
+                @@CsInvoke = 'RunProcess_.exe /k:<$FILEINFO_DOCUMENT_PROPERTIES_INIT_TIMEOUT_IN_SECONDS>s <$Cmd.EXE> /c <$MAKEMSI_CSCRIPT.EXE>';
+           #endif
+           @@0Rc = 63                                 ;;Almost anything but 0...
+           @@Cmd = @@CsInvoke || ' "' || @@Pgm || '" ? /Dump /OkRc:' || @@0Rc;
+           @@Rc  = AddressCmd(@@Cmd || ' > "' || @@TempFile || '" <$Stderr2Out>', @@TempFile);
+           if  @@Rc <> @@0Rc then
+           do
+               ;--- Show/log redirected output ------------------------------
+               @@Output = charin(@@TempFile, 1, 9999999)
+               call FileClose @@TempFile, 'N';
+               call say ''
+               call say copies('%', 78)
+               call say @@Cmd;
+               call say copies('%', 78)
+               call say  @@Output;
+               call say copies('%', 78)
+               call Say2Logs ''
+               call Say2Logs '#### START: ' || @@Cmd  || copies('#', 30)
+               call Say2Logs @@Output;
+               call Say2Logs '####   END: ' || @@Cmd  || copies('#', 30)
+               call Say2Logs ''
+
+               ;--- Warn user -----------------------------------------------
+               call warning 'FILEINFO', 'Document properties init failed (Rc=' || @@Rc || ')'
+               #if  ['<$FILEINFO_DOCUMENT_PROPERTIES_INIT_TIMEOUT_IN_SECONDS>' <> '0']
+                    call Info 'Buggy shell extensions (like "FolderSize" < v2.0) can cause this.';
+                    call Info 'To turn off set the "FILEINFO_GET_DOCUMENTINFO" macro to "N"';
+               #endif
+
+               ;--- Disable document properties -----------------------------
+               @@AvailableAttributes = "*NoneAvailable*"    ;;Somethings wrong
+           end;
+           else
+           do
+               ;--- Read the whole file -------------------------------------
+               do   while lines(@@TempFile) <> 0
+                    ;--- Read the line and extract attribute ----------------
+                    @@DpLine = linein(@@TempFile)
+                    #if  ['<$DBG_FILEINFO>' <> 'N']
+                         <$DBG_SAY> 'PROPERTY LINE: ' || @@DpLine;
+                    #endif
+                    parse var @@DpLine . '{' @@Attrib '}' .;
+
+                    ;--- Add the attribute to the list ----------------------
+                    @@AvailableAttributes = @@AvailableAttributes || "|" || @@Attrib;
+                    if  @@Attrib <> '' then
+                    do
+                        if  @@DumpThese <> '' then
+                            @@DumpThese = @@DumpThese || ','
+                        @@DumpThese = @@DumpThese || @@Attrib
+                    end;
+               end;
+               @@AvailableAttributes = @@AvailableAttributes || "|"
+               call FileClose @@TempFile
+           end;
+           call _SysFileDelete @@TempFile;
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_DEC>
+           #endif
+       end;
+
+       ;--- Work out the template we should use -----------------------------
+       @@Extn     = translate(FilePart('extn', @@FileName));
+       @@Symbol   = "@@TEM_EXTN_" || c2x(@@Extn)
+       if   symbol(@@Symbol) = 'VAR' then
+            @@Template = value(@@Symbol);       ;;Previously worked out value (have seen this extension before)
+       else
+       do
+            #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_SAY> 'Need to determine a template for the extension: ' || @@Extn;
+                <$DBG_INC>
+            #endif
+
+            ;--- Get the document properties as specified by the user -------
+            @@Mac      = "FILEINFO_DOCUMENTINFO_PROPERTIES";
+            @@MacExtn  = @@Mac || "." || @@Extn;
+            if  defined(@@MacExtn, "I") = 'Y' then
+                @@DocProperties = MacroGet(@@MacExtn);   ;;May be ""
+            else
+                @@DocProperties = "";
+            if  @@DocProperties = '' then
+            do
+                ;--- Get generic template if available (no extn specific one) ---
+                if  defined(@@Mac, "I") = 'Y' then
+                    @@DocProperties = MacroGet(@@Mac);
+            end
+            if  translate(@@DocProperties) = 'IGNORE' then
+                @@DocProperties = "";
+
+            ;--- Translate this into a template -----------------------------
+            @@Template = '';
+            if  @@DocProperties <> '' then
+            do
+                ;--- Replace any macros the template may contain ------------
+                @@DocProperties = ReplaceMacros(@@DocProperties);
+                if  translate(@@DocProperties) = 'DUMP' then
+                    @@DocProperties = @@DumpThese;
+
+                ;--- Build a "MmDocumentProperties.VBS" template for properties ---
+                do   while  @@DocProperties <> ""
+                    ;--- Get next property --------------------------------------
+                    parse var @@DocProperties @@OneProperty "," @@DocProperties
+                    if  @@OneProperty <> '' then
+                    do
+                        ;--- Is this an "available" property? -------------------
+                        @@OneProperty = strip(@@OneProperty);
+                        if  pos("|" || @@OneProperty || "|", @@AvailableAttributes) <> 0 then
+                        do
+                            ;--- It is valid for this opsys/level do add this property to the template ---
+                            @@Template = @@Template || '{' || strip(@@OneProperty) || '?}'
+                        end;
+                    end;
+                end;
+            end;
+
+            ;--- Save the value for next time -------------------------------
+            call value @@Symbol, @@Template;
+            #if  ['<$DBG_FILEINFO>' <> 'N']
+                if  @@Template <> "" then
+                do
+                    <$DBG_SAY> 'Extension template is: ' || @@Template;
+                end;
+                else
+                do
+                    <$DBG_SAY> 'No template for this extension (won''t process)';
+                end;
+                <$DBG_DEC>
+            #endif
+       end;
+
+       ;--- Now if we can process this file, get the document properties ----
+       if  @@Template <> "" then
+       do
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_SAY> 'Get document properties for: ' || @@FileName;
+                <$DBG_INC>
+           #endif
+
+           ;--- call "MmDocumentProperties.VBS" -----------------------------
+           @@OutTemplate = <$FILEINFO_DOCUMENTINFO_OUTPUT_REXXEXP>;
+           @@TempFile  = RexGetTmpFileName('FI?????.TMP');
+           @@Pgm       = "<??*MAKEMSI_DIR $$Del:\>MmDocumentProperties.VBS"
+           @@Cmd       = '<$MAKEMSI_CSCRIPT.EXE> "' || @@Pgm || '" "' || @@FileName || '" "/Output:' || @@Template || '"  "/Template:' || @@OutTemplate || '" "/Newline:<br>"';
+           @@Rc        = AddressCmd(@@Cmd || ' > "' || @@TempFile || '" <$Stderr2Out>', @@TempFile);
+           if  @@Rc <> 0 then
+               @@Contents = ""
+           else
+           do
+               ;--- Read the whole file ---------------------------------
+               @@Contents = charin(@@TempFile, 1, 99999);
+               call FileClose @@TempFile
+               @@Contents = ReplaceString(@@Contents, "{CRLF}", "<br>");
+               @@Contents = ReplaceString(@@Contents, "{CR}",   "<br>");
+               @@Contents = ReplaceString(@@Contents, "{LF}",   "<br>");
+
+               ;--- Separate from any other info ------------------------
+               if   @@SFI <> "" then
+                    @@SFI = @@SFI || "<p>";
+                @@SFI = @@SFI || @@Contents;
+           end;
+
+           ;--- Now delete the temporary file ---------------------------
+           call _SysFileDelete @@TempFile;
+
+           #if  ['<$DBG_FILEINFO>' <> 'N']
+                <$DBG_SAY> 'Properties: ' || @@Contents;
+                <$DBG_DEC>
+           #endif
+       end;
+       #if  ['<$DBG_FILEINFO>' <> 'N']
+            <$DBG_DEC>
+       #endif
+   #endif
+
+   ;--- Return result -------------------------------------------------------
+   {$SfiVar} = @@SFI;
+   #if  ['<$DBG_FILEINFO>' <> 'N']
+        <$DBG_DEC>
+   #endif
+#DefineRexx
+
+
+
+
+#NextId UNLOCK "FileInfo.MMH"
+

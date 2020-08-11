@@ -1,0 +1,53 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   DEBUG.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.11  $
+;          $Date:   30 Jan 2010 15:53:20  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/DEBUG.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+;--- Define what we are debugging -------------------------------------------
+;---[ForDocoMainOptions]---
+#define? DBG_ALL            N              ;;Value (Y/N) used to set default for following options...
+#define? DBG_ALL_VBS        N              ;;Value (Y/N) used to set default for following options... SUPPORT NOT TOO FLASH FOR NOW!!!!
+#define? DBG_CONFIGURATION  <$DBG_ALL>     ;;Configuration
+#define? DBG_LOCATION       <$DBG_ALL>     ;;Script Line + Command (best to have this on if any other debug is on!)
+#define? DBG_DIRECTORY      <$DBG_ALL>     ;;Directory command
+#define? DBG_DIRECTORY_TREE <$DBG_ALL>     ;;Conversion of directory tree name into one or more directory keys
+#define? DBG_MapUserDir     <$DBG_ALL>     ;;MapUserDir command
+#define? DBG_PLATFORM       <$DBG_ALL>     ;;Platform command
+#define? DBG_FILEINFO       <$DBG_ALL>     ;;During HTML generation, obtaining file information (image sizes etc)
+#define? DBG_MACROCFG       <$DBG_ALL>     ;;MacroCfg command
+#define? DBG_MSIVALFILTER   <$DBG_ALL>     ;;MsiValFilter command
+#define? DBG_MSIVALIDATION  <$DBG_ALL>     ;;The MSI validation process
+#define? DBG_SAMPLES        <$DBG_ALL>     ;;Is a file common or yours?
+#define? DBG_ROW_PARMS      <$DBG_ALL>     ;;Row command (see row manipulation by ALL commands etc (not just your own). Good way to find out where a change is being made.
+#define? DBG_PROPERTY       <$DBG_ALL>     ;;Property command
+#define? DBG_VBSCA          <$DBG_ALL>     ;;VBSCA command
+#define? DBG_RegistryImport <$DBG_ALL>     ;;RegistryImport command
+#define? DBG_ROW_OTHER      <$DBG_ALL>     ;;Row command (detail other than passed parameters).
+#define? DBG_ROW_VBS        <$DBG_ALL_VBS> ;;Row command (see value of "*" column updates)
+;---[ForDocoMainOptions]---
+
+
+;--- Increment/Decrement Indent --------------------------------------------
+#RexxVar RxDbgInc  = 0
+#define  DBG_INC     do; RxDbgInc = RxDbgInc + {$#1='1'}; call DebugInc; end;
+#define  DBG_DEC     do; RxDbgInc = RxDbgInc - {$#1='1'}; call DebugDec; if RxDbgInc < 0 then RxDbgInc = 0; end;
+
+
+;--- How to generate debug output (VBSCRIPT generation) ---------------------
+#define?  DBG_NEWLINE      call Say2Logs '0A'x
+#define?  DBG_INDENT       ReadingIndent() || copies(' ', RxDbgInc*3)
+#define? DBG_SAY_LOCATION  call Say2Logs <$DBG_INDENT> || '  ' || time() || ' '  ;;Adding time makes it a fraction slower but useful for debugging slow builds...
+#define?  DBG_SAY          call Say2Logs <$DBG_INDENT> || '    >> ' ||
+
+;--- How to generate debug output (in VBSCRIPT execution) -------------------
+#define? DBG_VBS_SAY       say MmID & ": " &

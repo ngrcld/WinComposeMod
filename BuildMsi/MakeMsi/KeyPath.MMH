@@ -1,0 +1,73 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   KEYPATH.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.2  $
+;          $Date:   10 Aug 2005 18:43:38  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/KeyPath.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "KEYPATH.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- Options ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+#define? KEYPATH_REGISTRY_HKEY  CURRENT_USER
+#define? KEYPATH_REGISTRY_KEY   <$MAKEMSI_BASE_REGISTRY_KEY>\KeyPaths\<$ProdInfo.ProductName>\<$ProductVersion>
+#define? KEYPATH_REGISTRY_VALUE [Date] [Time]
+
+
+;----------------------------------------------------------------------------
+;--- The KeyPath macro ------------------------------------------------------
+;----------------------------------------------------------------------------
+#(
+    #define KeyPathRegistry
+    <$UpdateMmLocation>
+    {$!KEYWORDS}  ;;Don't Expect any keywords!
+
+    ;--- Want a keypath for what component? ---------------------------------
+    #RexxVar @@Component = '{$Component=^^}'
+    #if [@@Component = '']
+       ;--- Get current component information -------------------------------
+       #RexxVar @@Component = RxComponent.RxComponentNestingLevel
+
+       ;--- If we still don't have a component name then "bad luck" ---------
+       #if [@@Component = '']
+           #error ^I can't create a registry keypath!{NL}You did not supply a component name and we are not nested within a component!"
+       #endif
+    #endif
+
+    ;--- Create the Keypath -------------------------------------------------
+    #(
+        <$Registry
+                KeyPath="Y"
+                   HKEY="{$HKEY=^<$KEYPATH_REGISTRY_HKEY>^}"
+                    Key="<$KEYPATH_REGISTRY_KEY>"
+                   Name="<??@@Component>"
+              Component="<??@@Component>"
+                  Value="<$KEYPATH_REGISTRY_VALUE>"
+           MsiFormatted="Value"
+                   Doco="N"
+        >
+    #)
+
+    ;--- Parameter validation -----------------------------------------------
+    {$!:HKEY,COMPONENT}
+#)
+
+
+
+
+
+#NextId UNLOCK "KEYPATH.MMH"
+
+

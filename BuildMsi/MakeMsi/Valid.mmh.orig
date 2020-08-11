@@ -1,0 +1,702 @@
+;
+;    MODULE NAME:   VALID.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.30  $
+;          $Date:   08 May 2018 13:43:52  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/Valid.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "VALID.MMH"
+
+;----------------------------------------------------------------------------
+;--- MAIN Options -----------------------------------------------------------
+;----------------------------------------------------------------------------
+;---[4Doco-MainMakemsiValidationOptions]---
+#define? VALID_MISVAL2_EXECUTED_CMD                  validate-execute.cmd
+#define? VALID_MISVAL2_EXECUTED_CMD_FILTER           validate-filter.cmd
+#define? VALID_MISVAL2_OUTPUT_CMD                    msival2-redirected.txt
+#define? VALID_MISVAL2_OUTPUT_ALL                    all-unicode.txt
+#define? VALID_MISVAL2_OUTPUT_ALL_ANSI               all-ansi.txt
+#define? VALID_MISVAL2_OUTPUT_FILTER                 FilterCommands.flt.txt
+#define? VALID_MISVAL2_OUTPUT_FILTERED               FilteredLog.TXT
+#define? VALID_MISVAL2_OUTPUT_FILTERS_USED           FiltersUsed.TXT
+#define? VALID_FILTER_FILE                           MakeMsi.FLT
+#define? VALID_FILTER_BEFORE_FILE_INCLUSION
+#define? VALID_FILTER_AFTER_FILE_INCLUSION
+#define? VALID_DIE_ON_VALIDATION_ERRORS_OR_WARNINGS  Y
+#define? VALID_HTMLRPT_IGNORE_FILTER_TRUE            <$HTML_SYMBOL_TICK>
+#define? VALID_HTMLRPT_IGNORE_FILTER_FALSE           <b><$HTML_SYMBOL_CROSS></b>
+#define? VALID_HTMLRPT_NO_MATCHES_TEXT               <span STYLE="color:grey;font-size:5pt" title="No ICE messages matching this filter were found"><b><center>&#x2717;</center></b></span>
+#define? VALID_HTMLRPT_COMMENT_DEFAULT               <span STYLE="color:grey;font-size:xx-small">*** NO REASON PROVIDED FOR THIS FILTER ***</span>
+
+;--- If HTML put into MSI we won't yet have the info (what do we want to see) ---
+#define? VALID_HTMLRPT_VAL_NOT_DONE_YET_TEXT    <small>MSI Validation hasn't occurred yet!</small>
+#define? VALID_HTMLRPT_PLACEHOLDER_S            <PlaceHolderFilter.
+#define? VALID_HTMLRPT_PLACEHOLDER_E            <?Space>/><$VALID_HTMLRPT_VAL_NOT_DONE_YET_TEXT $$Sqx2>
+#define? VALID_HTMLRPT_PLACEHOLDER_SUMMARY      <PlaceHolderSummary><$VALID_HTMLRPT_VAL_NOT_DONE_YET_TEXT $$Sqx2></PlaceHolderSummary>
+#define? VALID_HTMLRPT_PLACEHOLDER_ERRORS       <PlaceHolderErrors  />
+;---[4Doco-MainMakemsiValidationOptions]---
+
+
+;----------------------------------------------------------------------------
+;--- Handle the placemarkers defined above ----------------------------------
+;----------------------------------------------------------------------------
+#DefineRexx ''
+   @@PlaceHolderS       = ExpandXCodes( ReplaceMacros('<$VALID_HTMLRPT_PLACEHOLDER_S $$Sqx2>') )
+   @@PlaceHolderE       = ExpandXCodes( ReplaceMacros('<$VALID_HTMLRPT_PLACEHOLDER_E $$Sqx2>') )
+   @@PlaceHolderSUMMARY = ExpandXCodes( ReplaceMacros('<$VALID_HTMLRPT_PLACEHOLDER_SUMMARY $$Sqx2>') )
+   @@PlaceHolderERRORS  = ExpandXCodes( ReplaceMacros('<$VALID_HTMLRPT_PLACEHOLDER_ERRORS  $$Sqx2>') )
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- FOR DOCO ---------------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@HtmlItemCnt = 0        ;;#items for the HTML report
+
+
+;----------------------------------------------------------------------------
+;--- OPTION (where is MSIVAL2 and the ".cub" you want to use?) --------------
+;----------------------------------------------------------------------------
+#define? VALID_MSIVAL2_DIR    <??*MAKEMSI_MSIVAL2_DIR?>   ;;Normal location for MSIVAL2
+#define? VALID_MSIVAL2_COULDNT_VALIDATE_WARNING \
+         #WARNING "" ^We could not validate the complete MSI. I'd suggest that you validate it manually via ORCA or similar tool (particularly before asking for any help).^
+#ifdef MAKEMSI_CREATING_MERGE_MODULE
+    ;--- Validating MSM (merge module) --------------------------------------
+    #define? VALID_MSIVAL2_DB              <??*MAKEMSI_VALIDATE_MSM_CUB?>  ;;Environment variable does not need to exist and can be overridden
+    #define? VALID_MSIVAL2_CUB_BASENAME    mergemod.cub
+#elseif
+    ;--- Validating MSI -----------------------------------------------------
+    #define? VALID_MSIVAL2_DB                <??*MAKEMSI_VALIDATE_CUB?>  ;;Environment variable does not need to exist and can be overridden
+    #define? VALID_MSIVAL2_CUB_BASENAME  darice.cub
+#endif
+#if    ['<$VALID_MSIVAL2_DIR>' = '']
+       ;--- We can't validate -----------------------------------------------
+       #( ''
+           #define+ VALID_ValidateTheGeneratedMsi
+           #info ^====================================================^
+           #info ^MSI Validation has been turned off (or not enabled)^
+           #info ^The "VALID_MSIVAL2_DIR" macro does not point to the^
+           #info ^MSIVAL2.EXE program directory.^
+           #info ^Have you installed Microsoft's MSIVAL2 tool?^
+           #info ^====================================================^
+           <$VALID_MSIVAL2_COULDNT_VALIDATE_WARNING>
+       #)
+#elseif
+   #if    ['<$VALID_MSIVAL2_DB>' = '']
+       ;--- User did not supply a value so see if we can find "full validation" ---
+       #define @@FullCub <$VALID_MSIVAL2_DIR $$DEL:\><$VALID_MSIVAL2_CUB_BASENAME>
+       #if FileQueryExists('<$@@FullCub>') <> ''
+           ;--- The file exists -------------------------------------------------
+           #define+ VALID_MSIVAL2_DB <$@@FullCub>
+       #elseif
+           ;--- We can't validate -----------------------------------------------
+           #( ''
+               #define+ VALID_ValidateTheGeneratedMsi
+               #info ^====================================================^
+               #info ^MSI Validation has been turned off (or not enabled)^
+               #info ^The "MAKEMSI_VALIDATE_CUB" environment variable^
+               #info ^should hold the name of the ".cub" file.^
+               #info ^Have you installed Microsoft's MSIVAL2 tool?^
+               #info ^====================================================^
+               <$VALID_MSIVAL2_COULDNT_VALIDATE_WARNING>
+           #)
+       #endif
+   #endif
+#endif
+
+
+#if ['<$VALID_DIE_ON_VALIDATION_ERRORS_OR_WARNINGS>' = 'Y']
+    ;--- Die on error -------------------------------------------------------
+    #(
+        #define? VALID_ACTION_ON_VALIDATION_ERRORS_OR_WARNINGS
+        call Error 'The MSI was successfully created however ' || {$TypeVar} || ' messages',
+                   'were found during the validation step.',
+                   '',
+                   'MSIVAL2 Generated Output (filtered) - ' || AddCommasToDecimalNumber(length({$OutputVar})) || ' bytes',
+                   '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
+                   {$OutputVar}
+    #)
+#elseif
+    ;--- Just a warning ------------------------------------------------------
+    #(
+        #define? VALID_ACTION_ON_VALIDATION_ERRORS_OR_WARNINGS
+
+        ;--- Output the MSIVAL2 MESSAGE --------------------------------------
+        call say '';
+        call say '---- Start MSIVAL2 output (filtered) ----';
+        call ColorSet 'ERROR';
+        call say {$OutputVar};
+        call ColorSet 'DEFAULT';
+        call say '---- End   MSIVAL2 output (filtered) ----';
+        call say '';
+
+        ;--- Output the warning ---------------------------------------------
+        call WARNING 'VALFAIL', {$TypeVar} || ' messages found during the validation step.';
+    #)
+#endif
+
+
+;----------------------------------------------------------------------------
+;--- Add to validations macro -----------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@ValFilterCnt = 0
+#(
+    #define MsiValFilter
+    #evaluate ^^ ^<$@@Rexx4MsiValFilter {$?}>^
+    {$!:#1,RE,TYPE,CASE,COMMENT,WHERE}
+#)
+#DefineRexx '@@Rexx4MsiValFilter'
+    {$#1='' $$RxVar:@@TextOrig}
+    {$Comment='' $$RxVar:@@Comment}
+    {$Where='' $$RxVar:@@Where}
+    @@RE   = translate('{$RE=^N^}');
+    @@Case = translate('{$Case=^S^}');
+    @@Type = '{$Type=^-^}';
+    @@Text = @@TextOrig;
+    @@CiText = 'Case sensitive';
+    if  @@Case = 'I' then
+    do
+        ;--- CASE INSENSITIVE -----------------------------------------------
+        if  @@Re = 'N' then
+            error('Case insensitivity is currently only supported for regular expressions!');
+        else
+        do
+            @@Text   = 'Re:' || @@Text
+            @@CiText = 'Case insensitive';
+        end;
+    end;
+    else
+    do
+        ;--- Only other valid option is "S" ---------------------------------
+        if  @@Case <> 'S' then
+            Error('The CASE parameter should be "I" or "S", not "' || @@Case || '"');
+        else
+        do
+            ;--- CASE SENSITIVE ---------------------------------------------
+            if  @@Re = 'Y' then
+                @@Text   = 'RE:' || @@Text
+        end;
+    end;
+    if  @@Type <> '+' & @@Type <> '-' then
+        error('The TYPE parameter contained "' || @@Type || '", it should be "+" or "-"!');
+
+    ;--- Generate the desired line ------------------------------------------
+    @@Q = QuoteIt(@@Text, '/\~!@#$%^&*=');
+    @@Line = @@Q || @@Type || @@Text || @@Q
+
+    ;--- Work out full comment ----------------------------------------------
+    @@FullCmt = GetInputFileNameAndLine()
+    if  @@Comment <> '' Then
+        @@FullCmt = @@FullCmt || ': ' || @@Comment;
+
+   ;--- Start DEBUG ---------------------------------------------------------
+   #if  ['<$DBG_MSIVALFILTER>' <> 'N']
+       <$DBG_NEWLINE>
+       <$DBG_SAY> 'MsiValFilter(' || @@CiText || '): ' || @@Text
+       if  @@Comment <> '' then
+       do
+            <$DBG_INC>
+            <$DBG_SAY> 'Reason: ' || @@Comment;
+            <$DBG_DEC>
+       end;
+   #endif
+
+    ;--- Add new filter -----------------------------------------------------
+    @@ValFilterCnt             = @@ValFilterCnt + 1
+    @@ValFilter.@@ValFilterCnt = @@Line                    ;;The filter line
+    @@ValCmt.@@ValFilterCnt    = @@FullCmt                 ;;Its comment
+
+    ;--- For documentation --------------------------------------------------
+    <$Rexx4UpdateRxMmLocationOnly>
+    @@Location = RxMmLocation
+    if  @@Where <> '' then
+        @@Location = @@Location || ' - ' || @@Where
+    @@All = @@TextOrig || '00'x || @@Case || '00'x || @@Re || '00'x || @@Comment || '00'x || @@Type || '00'x || @@Location;
+    @@HtmlItemCnt            = @@HtmlItemCnt + 1;
+    @@HtmlItem.@@HtmlItemCnt = @@All;
+    @@HtmlItem.0             = @@HtmlItemCnt;
+#DefineRexx
+#(  ''
+    #define ExpandMsiValFilters
+    #if [@@ValFilterCnt <> 0]
+        ;--- Heading --------------------------------------------------------
+        <?SemiColon>###<?NewLine>
+        <?SemiColon>### START: Filters Defined via the "MsiValFilter" command<?NewLine>
+        <?SemiColon>###<?NewLine><?NewLine>
+
+        ;--- Guts -----------------------------------------------------------
+        #{  for @@x = 1 to @@ValFilterCnt
+            <?SemiColon>--- <??@@ValCmt.@@x> ---<?NewLine>
+            <??@@ValFilter.@@x><?NewLine><?NewLine>
+        #}
+
+        ;--- Trailer --------------------------------------------------------
+        <?SemiColon>###<?NewLine>
+        <?SemiColon>### END: Filters Defined via the "MsiValFilter" command<?NewLine>
+        <?SemiColon>###<?NewLine><?NewLine><?NewLine>
+    #endif
+#)
+
+
+
+#( ''
+   #define? VALID_ADD_EXTRA_VALIDATIONS           ;;Define to "" to disable this
+
+   ;----------------------------------------------------------------------------
+   ;--- Process any user defined Filter ----------------------------------------
+   ;----------------------------------------------------------------------------
+   #( ';'
+       #DefineRexx ''
+           ;--- Get the name of any user filter -------------------------------------
+           @@Look4   = '<?InputFile $$FilePart:w>.flt'
+           @@UserFlt = FileQueryExists(@@Look4)
+
+           ;--- For MAKEMSI only, a danger, we can include ourselves! ---------------
+           if  translate(@@UserFlt) <> translate('<?InputComponent>') then
+               @@UserFlt = '';
+       #DefineRexx
+   #)
+   #if [@@UserFlt <> ""]
+       ;--- Include the users requirements --------------------------------------
+       #include "<??@@UserFlt>"
+       <$SourceForReport "<??@@UserFlt>">
+   #endif
+
+   ;----------------------------------------------------------------------------
+   ;--- Any standard ".flt" file? -------------------------------------------
+   ;----------------------------------------------------------------------------
+   <$VALID_FILTER_BEFORE_FILE_INCLUSION>
+           #include "<$VALID_FILTER_FILE>"
+   <$VALID_FILTER_AFTER_FILE_INCLUSION>
+#)
+
+
+;----------------------------------------------------------------------------
+;--- Perform MSI Validation -------------------------------------------------
+;----------------------------------------------------------------------------
+#( ''
+   #define? VALID_ValidateTheGeneratedMsi          ;;Define to "" to disable validation
+
+   ;--- Clean out the validation directory ----------------------------------
+   #ifndef VALID_DONT_INITIALIZE_VALIDATION_DIRECTORY
+       ;--- User is allowing directory to be deleted ------------------------
+       #ifdef IsNT
+           #DefineRexx ''
+               call AddressCmd 'rd "<$MAKEMSI_MSIVALIDATION_DIR>" /q /s >nul <$Stderr2Out>'
+           #DefineRexx
+       #end if
+   #endif
+
+   ;----------------------------------------------------------------------------
+   ;--- Prepare the Validation Filter ---------------------------------------
+   ;----------------------------------------------------------------------------
+   #info ^Preparing the validation filter^
+   #output ^<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_OUTPUT_FILTER>^ ASIS
+       <$ExpandMsiValFilters>
+   #output
+
+   ;--- Do most of the work -------------------------------------------------
+   #evaluate ^^ ^<$@@Rexx4VALID_ValidateTheGeneratedMsi {$?}>^
+#)
+;--- User has not overriden (set defaults) ----------------------------------
+#DefineRexx '@@Rexx4VALID_ValidateTheGeneratedMsi'
+   ;--- Intro ---------------------------------------------------------------
+   call Info 'Validating the MSI (please wait)...'
+   #if  ['<$DBG_MSIVALIDATION>' <> 'N']
+        <$DBG_NEWLINE>
+        <$DBG_SAY> 'ValidateTheGeneratedMsi (rexx code)...';
+        <$DBG_INC>
+   #endif
+
+   ;--- Make sure we can find the EXE and validation database ---------------
+   @@Exe    = '<$VALID_MSIVAL2_DIR $$DEL:\>MsiVal2.EXE';
+   @@ValDB  = '<$VALID_MSIVAL2_DB>';
+   call Info 'Using: "' || @@ValDB || '"'
+   if  FileQueryExists(@@Exe) = '' then
+   #( ''
+       error(
+               'The MSI validation program "' || @@Exe || '"',
+               'does not exist!',
+               '',
+               'This is a free validation tool that comes with the Microsoft Windows Installer',
+               'SDK.  MAKEMSI also installed its installer, just double click it to install...',
+               '',
+               'If your program files directory is not "c:\program files" then you need to',
+               '#define "VALID_MSIVAL2_DIR" so that it points to the correct location!'
+            );
+   #)
+   if  FileQueryExists(@@ValDB) = '' then
+       error('The MSI validation database "' || @@ValDB || '" does not exist!');
+
+   ;--- Run the validation --------------------------------------------------
+   @@AllFileU    = "<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_OUTPUT_ALL>"
+   @@BatchCmd    = "<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_EXECUTED_CMD>"
+   @@Redirected  = "<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_OUTPUT_CMD>"
+   @@Cmd = '"' || @@Exe || '" "<$MSI_MSINAME>" "' || @@ValDB || '" -f -l "' || @@AllFileU || '" > "' || @@Redirected || '" <$Stderr2Out>'
+   @@BatchRem = '@rem *** This batch file is not used by MAKEMSI, its for YOUR information and use when debugging...'
+   call FileDelete  @@BatchCmd;
+   call FileLineOut @@BatchCmd, @@BatchRem;
+   call FileLineOut @@BatchCmd, @@Cmd;        ;;Not used (more for info/debug)
+   call FileLineOut @@BatchCmd, 'start notepad.exe "' || @@Redirected || '"';
+   call FileLineOut @@BatchCmd, '@pause';
+   call FileClose   @@BatchCmd;
+   if  FileQueryExists(@@AllFileU) <> '' then
+       call FileDelete @@AllFileU;  ;;MSIVAL2 does not clear - stupid...
+   #if  ['<$DBG_MSIVALIDATION>' <> 'N']
+        <$DBG_SAY> 'RUNNING: ' || @@Cmd;
+   #endif
+   call AddressCmd '"' || @@Cmd || '"'            ;;Ignore return code - meaningless... - stupid...
+
+   ;--- Make sure a log was generated ---------------------------------------
+   if  FileQueryExists(@@AllFileU) = '' then
+   do
+       ;--- Some sort of problem --------------------------------------------
+       if  FileQueryExists(@@Redirected) = '' then
+           @@Stdout = '';
+       else
+       do
+           ;--- Read the output ---------------------------------------------
+           call FileClose   @@Redirected;
+           @@Stdout = charin(@@Redirected, 1, 9999);
+           call FileClose   @@Redirected;
+       end
+       if   @@Stdout <> '' then
+            @@Stdout = '0A'x || 'The commands output was:' || '0A'x || '0A'x || @@Stdout
+       if pos('1607', @@Stdout) <> 0 then
+       do
+            ;--- 1607 = Component not found (but EXE exists). ---------------
+            @@Stdout =  @@Stdout || '0A0A'x || 'As the program seems to exist, its likely that MSIVAL2 was not installed' || '0A'x || 'for this user. Please reinstall.';
+       end;
+       error('MSIVAL2.EXE (validation) did not create the expected log file!',, "The command executed used was:",, @@Cmd, @@Stdout);
+   end;
+
+   ;--- Convert the output to ANSI (log file output is "funny" unicode) -----
+   @@SizeU = FileQuerySize(@@AllFileU)
+   call Info 'Converting validation results (' || AddCommasToDecimalNumber(@@SizeU) || ' bytes).'
+   @@AllFileA = "<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_OUTPUT_ALL_ANSI>"
+   call MustDeleteFile @@AllFileA;
+   if   @@SizeU = 0 then
+        @@Contents = '';
+   else
+   do
+        @@Contents = charin(@@AllFileU, 1, 9999999);
+        @@Contents = ReplaceString(@@Contents, '00'x, '');
+   end
+   call FileClose   @@AllFileU;
+   call FileCharOut @@AllFileA, @@Contents;
+   call FileClose   @@AllFileA;
+
+   ;--- Point to "FindMult.VBS" ---------------------------------------------
+   call Info 'Filtering validation results...';
+   @@FmVbs    = "FindMult.VBS";
+   @@FindMult = "<??*MAKEMSI_DIR>" || @@FmVbs;
+
+   ;--- Now run the filter over the ANSI version ----------------------------
+   @@FiltSpec = '<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_OUTPUT_FILTER>'
+   @@FiltLog  = '<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_OUTPUT_FILTERED>'
+   @@FiltUsed = '<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_OUTPUT_FILTERS_USED>'
+   @@Cmd      = '<$MAKEMSI_CSCRIPT.EXE> "' || @@FindMult || '" "@' || @@FiltSpec || '" < "' || @@AllFileA || '" > "' || @@FiltLog || '" 2> "' || @@FiltUsed || '"';
+   #if  ['<$DBG_MSIVALIDATION>' <> 'N']
+        <$DBG_SAY> 'RUNNING: ' || @@Cmd;
+   #endif
+   @@BatchCmd    = "<$MAKEMSI_MSIVALIDATION_DIR>\<$VALID_MISVAL2_EXECUTED_CMD_FILTER>"
+   call FileDelete  @@BatchCmd;
+   call FileLineOut @@BatchCmd, @@BatchRem;
+   call FileLineOut @@BatchCmd, @@Cmd;        ;;Not used (more for info/debug)
+   call FileLineOut @@BatchCmd, 'start notepad.exe "' || @@FiltLog || '"';
+   call FileLineOut @@BatchCmd, '@pause'
+   call FileClose   @@BatchCmd;
+   call AddressCmd @@Cmd, @@FiltLog, @@FiltUsed
+
+   ;--- If there are any "ERROR" or "WARNINGS" left then say so! ------------
+   if  FileQuerySize(@@FiltLog) = 0 then
+   do
+       @@Filtered        = '';
+       @@FilteredResults = '';
+   end
+   else
+   do
+       @@Filtered = charin(@@FiltLog, 1, 999999);
+       call FileClose @@FiltLog;
+       @@FilteredResults = "<p><hr><p>After filtering were are left with:<pre>" || @@Filtered || "</pre>";
+   end;
+   @@L4ErrSign = @@FmVbs || '('
+   if  pos(ToUpperCase(@@L4ErrSign), ToUpperCase(@@Filtered)) <> 0 then
+   do
+       call WARNING "", 'Filtering possibly failed. FOUND: "' || @@L4ErrSign || '"'
+   end;
+   @@ErrTxt  = ' ERROR ';
+   @@WarnTxt = ' WARNING ';
+   @@Msg = "";
+   if  pos(@@ErrTxt, @@Filtered) <> 0 then
+       @@Msg = "ERROR";
+   if  pos(@@WarnTxt, @@Filtered) <> 0 then
+   do
+       if  @@Msg = "" then
+           @@Msg = "WARNING";
+       else
+           @@Msg = @@Msg || " & WARNING";
+   end;
+   call say '';
+   if   @@FilteredResults <> '' then
+        @@FilteredResults = @@FilteredResults || '<p><span class="MmCmtName">ERRORS (unfiltered results): </span>'
+   if  @@Msg = "" then
+   do
+       call INFO "===================="
+       call INFO "=== VALIDATED OK ==="
+       call INFO "===================="
+       #if  ['<$ONEXIT_GENERATE_HTML>' <> 'N']
+            @@FilteredResultsSummary = '<font color=green><b><font size="large"><$HTML_SYMBOL_TICK></font></b> SUCCESSFUL'
+       #endif
+   end;
+   else
+   do
+       ;--- Read the results into a variable --------------------------------
+       call FileClose @@FiltLog, 'N';
+       @@FilteredOutput = charin(@@FiltLog,1, 999999);
+       call FileClose @@FiltLog;
+
+       ;--- Process the problem ---------------------------------------------
+       #if  ['<$ONEXIT_GENERATE_HTML>' <> 'N']
+           @@FilteredResultsSummary = '<font color=red> <b><font size="large"><$HTML_SYMBOL_CROSS></font></b> FAILED'
+       #endif
+       <$VALID_ACTION_ON_VALIDATION_ERRORS_OR_WARNINGS TypeVar="@@Msg" OutputVar=^@@FilteredOutput^>
+   end;
+   call say '';
+
+   ;--- Handle the filters used (for HTML Report) ---------------------------
+   #if ['<$ONEXIT_GENERATE_HTML>' <> 'N']
+       call INFO "Updating HTML Report with validation results"
+       @@IgnoredCnt   = 0
+       @@ConfirmedCnt = 0
+       do   while lines(@@FiltUsed) <> 0
+            ;--- Read the next filter match -------------------------------------
+            @@FilterMatch = strip(linein(@@FiltUsed));
+            parse var @@FilterMatch @@MatchType ',' @@MatchNumber ',' @@IceMsg
+
+            ;--- Save the information -------------------------------------------
+            @@SaveAs = '@@FilterMatches_' || @@MatchNumber;
+            if  symbol(@@SaveAs) <> 'VAR' then
+                call value @@SaveAs, '<li>' || @@IceMsg;
+            else
+            do
+                @@Existing = value(@@SaveAs)
+                call value @@SaveAs, @@Existing || '<li>' || @@IceMsg;
+            end
+
+            ;--- Keep counts for a summary --------------------------------------
+            if  @@MatchType = '+' then
+                @@ConfirmedCnt = @@ConfirmedCnt + 1
+            else
+                @@IgnoredCnt   = @@IgnoredCnt   + 1
+       end;
+       call FileClose @@FiltUsed
+
+       ;--- Read the HTML Report and update the place holders -------------------
+       @@HtmlFile = '<$MSI_HTMLNAME>'
+           @@H = charin(@@HtmlFile, 1, 9999999)
+       call FileClose  @@HtmlFile;
+       do @@Sequence = 1 to @@HtmlItemCnt
+          ;--- Work out place holder --------------------------------------------
+          parse var @@HtmlItem.@@Sequence @@Text '00'x @@Case '00'x @@Re '00'x @@Comment '00'x @@Type '00'x @@Location;
+          @@PlaceHolder = @@PlaceHolderS || @@Sequence || @@PlaceHolderE;
+
+          ;--- Workout lines that this filter effected ----------------
+          @@SavedAs = '@@FilterMatches_' || @@Sequence;
+          if  symbol(@@SavedAs) <> 'VAR' then
+              @@IceLines = '<$VALID_HTMLRPT_NO_MATCHES_TEXT>';
+          else
+          do
+              if  @@Type = '+' then;
+                  @@MsgColor = 'red';
+              else;
+                  @@MsgColor = 'green';
+              @@IceLines = '<ol style="color:' || @@MsgColor || '">' || value(@@SavedAs) || '</ol>'
+          end
+          @@H = ReplaceString(@@H, @@PlaceHolder, @@IceLines)
+       end
+       if   @@IgnoredCnt = 0 & @@ConfirmedCnt = 0 then
+            @@SummaryCntTxt = ', no ICE messages to filter :-)'
+       else
+       do
+           @@SummaryCntTxt = ', ' || @@IgnoredCnt || ' ICE messages ignored'
+           if @@ConfirmedCnt <> 0 then
+              @@SummaryCntTxt = @@SummaryCntTxt || ', ' || @@ConfirmedCnt || ' confirmed issues (may be others not filtered)'
+       end
+       @@H = ReplaceString(@@H, @@PlaceHolderSUMMARY, @@FilteredResultsSummary || @@SummaryCntTxt)
+       @@H = ReplaceString(@@H, @@PlaceHolderERRORS,  @@FilteredResults)
+       call FileDelete  @@HtmlFile;
+       call FileCharOut @@HtmlFile, @@H;
+       call FileClose   @@HtmlFile;
+   #endif
+
+
+   #if  ['<$DBG_MSIVALIDATION>' <> 'N']
+        <$DBG_DEC>
+   #endif
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- The button on the top --------------------------------------------------
+;----------------------------------------------------------------------------
+#define? VALID_BEFORE_BUTTON_FOR_MSIVALFILTER
+#define? VALID_AFTER_BUTTON_FOR_MSIVALFILTER
+#(
+   #define? VALID_BUTTON_FOR_MSIVALFILTER
+
+   ;--- Generate buttons ----------------------------------------------------
+   <$VALID_BEFORE_BUTTON_FOR_MSIVALFILTER>
+   <$BUTTON2 "MSIVALFILTER" Text="Validation Filters" CNT="@@HtmlItemCnt">
+   <$VALID_AFTER_BUTTON_FOR_MSIVALFILTER>
+#)
+
+;----------------------------------------------------------------------------
+;--- How to generate the report ---------------------------------------------
+;----------------------------------------------------------------------------
+#define? VALID_HEADING_EXPANDED N      ;;Start with the source code contracted
+#define? VALID_HTMLRPT_HR       <$SUNDRY_HTMLRPT_HR>
+#define? VALID_BEFORE_REPORT_FOR_MSIVALFILTER
+#define? VALID_AFTER_REPORT_FOR_MSIVALFILTER
+#( ''
+   #define VALID_REPORT_FOR_MSIVALFILTER
+
+   ;--- BEFORE --------------------------------------------------------------
+   <$VALID_BEFORE_REPORT_FOR_MSIVALFILTER>
+
+   ;--- Generate Environment report -----------------------------------------
+   <A NAME="MSIVALFILTER"></A>
+   #if [@@HtmlItemCnt = 0]
+       <$VALID_HTML_NO_Filters>
+   #elseif
+      ;--- Add any extra validation filters ---------------------------------
+      <$VALID_ADD_EXTRA_VALIDATIONS>
+
+      ;--- Start the HTML table ---------------------------------------------
+      <$HTMLRPT_HEADING TEXT="MSI VALIDATION FILTERS" EXPANDED="<$VALID_HEADING_EXPANDED>">
+      <$VALID_HTML_REPORT_START>
+
+      ;--- Generate guts of report ------------------------------------------
+      #{  FOR @@Sequence = 1 to @@HtmlItemCnt
+          ;--- Split off components -----------------------------------------
+          #( ';'
+             #DefineRexx ''
+                ;--- Get the details ----------------------------------------
+                parse var @@HtmlItem.@@Sequence @@Text '00'x @@Case '00'x @@Re '00'x @@Comment '00'x @@Type '00'x @@Location
+                @@PlaceHolder = @@PlaceHolderS || @@Sequence ||  @@PlaceHolderE
+
+                ;--- Build the comment --------------------------------------
+                @@Tick  = '<$VALID_HTMLRPT_IGNORE_FILTER_TRUE>'        ;;Html symbol/entity for tick
+                @@Cross = '<$VALID_HTMLRPT_IGNORE_FILTER_FALSE>'       ;;Html symbol/entity for cross
+                @@Plus = '<div class="MmCmtPlus">'
+                if  @@Type = '+' then
+                do
+                    @@MsgColor = 'red'
+                    @@Display = '<font color=red>' || @@cross || '</font>'
+                end
+                else
+                do
+                    @@MsgColor = 'green'
+                    @@Display = @@Tick        ;;By default we ignore the message
+                end;
+                @@Plus = @@Plus || ' <span class="MmCmtName">Ignore it</span> <span class="MmCmtValue">' || @@Display || '</span>'
+             #DefineRexx
+          #)
+          #( ';'
+            #DefineRexx ''
+                if @@case = 'I' then
+                    @@Display = 'insensitive'
+                else
+                    @@Display = 'sensitive'
+                @@Plus = @@Plus || ' <span class="MmCmtName">Case</span> <span class="MmCmtValue">' || @@Display || '</span>'
+                if @@Re = 'Y' then
+                    @@Display = 'regular expression'
+                else
+                    @@Display = 'text'
+                @@Plus = @@Plus || ' <span class="MmCmtName">Compare as</span> <span class="MmCmtValue">' || @@Display || '</span>'
+                @@Plus = @@Plus || ' <span class="MmCmtName">Defined at</span> <span class="MmCmtValue">' || @@Location || '</span>'
+                @@Plus = @@Plus || '</div>'
+
+                ;--- Add the filter text ------------------------------------
+                @@Plus = '<span class="MmCmtName">FILTER:</span> <font color="' || @@MsgColor || '">' || @@Text || '</font>' || @@Plus
+
+                ;--- Add the reason the filter exists -----------------------
+                if  @@Comment = "" then
+                    @@Comment = '<$VALID_HTMLRPT_COMMENT_DEFAULT>'
+                @@CommentPlus = @@Plus || '<$VALID_HTMLRPT_HR><span class="MmCmtName">WHY: </span>' || @@Comment
+            #DefineRexx
+          #)
+
+          ;--- Generate the HTML for this file ------------------------------
+          <$VALID_HTML_REPORT_ROW>
+      #}
+
+      ;--- End the HTML table -----------------------------------------------
+      <$VALID_HTML_REPORT_END>
+   #endif
+
+   ;--- AFTER ---------------------------------------------------------------
+   <$VALID_AFTER_REPORT_FOR_MSIVALFILTER>
+#)
+
+
+#( '<?NewLine>'
+   #define? VALID_HTML_NO_Filters
+   #if ['<$HTMLRPT_SHOW_EMPTY_REPORTS>' = 'Y']
+       <$HTMLRPT_HEADING TEXT="ENVIRONMENT VARIABLES">
+       <P><B>
+       <CENTER>There are no filters.</CENTER>
+       </B>
+   #endif
+#)
+#( '<?NewLine>'
+   #define? VALID_HTML_REPORT_START
+   <CENTER>
+   <p>Lists all validations performed and the order they are applied.
+   Validation filters can cause messages to be "ignored" (green)
+   or "escalated" (red)  as definately being bad.
+   The validation process doesn't know the full context under which your msi
+   will install (and can also be buggy) so any messages need to be evaluated.
+   <p>
+   <TABLE COLS="3" <$HTMLRPT_TABLE_LOOK_AND_FEEL>>
+   <thead>
+   <TR <$HTMLRPT_TITLE_ATTR_FOR_SORTABLE_TABLE>>
+       <TH>Order</TH>
+       <TH>Text of Matching ICE Messages</TH>
+       <TH>Filter Details</TH>
+   </TR>
+   </thead>
+#)
+#( '<?NewLine>'
+   #define? VALID_HTML_REPORT_ROW
+   <?NewLine>
+   ;<TR <$HTMLRPT_TITLE_ATTR_FOR_TABLE_ROW PREFIX='@@'>>
+    <TR>
+       <TD><??@@Sequence></TD>
+       <TD><??@@PlaceHolder></TD>
+       <TD><??@@CommentPlus></TD>
+   </TR>
+#)
+#( '<?NewLine>'
+   #define? VALID_HTML_REPORT_END
+   </TABLE>
+   <$/HTMLRPT_HEADING>          ;;Section contracts to here
+   <P><??@@HtmlItemCnt> filter(s), Validation: <??@@PlaceHolderSUMMARY>
+   </CENTER>
+   <??@@PlaceHolderERRORS>
+
+#)
+
+
+
+#NextId UNLOCK "VALID.MMH"
+

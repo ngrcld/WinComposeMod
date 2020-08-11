@@ -1,0 +1,321 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FILEMAKE.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.5  $
+;          $Date:   16 Nov 2017 11:28:30  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/FileMake.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2004
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "FILEMAKE.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+        ;---[4DocoOptions4FileMake]---
+#define? FILEMAKE_DEFAULT_#OPTIONS_POWERSHELL           KeepIndent=YES LeaveBlankLines=YES
+#define? FILEMAKE_DEFAULT_#OPTIONS                                         ;;Default options if no processing mode specific ones exist. EXAMPLE: KeepIndent=YES LeaveBlankLines=YES AllowPack=NO
+#define? FILEMAKE_DEFAULT_#OPTION_HashPrefix            #
+#define? FILEMAKE_DEFAULT_#OPTION_HashPrefix_POWERSHELL @#                 ;;Hash is used as comment character in powershell
+#define? FILEMAKE_STATEFILE_EXTENSION                   state.txt          ;;What extension will the state file have?
+#define? FILEMAKE_OUTPUT_DEBUG_INFO_IN_STATEFILE        Y                  ;;"Y" makes it easy to diagnose issues but may at time cause update if MAKEMSI debug output changes etc
+#define? FILEMAKE_STATECHANGE                           {@#$FiLeMaKe$#@}-  ;;Probably never need to change, can be any code you'd never expect to see in the file
+        ;---[4DocoOptions4FileMake]---
+
+;----------------------------------------------------------------------------
+;--- COMMAND: FileMakeIgnore ------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@FileMakeIgnoreStarts  = ''  ;;'' = not in block (else starting location
+#define  FILEMAKE_STATE_IGNORE          I
+#define  FILEMAKE_STATE_SIGNIFICANT     S
+#define  FILEMAKE_START_OF_FILE_HACK    {@#$FiLeMaKeStartOfFile$#@}
+#( ''
+    #define  FileMakeIgnore
+
+    ;--- Validations --------------------------------------------------------
+    {$!:}                                            ;;Validate parameters
+    #if ['<??@@FileMakeStarts>' = '']
+       #error ^You must be in a FileMake block to use the "FileMakeIgnore" command!^
+    #endif
+    #if ['<??@@FileMakeIgnoreStarts>' <> '']
+       #error ^Already in FileMakeIgnore block started at <??@@FileMakeIgnoreStarts>^
+    #endif
+    #PUSH "FileMakeIgnore command"
+    #RexxVar @@FileMakeIgnoreStarts = ^<?=GetInputFileNameAndLine()>^
+
+    ;--- Ignore what follows (until told otherwise) -------------------------
+    <$FILEMAKE_STATECHANGE><$FILEMAKE_STATE_IGNORE>
+#)
+#( ''
+    #define  /FileMakeIgnore
+
+    ;--- Validations --------------------------------------------------------
+    {$!}                                             ;;Validate parameters
+    #if ['<??@@FileMakeIgnoreStarts>' = '']
+       #error ^Can't complete a FileMakeIgnore that hasn't been started!^
+    #endif
+    #POP "FileMakeIgnore command"
+    #RexxVar @@FileMakeIgnoreStarts = ''
+
+    ;--- Following bytes are significant (stop ignoring) --------------------
+    <$FILEMAKE_STATECHANGE><$FILEMAKE_STATE_SIGNIFICANT>
+
+    ;--- No parameters required ---------------------------------------------
+    {$!}
+#)
+
+
+;----------------------------------------------------------------------------
+;--- COMMAND: FILEMAKE ------------------------------------------------------
+;----------------------------------------------------------------------------
+#RexxVar @@FileMakeStarts  = ''  ;;'' = not in block (else starting location
+#RexxVar '@@FileWanted' = ''
+#( ''
+    ;--- Define README start macro ------------------------------------------
+    #define FileMake
+
+    ;--- Validations --------------------------------------------------------
+    {$!:#1,StateFile,Mode,#options,HashPrefix}           ;;Validate parameters
+    #if ['<??@@FileMakeStarts>' <> '']
+       #error ^Already in FileMake block started at <??@@FileMakeStarts>^
+    #endif
+    #PUSH "FileMake command"
+    #RexxVar @@FileMakeStarts = ^<?=GetInputFileNameAndLine()>^
+
+    ;--- Do some preparation ------------------------------------------------
+    #evaluate ^^ ^<$@@Rexx4FileMake {$?}>^
+
+    ;--- Open the file (this will generate any standard header) -------------
+    #output "<??@@FileWanted>" ASIS HOLD "<??@@Mode>"
+
+    ;--- We start ignoring output but we will use the command so nesting checks etc work ---
+    <$FileMakeIgnore>           ;;Prevent the "/FileMakeIgnore" below from failing
+
+    ;--- Any header has already been output so stop ignoring now! -----------
+    <$/FileMakeIgnore>
+
+    ;--- Set any specified or defaulted options -----------------------------
+    #option push <??@@Options> HashPrefix=`<??@@HashPrefix>`
+
+    ;--- If this macro not called from within a macro then get leading blank line! ---
+    <$FILEMAKE_START_OF_FILE_HACK>
+#)
+#DefineRexx '@@Rexx4FileMake'
+    ;--- What is the file that we want to create? ---------------------------
+    if  @@FileWanted <> '' then
+        error('Sorry but you can''t nest the "FileMake" macro!');
+    @@FileWanted = '{$#1}';
+
+    ;--- What is the processing mode? ---------------------------------------
+    @@Mode = ToUpperCase('{$Mode=^OTHER^}')
+
+    ;--- What are the options? ----------------------------------------------
+    if  '{$#options=`` $$IsPassed}' = 'Y' then
+        @@Options = '{$#options $$Sqx2}'
+    else
+    do
+        ;--- Have some processing mode specific options? --------------------
+        @@DefMac  = "FILEMAKE_DEFAULT_#OPTIONS_" || @@Mode
+        if  Defined(@@DefMac) = 'Y' then
+            @@Options = MacroGet(@@DefMac)
+        else
+        do
+            ;--- No mode specific options -----------------------------------
+            @@DefMac  = "FILEMAKE_DEFAULT_#OPTIONS"
+            if  Defined(@@DefMac) = 'Y' then
+                @@Options = MacroGet(@@DefMac)
+            else
+                @@Options = '';
+        end
+    end;
+    if  '{$HashPrefix=`` $$IsPassed}' = 'Y' then
+        @@HashPrefix = '{$HashPrefix $$Sqx2}'
+    else
+    do
+        ;--- Have some processing mode specific options? --------------------
+        @@DefMac  = "FILEMAKE_DEFAULT_#OPTION_HashPrefix_" || @@Mode
+        if  Defined(@@DefMac) = 'Y' then
+            @@HashPrefix = MacroGet(@@DefMac)
+        else
+        do
+            ;--- No mode specific options -----------------------------------
+            @@DefMac  = "FILEMAKE_DEFAULT_#OPTION_HashPrefix"
+            if  Defined(@@DefMac) = 'Y' then
+                @@HashPrefix = MacroGet(@@DefMac)
+            else
+                @@HashPrefix = '#';
+        end
+    end;
+    if  @@HashPrefix = "" then @@HashPrefix = "#"
+    @@HashOptionPopCommand = @@HashPrefix || 'OPTION POP'
+
+    ;--- Name of the state file? --------------------------------------------
+    @@FileState = '{$StateFile=^^}';
+    if  @@FileState = '' then
+        @@FileState = @@FileWanted || '.[' || @@Mode || '].<$FILEMAKE_STATEFILE_EXTENSION>';
+
+    ;--- Make a copy of any existing output file ----------------------------
+    if  FileQueryExists(@@FileWanted) = '' then
+        @@FileCopy = '';
+    else
+    do
+        ;--- Make a copy of the file (for restoration if required) ----------
+        @@FileCopy = FileGetTmpName("CF_?????.Tmp");
+        call FileCopy  @@FileWanted, @@FileCopy;
+    end;
+
+    ;--- Get the current state of the file and remove the state file --------
+    if  FileQueryExists(@@FileState) = '' then
+        @@ExistingState = '@@EPtyStaTe@@';          ;;'' is a validate state
+    else
+    do
+        ;--- Read the state contents and delete the file --------------------
+        call FileClose @@FileState, 'N';
+        if  FileQuerySize(@@FileState) = 0 then
+            @@ExistingState = '';
+        else
+        do
+            ;--- File is at least one byte long (so read won't fail) --------
+            @@ExistingState = charin(@@FileState, 1, 999999);
+            call FileClose  @@FileState;
+            call FileDelete @@FileState;        ;;Forces rebuild if syntax error in generated output etc
+        end;
+    end;
+#DefineRexx
+
+
+;----------------------------------------------------------------------------
+;--- COMMAND: /FILEMAKE -----------------------------------------------------
+;----------------------------------------------------------------------------
+#(  ''
+    #define /FileMake
+
+    ;--- reset #options if required -----------------------------------------
+    <?RestartLine><??@@HashOptionPopCommand><?RestartLine>
+
+    ;--- Validations --------------------------------------------------------
+    {$!:}                                             ;;Validate parameters
+    #if ['<??@@FileMakeStarts>' = '']
+       #error ^Can't complete a FileMake that hasn't been started!^
+    #endif
+    #POP "FileMake command"
+    #RexxVar @@FileMakeStarts = ''
+
+    ;--- reset #options if required -----------------------------------------
+    ;#if [@@Options <> '']
+    ;    #option pop
+    ;#end if
+
+    ;--- Remove any codes so they don't effect any syntax checking ----------
+    #OutputHold '@@/FileMake4OutputHold'
+
+    ;--- Close the file (will perform syntax checking etc) ------------------
+    #output
+
+    ;--- Now do required post processing for this file ----------------------
+    #evaluate ^^ ^<$@@Rexx4/FileMake {$?}>^
+#)
+#DefineRexx '@@/FileMake4OutputHold'
+    ;--- Get the "new" files contents ---------------------------------------
+    @@NewContents = HeldOutput;
+
+    ;--- Bit of a hack to remove a possible extra blank line ----------------
+    @@StartCode   = '<$FILEMAKE_START_OF_FILE_HACK>';
+    @@NewContents = ReplaceString(@@NewContents, @@StartCode || '0D0A'x, '');   ;;Drop first blank line
+    @@NewContents = ReplaceString(@@NewContents, @@StartCode,            '');   ;;If we didn't have a blank line make sure the code is removed!
+
+    ;--- Now remove any "ignore me" sections --------------------------------
+    @@NewState     = ''
+    @@WithoutCodes = ''
+    @@StateChar    = '<$FILEMAKE_STATE_IGNORE>';
+    @@Contents     = @@NewContents;
+    @@CodeCnt      = 0;
+    do  while @@Contents \== ''
+        ;--- Get next bit ---------------------------------------------------
+        parse var @@Contents @@ThisBit '<$FILEMAKE_STATECHANGE>' @@Contents;
+        @@Type        = left(@@Contents, 1);
+        @@Contents = substr(@@Contents, 2);
+
+        ;--- The file contents less any magic codes -------------------------
+        @@WithoutCodes = @@WithoutCodes || @@ThisBit
+
+        ;--- Want to ignore "this bit"? Make it easier to diagnose issues ---
+        #if ['<$FILEMAKE_OUTPUT_DEBUG_INFO_IN_STATEFILE>' = 'Y']
+            ;--- Could potentially cause false remakes if MAKEMSI changes etc ---
+            if  @@StateChar <> '<$FILEMAKE_STATE_SIGNIFICANT>' then
+                @@ThisBit = '[FileMake:IGNORED:' || @@CodeCnt || ']';   ;;Must not vary unless varies with source variance
+        #endif
+
+        ;--- Update the state -----------------------------------------------
+        @@NewState = @@NewState || @@ThisBit;
+
+        ;--- Change the mode to whatever user wanted ------------------------
+        if  @@Type <> ''  then
+        do
+            @@CodeCnt = @@CodeCnt + 1
+            if  @@Type <> '<$FILEMAKE_STATE_SIGNIFICANT>' & @@Type <> '<$FILEMAKE_STATE_IGNORE>' then
+                error('The "mode" character (after the "<$FILEMAKE_STATECHANGE>" sequence) has an invalid value of "' || @@Type || '"!');
+            @@StateChar = @@Type
+        end;
+    end;
+
+    ;--- Update what PPWIZARD will output to the file -----------------------
+    HeldOutput = @@WithoutCodes;
+#DefineRexx
+#DefineRexx '@@Rexx4/FileMake'
+    ;--- Now has the state changed? -----------------------------------------
+    if  @@NewState == @@ExistingState then
+    do
+        ;--- File unchanged, overwrite file new file with any original ------
+        if  @@FileCopy <> '' then
+        do
+            ;--- We do have a copy ------------------------------------------
+            call FileCopy   @@FileCopy, @@FileWanted;
+            call FileDelete @@FileCopy;
+        end;
+    end;
+    else
+    do
+        ;--- File has changed, if contents had codes we need to update! -----
+        if  @@WithoutCodes \== @@NewContents then
+        do
+            ;--- There were ignore codes in the file ------------------------
+            call FileDelete  @@FileWanted;
+            call FileCharOut @@FileWanted, @@WithoutCodes;
+            call FileClose   @@FileWanted;
+        end;
+    end;
+
+    ;--- Generate a new state file ------------------------------------------
+    @@StateDir = FilePart('slashless', @@FileState);
+    if  DirQueryExists(@@StateDir) = '' then
+        call MakeDirectoryTree @@StateDir;          ;;Create the directory
+    call FileCharOut @@FileState, @@NewState;
+    call FileClose   @@FileState;
+
+    ;--- Create variables which may contain large amounts of characters! ----
+    @@NewState      = ''
+    @@ExistingState = ''
+    @@NewContents   = ''
+    @@WithoutCodes  = ''
+
+    ;--- Flag end of "FileMake" block -------------------------------------
+    @@FileWanted = ''
+#DefineRexx
+
+
+
+
+
+#NextId UNLOCK "FILEMAKE.MMH"
+
+

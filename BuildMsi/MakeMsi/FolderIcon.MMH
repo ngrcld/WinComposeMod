@@ -1,0 +1,323 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   FolderIcon.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.8  $
+;          $Date:   16 Feb 2018 16:53:34  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/FolderIcon.MMH.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2006
+;                   All rights reserved.
+;      MORE INFO
+;      ~~~~~~~~~
+;      https://hwiegman.home.xs4all.nl/desktopini.html
+;      https://msdn.microsoft.com/en-us/library/windows/desktop/cc144102(v=vs.85).aspx
+;
+;      <$FolderIcon DirKey="SCDIR"          IconFile=^%SystemRoot%\system32\SHELL32.dll^ IconIndex="41" InfoTip=^This contains the desktop shortcuts, your "My Documents" contains the code and logs.^>
+;      <$FolderIcon DirKey="INSTALLDIR" IconResource=^%SystemRoot%\system32\SHELL32.dll,87^             InfoTip=^This contains the code (and logs) which is invoked by the desktop shortcuts.^>
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "FolderIcon.MMH"
+
+
+
+;----------------------------------------------------------------------------
+;--- Options for "FolderIcon" -----------------------------------------------
+;----------------------------------------------------------------------------
+;###[4DocoFolderIconOptionsAndConstants]###
+;--- Custom Action scheduling options ---
+#define? FOLDERICON_SCHEDULE_INSTALL_SEQ          DuplicateFiles-               ;;After "CreateFolders" doesn't work!!!
+#define? FOLDERICON_SCHEDULE_INSTALL_CONDITION    <$CONDITION_EXCEPT_UNINSTALL>
+#define? FOLDERICON_SCHEDULE_INSTALL_TYPE         System                        ;;Allow it to work under program files...
+#define? FOLDERICON_SCHEDULE_UNINSTALL_SEQ        <-DuplicateFiles              ;;"<-RemoveFolders" doesn't work!!!!  It leaves the folder behind
+#define? FOLDERICON_SCHEDULE_UNINSTALL_CONDITION  <$CONDITION_UNINSTALL_ONLY>
+#define? FOLDERICON_SCHEDULE_UNINSTALL_TYPE       System
+
+
+;--- Define "[ViewState]->VID" options "(V)iew (ID)" and associated "mode" ---
+#define? FOLDERICON_VIEW_ICONS      {0057D0E0-3573-11CF-AE69-08002B2E1262}
+#define? FOLDERICON_VIEW_LIST       {0E1FA5E0-3573-11CF-AE69-08002B2E1262}
+#define? FOLDERICON_VIEW_DETAILS    {137E7700-3573-11CF-AE69-08002B2E1262}
+#define? FOLDERICON_VIEW_THUMBNAIL  {8BEBB290-52D0-11D0-B7F4-00C04FD706EC}
+#define? FOLDERICON_VIEW_TILES      {65F125E5-7BE1-4810-BA9D-D271C8432CE3}
+#define? FOLDERICON_VIEW_FILMSTRIP  {8EEFA624-D1E9-445B-94B7-74FBCE2EA11A}
+#define? FOLDERICON_MODE_ICONS      1
+#define? FOLDERICON_MODE_LIST       3
+#define? FOLDERICON_MODE_DETAILS    4
+#define? FOLDERICON_MODE_THUMBNAIL  5
+#define? FOLDERICON_MODE_TILES      6
+#define? FOLDERICON_MODE_FILMSTRIP  7
+;###[4DocoFolderIconOptionsAndConstants]###
+
+#RexxVar @@FolderIconCnt = 0
+#(
+    #define FolderIcon
+
+    ;--- Validate passed parameters -----------------------------------------
+    {$!KEYWORDS}                              ;;Don't Expect any keywords!
+    {$!:DIRKEY,DEFAULTDROPEFFECT,CONFIRMFILEOP,ICONFILE,ICONINDEX,ICONRESOURCE,INFOTIP,FOLDERTYPE,MODE,VIEW}
+    #ifndef FOLDERICON_VIEW_{$View=^DETAILS^}
+            #error ^The view type of "{$View}" doesn't exist!^
+    #endif
+    #if     '{$IconFile="" $$IsPassed}' = 'N' & '{$ICONRESOURCE="" $$IsPassed}' = 'N'
+            #ERROR ^One of "IconFile" or "IconResource" must be specified!"
+    #endif
+
+    ;--- Determine the KEY we will use & We want to create the VBS once -----
+    #RexxVar @@FolderIconCnt + 1
+    #define+ @@KEY          FolderIcon_<??@@FolderIconCnt>
+    #if  [@@FolderIconCnt = 1]
+         <$@@CREATE_DESKTOP_INI_VBS>
+    #endif
+
+    ;--- Work out the INI file contents -------------------------------------
+    #evaluate ^^ ^<$@@Rexx4FolderIconBuildIni {$?ResetUsed} {$?}>^
+
+
+    ;--- Validation of setting another option first... --------------------------
+    #INFO '"desktop.ini" contents is <??@@L_INI> bytes long'
+    #if [@@L_INI > 256]
+        ;--- Too long for the standard definition ---------------------------
+        #ifndef TABLES_TYPE_CustomAction_Target
+                #define+ @@DIE
+        #elseif
+                #if '<$TABLES_TYPE_CustomAction_Target>' \== "S0"
+                    #define+ @@DIE
+                #endif
+        #endif
+        #ifdef @@DIE
+               #error ^The "FolderIcon" requires you to set "TABLES_TYPE_CustomAction_Target" to "S0" as the INI contents is too long (at <??@@L_INI> bytes) for the standard 256 byte "Target" field of the "CustomAction" table^
+        #endif
+    #endif
+
+
+    ;--- Schedule Install ---------------------------------------------------
+    <$PropertyCa "DESKTOPINICONTENTS" Value=~<??@@INI>~   Seq="<$FOLDERICON_SCHEDULE_INSTALL_SEQ>" Condition="<$FOLDERICON_SCHEDULE_INSTALL_CONDITION>" SeqTable="InstallExecuteSequence" KEY="<$@@KEY>_CONTENTS_AT_INSTALLATION">
+    <$PropertyCa "DESKTOPINILOCATION" Value="[{$DirKey}]" Seq="<$FOLDERICON_SCHEDULE_INSTALL_SEQ>" Condition="<$FOLDERICON_SCHEDULE_INSTALL_CONDITION>" SeqTable="InstallExecuteSequence" KEY="<$@@KEY>_LOCATION_AT_INSTALLATION">
+    #(
+        <$VbsCaSetup Data="FolderIconData" Binary="_FolderIcon_Desktop.ini.vbs"
+                    Entry="Installation"
+                     Type=^<$FOLDERICON_SCHEDULE_INSTALL_TYPE>^
+                      Seq="<$FOLDERICON_SCHEDULE_INSTALL_SEQ>" CONDITION=^<$FOLDERICON_SCHEDULE_INSTALL_CONDITION>^ SeqTable="InstallExecuteSequence"
+                      KEY="<$@@KEY>_EXECUTE_AT_INSTALLATION"
+        >
+    #)
+
+    ;--- Schedule uninstall -------------------------------------------------
+    #(
+        <$VbsCaSetup Data="FolderIconData" Binary="_FolderIcon_Desktop.ini.vbs"
+                    Entry="Uninstallation"
+                     Type=^<$FOLDERICON_SCHEDULE_UNINSTALL_TYPE>^
+                      Seq="<$FOLDERICON_SCHEDULE_UNINSTALL_SEQ>" CONDITION=^<$FOLDERICON_SCHEDULE_UNINSTALL_CONDITION>^  SeqTable="InstallExecuteSequence"
+                      KEY="<$@@KEY>_EXECUTE_AT_UNINSTALLATION"
+        >
+    #)
+    <$PropertyCa "DESKTOPINILOCATION" Value="[{$DirKey}]" Seq="<$FOLDERICON_SCHEDULE_UNINSTALL_SEQ>" Condition="<$FOLDERICON_SCHEDULE_UNINSTALL_CONDITION>" SeqTable="InstallExecuteSequence" KEY="<$@@KEY>_LOCATION_AT_UNINSTALLATION">
+#)
+
+
+#DefineRexx '@@Rexx4FolderIconBuildIni'
+    ;--- We can only do a directory once ------------------------------------
+    $Trace Dennis Here
+    @@Macro = '@@FolderIcon,DIRKEY={$DirKey}'
+    if  defined(@@Macro) = "Y" then
+        call error 'You can only use the FolderIcon command once for any particular directory!',,'"{$DirKey}" was first used at ' || MacroGet(@@Macro)
+    else
+    do
+        ;--- Remember where tis directory used ------------------------------
+        <$Rexx4UpdateRxMmLocationOnly>
+        call MacroSet @@Macro, RxMmLocation
+    end
+
+    ;--- [.ShellClassInfo] --------------------------------------------------
+    @@NlIndent = '{NL}    '
+    @@INI = ''
+    @@S   = ''
+    if '{$InfoTip=''           $$IsPassed}' = 'Y' then @@S = @@S || @@NlIndent || 'InfoTip={$InfoTip}'
+    if '{$IconResource=''      $$IsPassed}' = 'Y' then @@S = @@S || @@NlIndent || 'IconResource={$IconResource}'
+    if '{$IconFile=''          $$IsPassed}' = 'Y' then
+    do
+        @@S = @@S || @@NlIndent || ' IconFile={$IconFile}'
+        @@S = @@S || @@NlIndent || 'IconIndex={$IconIndex=^0^}'
+    end
+    if '{$DefaultDropEffect='' $$IsPassed}' = 'Y' then @@S = @@S || @@NlIndent || 'DefaultDropEffect={$DefaultDropEffect}'
+    if '{$ConfirmFileOp=''     $$IsPassed}' = 'Y' then @@S = @@S || @@NlIndent || 'ConfirmFileOp={$ConfirmFileOp}'
+    if '{$DefaultDropEffect='' $$IsPassed}' = 'Y' then @@S = @@S || @@NlIndent || 'DefaultDropEffect={$DefaultDropEffect}'
+    if  @@S <> '' then
+        @@INI = '<$LSB>.ShellClassInfo<$RSB>' || @@S || '{NL}{NL}'
+
+    ;--- [ViewState] --------------------------------------------------------
+    @@S = ''
+    if '{$FolderType='' $$IsPassed}' = 'Y' then @@S = @@S || @@NlIndent || 'FolderType={$FolderType}'
+    if '{$View=''       $$IsPassed}' = 'Y' then
+    do
+        @@S = @@S || @@NlIndent || 'Mode=<$FOLDERICON_MODE_{$View=^DETAILS^}>'
+        @@S = @@S || @@NlIndent || ' Vid=<$FOLDERICON_VIEW_{$View=^DETAILS^}>'
+    end
+    if  @@S <> '' then
+        @@INI = @@INI'{NL}<$LSB>ViewState<$RSB>' || @@S || '{NL}{NL}'
+
+    ;--- How long is the INI string? ----------------------------------------
+    @@L_INI = length(@@INI)
+#DefineRexx
+
+
+;--- Create the VBS ---------------------------------------------------------
+#data "FolderIconData"
+   "FOLDER"             "[DESKTOPINILOCATION]"         "<??*TEMP>\"
+   "DESKTOPINICONTENTS" "[DESKTOPINICONTENTS]"         "[Some Test INI contents]{NL}SomeName=SomeVal"
+#data
+#(  '<?NewLine>'
+    #define @@CREATE_DESKTOP_INI_VBS
+
+    ;--- Deferred Custom Action which accesses 2 passed parameters --------------
+    <$VbsCa Binary="_FolderIcon_Desktop.ini.vbs" DATA="FolderIconData">
+       dim AttrHidden : AttrHidden = 2
+       dim AttrSystem : AttrSystem = 4
+       dim Dir        : Dir        = VbsCaCadGet("FOLDER")
+       dim DesktopIni : DesktopIni = Dir & "desktop.ini"
+       dim oFS        : set oFS    = CaMkObject("Scripting.FileSystemObject")
+
+
+       <$VbsCaEntry "Installation">
+           CaDebug 1, "INSTALL Folder Icon for: " & Dir
+           Remove()
+           Add()
+       <$/VbsCaEntry>
+
+       <$VbsCaEntry "Uninstallation">
+           CaDebug 1, "REMOVE Folder Icon for: " & Dir
+           Remove()
+       <$/VbsCaEntry>
+
+       '=======================
+       sub Add()
+       '=======================
+            ;--- Create "desktop.ini" ---------------------------------------
+            on error resume next
+            CaDebug 2, "Add()"
+            VbsCaLogInc(1)
+                dim Oops : Oops = ""
+                dim Contents : Contents = VbsCaCadGet("DESKTOPINICONTENTS")
+                CaDebug 2, "Creating desktop.ini as a UNICODE file"
+                dim IniStream : set IniStream = oFS.CreateTextFile(DesktopIni, true, true)
+                if  err.number <> 0 then
+                    Oops = "Couldn't create """ & DesktopIni & """" & ErrDetails()
+                else
+                    ;--- Write contents -----------------------------------------
+                    CaDebug 2, "Write contents of """ & DesktopIni & """" & ErrDetails()
+                    IniStream.writeline( replace(Contents, "{NL}", vbCRLF) )
+                    IniStream.close()
+                    set IniStream = Nothing
+                    if  err.number <> 0 then
+                        Oops = "Writing to """ & DesktopIni & """ failed" & ErrDetails()
+                    else
+                        ;--- Fix attributes -------------------------------------
+                        dim oFile : set oFile = oFS.GetFile(DesktopIni)
+                        if  err.number <> 0 then
+                            Oops = ".GetFile for """ & DesktopIni & """ failed" & ErrDetails()
+                        else
+                            CaDebug 2, "Setting file attributes (system + hidden)"
+                            oFile.attributes = oFile.attributes OR AttrHidden
+                            oFile.attributes = oFile.attributes OR AttrSystem
+                            if  err.number <> 0 then
+                                Oops = "Failed setting attributes for """ & DesktopIni & """" & ErrDetails()
+                            end if
+                        end if
+                    end if
+                end if
+
+                ;--- Update the directory's attributes --------------------------
+                if  Oops = "" then
+                    CaDebug 2, "Getting folder object: " & Dir
+                    dim oFolder : set oFolder = oFS.GetFolder(Dir)
+                    if  err.number <> 0 then
+                        Oops = ".GetFolder for """ & Dir & """ failed" & ErrDetails()
+                    else
+                        CaDebug 2, "Setting folder attributes (system)"
+                        oFolder.attributes = oFolder.attributes OR AttrSystem
+                        if  err.number <> 0 then
+                            Oops = "Failed resetting attributes for """ & Dir & """" & ErrDetails()
+                        end if
+                        set oFolder = Nothing
+                    end if
+                end if
+
+                ;--- On install lets just show error in a message box and not abort ---
+                if  Oops <> "" then
+                    err.clear()
+                    CaMsgBox "E", "FAILED SETTING FOLDER ATTRIBUTES" & vbCRLF & vbCRLF &  Oops
+                end if
+            VbsCaLogInc(-1)
+            err.clear()
+       end sub
+       '=======================
+       sub Remove()
+       '=======================
+            ;--- Delete "desktop.ini" ---------------------------------------
+            on error resume next
+            CaDebug 2, "Remove()"
+            VbsCaLogInc(1)
+                dim Oops : Oops = ""
+                if  not oFS.FileExists(DesktopIni) then
+                    CaDebug 2, "desktop.ini didn't exist"
+                else
+                    CaDebug 2, "desktop.ini does exist, getting file object"
+                    dim oFile : set oFile = oFS.GetFile(DesktopIni)
+                    if  err.number <> 0 then
+                        Oops = ".GetFile for """ & DesktopIni & """ failed" & ErrDetails()
+                    else
+                        CaDebug 2, "Resetting file attributes"
+                        if oFile.attributes and AttrHidden then oFile.attributes = oFile.attributes - AttrHidden
+                        if oFile.attributes and AttrSystem then oFile.attributes = oFile.attributes - AttrSystem
+                        if  err.number <> 0 then
+                            Oops = "Failed resetting attributes for """ & DesktopIni & """" & ErrDetails()
+                        else
+                            CaDebug 2, "Attributes reset so delete the file"
+                            oFS.DeleteFile DesktopIni, true
+                            if  err.number <> 0 then
+                                Oops = "Failed deleting the file """ & DesktopIni & """" & ErrDetails()
+                            end if
+                        end if
+                        set oFile = Nothing
+                    end if
+                end if
+
+                ;--- Remove attributes from the directory (we will let windows installer delete the directory) ---
+                if  Oops = "" then
+                    CaDebug 2, "See if the directory """ & Dir & """ exists"
+                    if  not oFS.FolderExists(Dir) then
+                        CaDebug 2, "It didn't exist"
+                    else
+                        CaDebug 2, "The folder exists, getting folder object"
+                        dim oFolder : set oFolder = oFS.GetFolder(Dir)
+                        if  err.number <> 0 then
+                            Oops = ".GetFolder for """ & Dir & """ failed" & ErrDetails()
+                        else
+                            CaDebug 2, "Resetting folder attributes"
+                            if oFolder.attributes and AttrHidden then oFolder.attributes = oFolder.attributes - AttrHidden
+                            if oFolder.attributes and AttrSystem then oFolder.attributes = oFolder.attributes - AttrSystem
+                            if  err.number <> 0 then
+                                Oops = "Failed resetting attributes for """ & Dir & """" & ErrDetails()
+                            end if
+                            set oFolder = Nothing
+                        end if
+                    end if
+                end if
+
+                ;--- On uninstall lets just show error in a message box and not abort ---
+                if  Oops <> "" then
+                    err.clear()
+                    CaDebug 2, "ERROR: " & Oops
+                    MsgBox Oops,,"DB$TODO Improve this..."
+                end if
+            VbsCaLogInc(-1)
+            err.clear()
+       end sub
+    <$/VbsCa>
+#)
+
+
+
+
+#NextId UNLOCK "FolderIcon.MMH"

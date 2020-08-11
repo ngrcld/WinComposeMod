@@ -1,0 +1,443 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   HTMLSORT.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.6  $
+;          $Date:   25 Oct 2005 18:14:40  $
+;       $Logfile:   C:/DBAREIS/Projects.PVCS/Win32/MakeMsi/HtmlSort.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;
+;    Works in IE + FireFox:
+;          * http://www.kryogenix.org/code/browser/sorttable/   (arrows too)
+;          * http://work.hexx.net/ga/highlightedsorttable/example.html (better example with alternate rows highlighted)
+;----------------------------------------------------------------------------
+
+#NextId
+#NextId LOCK "HTMLSORT.MMH"
+
+;--- Define Table SORT code -------------------------------------------------
+#define? TblSortAttributesForTable onclick='sortColumn(event)'
+#( '<?NewLine>'
+   #define? TableSortStyles
+   THEAD TH
+   {
+       cursor: hand;
+       BORDER-RIGHT: buttonshadow 1px solid;
+       BORDER-TOP: buttonhighlight 1px solid;
+       BACKGROUND: buttonface;
+       FONT: menu;
+       BORDER-LEFT: buttonhighlight 1px solid;
+       PADDING-TOP: 0px;
+       BORDER-BOTTOM: buttonshadow 1px solid;
+       FONT-SIZE: 14px;
+       HEIGHT: 20px
+   }
+   THEAD .nosort
+   {
+       background: <$HTMLRPT_STYLE_BACKGROUND_COLOR>;
+       CURSOR: default;
+   }
+   .arrow
+   {
+       PADDING-RIGHT: 0px;
+       MARGIN-TOP: -3px;
+       PADDING-LEFT: 0px;
+       FONT-SIZE: 14px;
+       MARGIN-BOTTOM: 2px;
+       PADDING-BOTTOM: 2px;
+       OVERFLOW: hidden;
+       COLOR: black;
+       PADDING-TOP: 0px;
+       FONT-FAMILY: webdings;
+;       WIDTH: 10px;
+;       HEIGHT: 11px
+   }
+#)
+#define? HTMLSORT_INITIALIZATION_CODE_AND_OR_MORE_FUNCTIONS
+#( '<?NewLine>'
+   #define? TableSortJavaScript
+
+   <script language="JavaScript">
+   //------------------------------------------
+   //Source of Original Code
+   //=======================
+   //http://www.jsmadeeasy.com/javascripts/Advanced/sorting%20tables/dom.htm
+   //http://webfx.eae.net/dhtml/tablesort/tablesort.html (its original source?)
+   //------------------------------------------
+   var TsDom       = (document.getElementsByTagName) ? true : false;
+   var TsIsIe5Plus = (document.getElementsByTagName && document.all) ? true : false;
+   var TsArrowUp, TsArrowDown;
+
+   ;--- Used by SORT (to enable use of "setTimeout()" -----------------------
+   var G_tableNode, G_nCol, G_bDesc, G_SortType
+
+   if (TsIsIe5Plus || TsDom)
+       initSortTable();
+
+   ;--- Could be used by user to add new sort types -------------------------
+   <$HTMLSORT_INITIALIZATION_CODE_AND_OR_MORE_FUNCTIONS>
+
+   //===========================================================================
+   function TS_METHOD_ALPHABETIC(nCol, bDescending)
+   //===========================================================================
+   {
+       var c = nCol;
+       var d = bDescending;
+
+       function _compare(n1, n2)
+       {
+           var T1 = getInnerText(n1.cells[c]).toLowerCase();
+           var T2 = getInnerText(n2.cells[c]).toLowerCase();
+           var v;
+           if (T1 < T2)
+               v = (d) ? -1 : +1;
+           else if (T1 > T2)
+               v = (d) ? +1 : -1;
+           else
+               v = 0;
+           return(v);
+       }
+
+       return _compare;
+   }
+
+   //===========================================================================
+   function TS_METHOD_CS(nCol, bDescending)   ;;ALPHABETIC (Case Sensitive)
+   //===========================================================================
+   {
+       var c = nCol;
+       var d = bDescending;
+
+       function _compare(n1, n2)
+       {
+           var T1 = getInnerText(n1.cells[c]);
+           var T2 = getInnerText(n2.cells[c]);
+           var v;
+           if (T1 < T2)
+               v = (d) ? -1 : +1;
+           else if (T1 > T2)
+               v = (d) ? +1 : -1;
+           else
+               v = 0;
+           return(v);
+       }
+
+       return _compare;
+   }
+
+   //===========================================================================
+   function TS_METHOD_Date(nCol, bDescending)
+   //===========================================================================
+   {
+       var c = nCol;
+       var d = bDescending;
+
+       function _compare(n1, n2)
+       {
+           var v;
+           var T1 = getInnerText(n1.cells[c]);
+           var T2 = getInnerText(n2.cells[c]);
+           var D1 = Date.parse(T1);
+           if  (isNaN(D1))
+               D1 = Date.parse("01 JAN 1900");
+           var D2 = Date.parse(T2);
+           if  (isNaN(D2))
+               D2 = Date.parse("01 JAN 1900");
+
+           if (D1 < D2)
+               v = (d) ? -1 : +1;
+           else if (D1  > D2 )
+               v = (d) ? +1 : -1;
+           else
+               v = 0;
+           return(v);
+       }
+
+       return _compare;
+   }
+
+   //===========================================================================
+   function TS_METHOD_DateComma(nCol, bDescending)
+   //===========================================================================
+   {
+       var c = nCol;
+       var d = bDescending;
+       function _compare(n1, n2)
+       {
+           var v;
+           var T1 = getInnerText(n1.cells[c]).replace(/,/g, '');
+           var T2 = getInnerText(n2.cells[c]).replace(/,/g, '');
+           var D1 = Date.parse(T1);
+           if  (isNaN(D1))
+               D1 = Date.parse("01 JAN 1900");
+           var D2 = Date.parse(T2);
+           if  (isNaN(D2))
+               D2 = Date.parse("01 JAN 1900");
+
+           if (D1 < D2)
+               v = (d) ? -1 : +1;
+           else if (D1  > D2 )
+               v = (d) ? +1 : -1;
+           else
+               v = 0;
+           return(v);
+       }
+
+       return _compare;
+   }
+
+   //===========================================================================
+   function TS_METHOD_Number(nCol, bDescending)
+   //===========================================================================
+   {
+       var c = nCol;
+       var d = bDescending;
+
+       function _compare(n1, n2)
+       {
+           var v;
+           var T1 = getInnerText(n1.cells[c]);
+           var T2 = getInnerText(n2.cells[c]);
+           var V1 = parseFloat(T1);
+           if  (isNaN(V1))
+               V1 = 0;
+           var V2 = parseFloat(T2);
+           if  (isNaN(V2))
+               V2 = 0;
+
+           if (V1 < V2)
+               v = (d) ? -1 : +1;
+           else if (V1  > V2 )
+               v = (d) ? +1 : -1;
+           else
+               v = 0;
+           return(v);
+       }
+
+       return _compare;
+   }
+
+   //===========================================================================
+   function TS_METHOD_NumberComma(nCol, bDescending)
+   //===========================================================================
+   {
+       var c = nCol;
+       var d = bDescending;
+
+       function _compare(n1, n2)
+       {
+           var v;
+           var T1 = getInnerText(n1.cells[c]).replace(/,/g, '');
+           var T2 = getInnerText(n2.cells[c]).replace(/,/g, '');
+           var V1 = parseFloat(T1);
+           if  (isNaN(V1))
+               V1 = 0;
+           var V2 = parseFloat(T2);
+           if  (isNaN(V2))
+               V2 = 0;
+
+           if (V1 < V2)
+               v = (d) ? -1 : +1;
+           else if (V1  > V2 )
+               v = (d) ? +1 : -1;
+           else
+               v = 0;
+           return(v);
+       }
+
+       return _compare;
+   }
+
+
+   //===========================================================================
+   function initSortTable()
+   //===========================================================================
+   {
+       TsArrowUp = document.createElement("SPAN");
+       var tn = document.createTextNode("5");
+       TsArrowUp.appendChild(tn);
+       TsArrowUp.className = "arrow";
+
+       TsArrowDown = document.createElement("SPAN");
+       var tn = document.createTextNode("6");
+       TsArrowDown.appendChild(tn);
+       TsArrowDown.className = "arrow";
+   }
+
+   //===========================================================================
+   function sortTableMainline()
+   //===========================================================================
+   {
+       ;--- Get table info --------------------------------------------------
+       var tBody = G_tableNode.tBodies[0];
+       var trs   = tBody.childNodes;
+       var a     = new Array();
+       for (var i=0; i < trs.length; i++)
+       {
+           a[i] = trs[i];
+       }
+
+       ;--- Sort the table --------------------------------------------------
+       window.status  = "Sorting the table (" + trs.length + " rows).  Please wait...";
+       document.body.style.cursor = 'wait'
+       try
+       {
+           eval("a.sort(TS_METHOD_" + G_SortType + "(G_nCol,G_bDesc))")
+       }
+       catch(e)
+       {
+          var ErrMessage = "Type of trap is \"" + e.name + "\", description: " + e.message
+          alert("Sorting failed, probably due to an invalid sort type (\"" + G_SortType + "\")." + "\n\n" + ErrMessage);
+       }
+       window.status  = "Finished sorting, now adjusting table.  Please wait...";
+
+       ;--- Adjust the table ------------------------------------------------
+       for (var i=0; i < a.length; i++)
+       {
+           tBody.appendChild(a[i]);
+       }
+       document.body.style.cursor = 'auto'
+       G_tableNode.disabled       = "";            ;;un-Grey out table
+       window.status              = "";
+   }
+
+
+   //===========================================================================
+   function sortTable(tableNode, nCol, bDesc, SortType)
+   //===========================================================================
+   {
+        ;--- Tell user whats going and and then start the sort --------------
+        window.status  = "Sorting the table... Please wait...";
+        document.body.style.cursor = 'wait';
+        tableNode.disabled         = "wait";               ;;Gray out table
+
+        ;--- Now make the above "please wait" changes visible... ------------
+        G_tableNode = tableNode;
+        G_nCol      = nCol;
+        G_bDesc     = bDesc;
+        G_SortType  = SortType;
+        window.setTimeout("sortTableMainline()", 100);  ;;A small delay gives user confidence
+   }
+
+
+   //===========================================================================
+   function sortColumn(e)
+   //===========================================================================
+   {
+       var tmp, el, tHeadParent;
+       if (TsIsIe5Plus)
+           tmp = e.srcElement;
+       else if (TsDom)
+           tmp = e.target;
+
+       tHeadParent = getParent(tmp, "THEAD");
+       el = getParent(tmp, "TH");
+
+       if (tHeadParent == null)
+           return;
+
+       if (el != null)
+       {
+           var p = el.parentNode;
+           var i;
+           var SortType;
+
+           ;--- Get Sort Type -----------------------------------------------
+           if (el.SortType == null)
+               SortType = "";
+           else
+               SortType = el.SortType;
+           if (SortType == "")
+               SortType="ALPHABETIC";
+           if (SortType.toLowerCase() == "none")
+               return;             //Don't sort on this column
+
+
+           if (el._descending) // catch the null
+               el._descending = false;
+           else
+               el._descending = true;
+
+           if (tHeadParent.arrow != null) {
+               if (tHeadParent.arrow.parentNode != el) {
+                   tHeadParent.arrow.parentNode._descending = null;    //reset sort order
+               }
+               tHeadParent.arrow.parentNode.removeChild(tHeadParent.arrow);
+           }
+
+           if (el._descending)
+               tHeadParent.arrow = TsArrowDown.cloneNode(true);
+           else
+               tHeadParent.arrow = TsArrowUp.cloneNode(true);
+
+           el.appendChild(tHeadParent.arrow);
+
+           // get the index of the td
+           for (i=0; i<p.childNodes.length; i++) {
+               if (p.childNodes[i] == el) break;
+           }
+
+           var table = getParent(el, "TABLE");
+           // can't fail
+
+           sortTable(table,i,el._descending, SortType);
+       }
+   }
+
+
+   //===========================================================================
+   function getInnerText(el)
+   //===========================================================================
+   {
+       ;--- Check for a missing TD ------------------------------------------
+       var Text;
+       if  (el == null)
+           Text = "";              //Missing TD
+       else
+       {
+           if (TsIsIe5Plus)
+           {
+               Text = el.innerText;
+               Text = Text.replace(/^\s*/, '').replace(/\s*$/, '');
+           }
+           else
+           {
+               for (var i=0; i<el.childNodes.length; i++)
+               {
+                   switch (el.childNodes.item(i).nodeType)
+                   {
+                       case 1: //ELEMENT_NODE
+                           Text += getInnerText(el.childNodes.item(i));
+                           break;
+                       case 3: //TEXT_NODE
+                           Text += el.childNodes.item(i).nodeValue;
+                           break;
+                   }
+
+               }
+           }
+       }
+       return(Text);
+   }
+
+
+   //===========================================================================
+   function getParent(el, pTagName)
+   //===========================================================================
+   {
+       if (el == null) return null;
+       else if (el.nodeType == 1 && el.tagName.toLowerCase() == pTagName.toLowerCase())    // Gecko bug, supposed to be uppercase
+           return el;
+       else
+           return getParent(el.parentNode, pTagName);
+   }
+   </script>
+#)
+
+
+#NextId UNLOCK "HTMLSORT.MMH"

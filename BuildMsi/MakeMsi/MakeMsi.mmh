@@ -1,0 +1,442 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   MAKEMSI.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.116  $
+;          $Date:   19 Jun 2018 13:19:12  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/MakeMsi.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   This is the main ("ENTRY POINT") header that can be
+;                   used to make or update MSI files.
+;
+;                   Do NOT touch this file it is included by your script!
+;
+;                   No VB knowledge is required.
+;
+;                   Note that it is expected that users will use MSIVAL2
+;                   to validate any generated MSIs.
+;----------------------------------------------------------------------------
+
+;--- Load MAKEMSI version number --------------------------------------------
+#include "MmVersion.mmh"
+
+;--- Output copyright -------------------------------------------------------
+#define? MAKEMSI_HOMEPAGE     <?PpwizardAuthorBaseWebDir>makemsi.htm
+#define? MAKEMSI_AUTHOR_NAME  <?PpwizardAuthor>
+#define? MAKEMSI_AUTHOR_EMAIL <?PpwizardAuthorEmail>
+#info ^MAKEMSI version <$MAKEMSI_VERSION>^
+#info ^(C)opyright <$MAKEMSI_AUTHOR_NAME>, Australia (2003-2014)^
+#info ^All rights reserved.^
+
+;--- Display support info ---------------------------------------------------
+;#define? MAKEMSI_SUPPORT_INFO "<$MAKEMSI_DOCO_DIR>/the_makemsi_group.htm"
+;#define? MAKEMSI_DOCO_DIR     http://makemsi-manual.dennisbareis.com
+#(
+    #define? MAKEMSI_SUPPORT_INFO_DISPLAYED_AFTER_COPYRIGHT
+    #info    ^WEB    : "<$MAKEMSI_HOMEPAGE>"^
+    #info    ^SUPPORT: "http://makemsi-manual.dennisbareis.com/the_makemsi_group.htm"^
+    #info    ^EMAIL  : "<$MAKEMSI_AUTHOR_EMAIL>"^
+#)
+<$MAKEMSI_SUPPORT_INFO_DISPLAYED_AFTER_COPYRIGHT>
+
+;--- Need specific version of PPWIZARD? -------------------------------------
+#require "08.233"               ;;Need "$$c2x" transformations
+
+;--- Define MAKEMSI Debug stuff ---------------------------------------------
+#include "debug.mmh"
+
+;--- Handle Invalid or Obsolete Macros --------------------------------------
+#include "InvalidMacros.MMH"
+
+;--- Some files are in password protected zips due to false AV (AntiVirus) alerts ---
+#define AvZipPassword           notavirus
+
+;--- On NT based operating system? ------------------------------------------
+#if pos('COMMAND.COM', '<??*COMSPEC>') <> 0
+   ;--- DOS -----------------------------------------------------------------
+   #define IsDos                           ;;Win95, 95, ME
+   #define Stderr2Out                      ;;Can't do in DOS ("errors" may be visible)
+   #define Cmd.EXE        command.com
+   #define BatchExtn      bat
+   #define? VALID_ValidateTheGeneratedMsi \
+            #Info ^Can't validate the generated MSI under DOS (Please use ORCA for validation)...^
+#elseif
+   ;--- NT ------------------------------------------------------------------
+   #define IsNT                            ;;Windows NT4, 2000, XP, ?
+   #define Stderr2Out     2>&1
+   #define Cmd.EXE        cmd.exe
+   #define BatchExtn      cmd
+#endif
+
+
+;--- Perform some basic validations -----------------------------------------
+#DefineRexx '@@GetRequiredEnvironmentVariable'
+    @@{$#1} = GetEnv('{$#1}')
+    if  @@{$#1} = '' then
+        error(@@MP || 'The environment variable "{$#1}" is missing!');
+#DefineRexx
+#DefineRexx '@@ExpectToFindMmDirInThisEnvVar'
+    ;--- Make sure the env var exists and get its value ---------------------
+    <$@@GetRequiredEnvironmentVariable "{$#1}">
+
+    ;--- Make sure it contains the value ------------------------------------
+    @@L4 = translate(@@MAKEMSI_DIR);
+    @@In = translate(@@{$#1});
+    if  pos(@@L4, @@In) = 0 then
+        error(@@MP || 'The environment variable "{$#1}" doesn''t contain the installation','directory "' || @@MAKEMSI_DIR || '"!',, 'It contains: ' || @@{$#1});
+#DefineRexx
+#DefineRexx '@@MmFileMustExist'
+    @@File = @@MAKEMSI_DIR;
+    if  right(@@File, 1) <> '\' then
+        @@File = @@File || '\';
+    @@File = @@File || '{$#1}';
+    if  FileQueryExists(@@File) = '' then
+        error(@@MP || 'The file "' || @@File || '" doesn''t exist!');
+#DefineRexx
+#DefineRexx ''
+    ;--- Create a standard prefix for all validation errors -----------------
+    @@MP =         'It looks like MAKEMSI has not been correctly installed.' || '0A'x
+    @@MP = @@MP || 'If you have recently installed MAKEMSI and not rebooted then please do so now!' || '0A'x
+    @@MP = @@MP || 'If you have rebooted, perhaps its worth trying a reinstall...' || '0A'x
+    @@MP = @@MP || 'If you still have problems please email me (<$MAKEMSI_AUTHOR_NAME>) at:'  || '0A'x || '   <$MAKEMSI_AUTHOR_EMAIL>' || '0A0A'x
+    @@MP = @@MP || 'THE DETECTED ERROR'  || '0A'x
+    @@MP = @@MP || '~~~~~~~~~~~~~~~~~~'  || '0A'x
+
+    ;--- Check some environment variables -----------------------------------
+    <$@@GetRequiredEnvironmentVariable "MAKEMSI_DIR">
+    <$@@ExpectToFindMmDirInThisEnvVar  "REGINA_MACROS">
+    ;<$@@ExpectToFindMmDirInThisEnvVar  "PPWIZARD_INCLUDE">       ;;Hmmm not set on my box (PRJ support?)
+
+    ;--- Check some files ---------------------------------------------------
+    <$@@MmFileMustExist "Tee4mm.4MM">
+#DefineRexx
+
+
+;---[4Doco-DefaultHtmlExtension]---
+;--- Default DOCO extension (HTML Application - gets around WINXP SP2 issue) ---
+#define?  MAKEMSI_HTML_EXTENSION        hta
+;---[4Doco-DefaultHtmlExtension]---
+
+
+;--- Defaults ---------------------------------------------------------------
+#RexxVar  RxGeneratedKeySuffix = ''
+#define?  MAKEMSI_UPDATING_WHAT_EXTN    MSI        ;;Extension of file
+#define?  MAKEMSI_UPDATING_WHAT_TEXT    MSI        ;;Descriptive text (not extension) used in messages
+#ifndef   MAKEMSI_CREATING_MERGE_MODULE
+    #define?  MAKEMSI_PROPERTY_PREFIX  _MAKEMSI_
+#elseif
+    #define?  MAKEMSI_PROPERTY_PREFIX  _MAKEMSI<$MAKEMSM_KEY_SUFFIX>_
+#endif
+#define?  MAKEMSI_TABLENAME_PREFIX      _MAKEMSI_
+#define?  MAKEMSI_TABLENAME_CABS        <$MAKEMSI_TABLENAME_PREFIX>Cabs
+#define?  MAKEMSI_TABLENAME_FILESOURCE  <$MAKEMSI_TABLENAME_PREFIX>FileSource
+#define?  MAKEMSI_MM_DIR                <?InputFile $$FilePart:Location>
+#define?  MAKEMSI_MM_BASENAME           <?InputFile $$FilePart:Name>
+#define?  MAKEMSI_DATE_TIME_FORMAT      %c
+#define?  MAKEMSI_INPUTFILE_DATE_TIME_SUMMARY_FORMAT   <$MAKEMSI_DATE_TIME_FORMAT> ;;Blank to disable summary line
+#define?  MAKEMSI_INPUTFILE_DATE_TIME_SUMMARY_TITLE    <?InputFile:n>
+#define?  MAKEMSI_SUMMARY_LINES_TO_DROP                Operating Syst;Rexx Version
+#define?  MAKEMSI_BASE_REGISTRY_KEY                    Software\MakeMSI            ;;Any other keys branch from here (CU or LM)
+#define?  MAKEMSI_MAXLNG_PRODUCTNAME    63            ;;Documented limit which is validated by ICE??
+#define?  MAKEMSI_CSCRIPT.EXE_FLAGS     //NoLogo //I  ;;Don't want to see logo and ensure INTERACTIVE!
+#define?  MAKEMSI_CSCRIPT.EXE           cscript{$EXTN=^.exe^} <$MAKEMSI_CSCRIPT.EXE_FLAGS>
+#define?  MAKEMSI_HOOK_SECOND_PASS_PROCESSING                 ;;If non-blank then execute and need a pass 2!
+
+;--- Some environmental information -----------------------------------------
+#ifndef MAKEMSI_COMPUTERNAME
+    ;--- "MAKEMSI_COMPUTERNAME" not yet defined -----------------------------
+    #if ['<??*COMPUTERNAME? $$IsBlank>' = 'Y']
+        #define  MAKEMSI_COMPUTERNAME    UnknownComputer
+    #elseif
+        #define  MAKEMSI_COMPUTERNAME    <??*COMPUTERNAME>
+    #endif
+#endif
+#ifndef MAKEMSI_USERDOMAIN
+    ;--- "MAKEMSI_USERDOMAIN" not yet defined -----------------------------
+    #if ['<??*USERDNSDOMAIN? $$IsBlank>' = 'N']
+        #define  MAKEMSI_USERDOMAIN    <??*USERDNSDOMAIN>
+    #elseif
+        #if ['<??*USERDOMAIN? $$IsBlank>' = 'N']
+            #define  MAKEMSI_USERDOMAIN    <??*USERDOMAIN>
+        #elseif
+            #define  MAKEMSI_USERDOMAIN    UnknownUserDomain
+        #endif
+    #endif
+#endif
+#ifndef MAKEMSI_USERNAME
+    ;--- "MAKEMSI_USERNAME" not yet defined ---------------------------------
+    #DefineRexx ''
+       ;--- Try PCVS ID -----------------------------------------------------
+       @@UserName = getenv("vcsid");
+
+       ;--- TRY "USERNAME" --------------------------------------------------
+       if  @@UserName = '' then
+           @@UserName = getenv("USERNAME");
+
+       ;--- Failed? ---------------------------------------------------------
+       if  @@UserName = '' then
+           @@UserName = "UnknownUser";
+
+       ;--- Set up the macro ------------------------------------------------
+       call MacroSet 'MAKEMSI_USERNAME', @@UserName;
+    #DefineRexx
+#endif
+
+
+
+
+;--- Some of the "external" files we use ------------------------------------
+#define EXTN_REXX              4mm                     ;;Want install to leave ".REX" alone!
+#define NAME_REGINA.EXE        Reg<$EXTN_REXX>.exe     ;;Rename exe in case another version of regina installed
+#define NAME_REGINA.DLL        Reg<$EXTN_REXX>.dll     ;;Rename dll in case another version of regina installed (note EXE patched to load this name!)
+#define NAME_PPWIZARD.REX      PpWiz4MM.<$EXTN_REXX>   ;;Don't interfer with any existing PPWIZARD
+#define NAME_TEE.REX           Tee4MM.<$EXTN_REXX>     ;;User may have their own TEE program
+
+
+;--- Some handy macros ------------------------------------------------------
+#define? AnyDir TARGETDIR        ;;Sometimes any directory key will do
+
+
+;--- Some codes useful in VB literals ("<$VbCRLF>" etc) ---------------------
+#( ''
+   #define VbChr           ;;Note MSIDIFF has the similar "reverse" mappings
+   #define  {$From} <?x{$From}>
+   #RexxVar {$From} =x= ^" & {$To} & "^
+#)
+<$VbChr From="CRLF" To="vbCRLF">  ;;Carriage Return + Line Feed
+<$VbChr From="LF" To="vbLF">      ;;Line Feed only
+<$VbChr From="DQ" To='""""'>      ;;Double quote - of any use?????
+
+;--- "VbExp" can be used to imbed a VBSCRIPT expression in a literal string ---
+#RexxVar       DoubleQuote =x= '"'
+#define VbExp  {$!:EXP}<?xDoubleQuote> & {$Exp} & <?xDoubleQuote>   ;;<$Property "FRED_Exp" Value="<$VbExp Exp=~FormatDateTime(date(), 0)~>">
+
+;--- Default information ----------------------------------------------------
+#NextId
+#option PUSH DefineMacroReplace=ON
+    ;--- The following definitions should not contain macros references -----
+    #define? MAKEMSI_OUTDIR        <?OutputFile $$FilePart:Location $$lower>        ;;Root dir, Should end with a slash! Since 2018-06-09 (v18.161) - LOWER CASE so that compile cache's don't get invalidated etc
+    #define? MAKEMSI_OUT_LOG_DIR   <$MAKEMSI_OUTDIR>Log\                            ;;Log directory location, Should end with a slash!
+    #define? MAKEMSI_OUT_MSI_DIR   <$MAKEMSI_OUTDIR><$MAKEMSI_UPDATING_WHAT_EXTN>\  ;;MSI/MSM directory location, Should end with a slash!
+#option POP
+#DefineRexx ''
+   ;--- Need to get the Log directory as a relative value -------------------
+   @@LogDir   = '<$MAKEMSI_OUT_LOG_DIR>';
+   @@LogDirNS = left(@@LogDir, length(@@LogDir)-1);
+   call MacroSet 'MAKEMSI_OUT_LOG_DIR_RELATIVE', FileNameRelative(@@LogDirNS) || '\', '?'  ;;MAKECAB.EXE can't handle long dir names (piece of crap...)
+#DefineRexx
+#DefineRexx ''
+   call MakeDirectoryTree "<$MAKEMSI_OUT_LOG_DIR>";
+#DefineRexx
+
+
+;---[4Doco-MainLoggingDirectories]---
+;--- Set up some other logging directories (defaults/suggestions) -----------
+#define? MAKEMSI_CA_DIR            <$MAKEMSI_OUT_LOG_DIR $$DEL:\>CustomActions      ;;Custom Action code
+#define? MAKEMSI_NONCA_SCRIPT_DIR  <$MAKEMSI_OUT_LOG_DIR $$DEL:\>Scripts            ;;Scripts which are NOT Custom Action code
+#define? MAKEMSI_VBSCA_DIR         <$MAKEMSI_CA_DIR $$DEL:\>VB                      ;;Custom Actions - VBSCRIPT based
+#define? MAKEMSI_JSCA_DIR          <$MAKEMSI_CA_DIR $$DEL:\>JavaScript              ;;Custom Actions - JSCRIPT based
+#define? MAKEMSI_DLLCA-C_DIR       <$MAKEMSI_CA_DIR $$DEL:\>C                       ;;Custom Actions - C/C++ based
+#define? MAKEMSI_VBSCRIPT_DIR      <$MAKEMSI_NONCA_SCRIPT_DIR $$DEL:\>VB            ;;VBSCRIPT (not custom actions)
+#define? MAKEMSI_JSCRIPT_DIR       <$MAKEMSI_NONCA_SCRIPT_DIR $$DEL:\>JavaScript    ;;JSCRIPT  (not custom actions)
+#define? MAKEMSI_CABINET_DIR       <$MAKEMSI_OUT_LOG_DIR_RELATIVE $$DEL:\>CAB.MAKECAB ;;Use as short a name as possible to help overcome MS MAKECAB.EXE bugs
+#define? MAKEMSI_CABINET_CACHE_DIR <$MAKEMSI_OUT_LOG_DIR_RELATIVE $$DEL:\>CAB.CACHE   ;;If you want "MakeCab" caching then where should the cache be located? (empty to completely disable)
+#define? MAKEMSI_MSIVALIDATION_DIR <$MAKEMSI_OUT_LOG_DIR $$DEL:\>Validation         ;;Validation related files
+#define? MAKEMSI_OTHER_DIR         <$MAKEMSI_OUT_LOG_DIR $$DEL:\>Other              ;;Sundry other files
+
+;--- Set up a hook ----------------------------------------------------------
+#define? MAKEMSI_HOOK_ASAP_AFTER_LOG_DIRECTORIES_DEFINED
+<$MAKEMSI_HOOK_ASAP_AFTER_LOG_DIRECTORIES_DEFINED>
+;---[4Doco-MainLoggingDirectories]---
+
+
+;--- Affects the HTML reporting (stops columns getting too wide) ------------
+#define? PPWIZARD_WBR_AFTER     /?&_.|\    ;;Chopping preferred at these characters
+#define? PPWIZARD_WBR_MAX       20         ;;Chop at 20 bytes
+
+;--- Include other headers which support MAKEMSI operations -----------------
+#ifndef HookInto
+        ;--- User hasn't already included -----------------------------------
+        #include "HookInto.MMH"
+#endif
+#include "MacroCfg.MMH"       ;;"MacroCfg" and "/MacroCfg"
+#include "EventLog.MMH"       ;;Windows Event log related
+#include "FilesInZip.MMH"     ;;Code to unpack zip or other archive at install time
+#include "FileMake.MMH"       ;;"FileMake" macro
+#include "SourceFile.MMH"     ;;"SourceFile" macro
+#include "SUNDRY.MMH"         ;;Assorted general purpose (generally small) commands and definitions
+#include "MMMODE.MMH"         ;;MAKEMSI Processing mode logic/validation
+#include "Platform.MMH"       ;;Platform macro and similar logic
+#include "OnExit.MMH"         ;;on exit processing
+#include "Valid.MMH"          ;;Validation code (MSIVAL2.EXE)
+#include "Samples.MMH"        ;;copies "samples" to samples directory.
+#include "Location.MMH"       ;;UpdateMmLocation
+#include "Stamp.MMH"          ;;StampSourceDetailsIntoProperty
+#include "MSI.MMH"            ;;MSI
+#include "TableRow.MMH"       ;;Table, TableCreate, TableDelete, Row, RowsDeleteAll, RowsDelete
+#include "TableDef.MMH"       ;;TableDefinition, Column, TableDefinitionIDT
+#include "Tables.MMH"         ;;Define tables
+#include "TableIE.MMH"        ;;TableExportToIdt, TableImportFromIdt
+#include "Access.MMH"         ;;Permissions related
+#include "Feature.MMH"        ;;Feature
+#include "Component.MMH"      ;;Component
+#include "Summary.MMH"        ;;Summary
+#include "Property.MMH"       ;;Property
+#include "Icon.MMH"           ;;Icon
+#include "ShortCut.MMH"       ;;Shortcut
+#include "ShortCutUrl.MMH"    ;;ShortcutUrl
+#include "Registry.MMH"       ;;Registry
+#include "KeyPath.MMH"        ;;KeyPathRegistry
+#include "RemFile.MMH"        ;;RemoveFile
+#include "Environ.MMH"        ;;Path, Environment
+#include "DirMap.MMH"         ;;MapUserDir (directory mapping)
+#include "DirTree.MMH"        ;;DirectoryTree
+#include "Dir1.MMH"           ;;Directory
+#include "DirCompress.MMH"    ;;DirectoryCompress
+#include "File.MMH"           ;;File macro
+#include "Files.MMH"          ;;Files macro
+#include "FileCmt.MMH"        ;;FileComment macro
+#include "RegistryCmt.MMH"    ;;RegistryComment macro
+#include "FolderIcon.MMH"     ;;FolderIcon macro
+#include "MajorUpgrade.MMH"   ;;MajorUpgrade macro
+#include "Binary.MMH"         ;;Binary  (must be included after "file.mmh")
+#include "VER.MMH"            ;;VERSION file handling
+#include "Guid.MMH"           ;;Guid related
+#include "Dialog.MMH"         ;;Dialog related
+#include "DialogTemplate.MMH"
+#include "VbsCA.MMH"          ;;VbsBuild, VbsCa etc
+#include "JsCA.MMH"           ;;JsCa etc
+#include "ExeCA.MMH"          ;;ExeCa
+#include "DllCA.MMH"          ;;DllCa
+#include "DllCA-C.MMH"        ;;DllCa-C
+#include "Extn.MMH"           ;;Extn, /Extn, ExtnAction
+#include "Service.MMH"        ;;ServiceInstall, ServiceControl
+#include "Ini.MMH"            ;;IniFile, /IniFile, IniSection, /IniSection, Ini
+#include "Find.MMH"           ;;FileFind, RegistryFind
+#include "AbortIf.MMH"        ;;AbortIf
+#include "Schedule.MMH"       ;;Schedule
+#include "ADSI.MMH"           ;;ADSI, /ADSI
+#include "ComPlus.MMH"        ;;ComPlusApp, /ComPlusApp
+#include "RegImport.MMH"      ;;RegistryImport
+#include "IniImport.MMH"      ;;IniImport
+#include "WrapInst.MMH"       ;;WrapInstall
+#include "MergeMod.MMH"       ;;MergeModule stuff
+#include "RunCmd.mmh"         ;;RunCmd & /RunCmd
+#include "CompileFiles.MMH"   ;;Replaced "Compile.MMH"
+#include "CodePage.MMH"       ;;Code page related commands
+#include "SrcCode.MMH"        ;;Show Source code in HTML
+#include "SelfReg.MMH"        ;;SelfReg
+#include "MsiExtra.MMH"       ;;"MsiExtraFiles" etc
+#include "TransformMsi.MMH"   ;;Support for creating transforms
+#include "Py2MSI.MMH"         ;;Python to MSI Framework
+#include "CaType.MMH"         ;;Custom Action type related code
+#include "Seq#.MMH"           ;;Sequence number relates code
+#include "CommonFrameWork.MMH"
+
+
+;--- Before any Version file manipulation -----------------------------------
+#define? MAKEMSI_HOOK_JUST_BEFORE_VERSION_FILE_PROCESSING_STARTS
+<$MAKEMSI_HOOK_JUST_BEFORE_VERSION_FILE_PROCESSING_STARTS>
+
+;--- Get change details (May wish to refer to version etc in prod info) -----
+#define? MAKEMSI_BEFORE_VerFileGetChangeHistory
+#define? MAKEMSI_AFTER_VerFileGetChangeHistory
+<$MAKEMSI_BEFORE_VerFileGetChangeHistory>
+<$VerFileGetChangeHistory>
+<$MAKEMSI_AFTER_VerFileGetChangeHistory>
+
+;--- Split the version number into its 4 components -------------------------
+#if ['<$ProductVersion>' <> '']
+    ;--- Not updating existing MSI (version # is known) ---------------------
+    #DefineRexx ''
+        ;--- Split (basic validation) ---------------------------------------
+        parse value '<$ProductVersion>' with @@VP1 '.' @@VP2 '.' @@VP3 '.' @@VP4 '.' @@VP5
+        if  @@VP3 = '' | @@VP5 <> '' then
+            error('A version number must contain at least 3 parts but no more than 4',,'The version number "<$ProductVersion>" is invalid!');
+
+        ;--- Validate that each part is numeric -----------------------------
+        @@OK = datatype(@@VP1, 'W') & datatype(@@VP2, 'W') & datatype(@@VP3, 'W') & (datatype(@@VP4, 'W') | (@@VP4 = ''));
+        if  \ @@OK then
+            error('Each portion of the version number "<$ProductVersion>" should be numeric!');
+
+        ;--- Create macros allowing you to easily refer to version "bits" ---
+        call MacroSet 'ProductVersion.1',   @@VP1;
+        call MacroSet 'ProductVersion.2',   @@VP2;
+        call MacroSet 'ProductVersion.3',   @@VP3;
+        call MacroSet 'ProductVersion.4',   @@VP4;
+        call MacroSet 'ProductVersion.MAJ', @@VP1;
+        call MacroSet 'ProductVersion.MIN', @@VP2;
+        call MacroSet 'ProductVersion.BLD', @@VP3;
+    #DefineRexx
+#endif
+
+;--- Read the VER file to extract PRODUCT information -----------------------
+#define? MAKEMSI_BEFORE_VerFileGetProductInfo
+#define? MAKEMSI_AFTER_VerFileGetProductInfo
+<$MAKEMSI_BEFORE_VerFileGetProductInfo>
+<$VerFileGetProductInfo>
+<$MAKEMSI_AFTER_VerFileGetProductInfo>
+
+
+;--- Display the product and version information to the user ----------------
+#(
+   #define? MAKEMSI_DISPLAY_PRODUCT_VERSION_INFO
+
+   #info "PRODUCT NAME : <$ProdInfo.ProductName>"
+   #info "PRODUCT VER  : <$ProductVersion>"
+#)
+#ifndef VER_FILE_DONT_USE_IT
+   <$MAKEMSI_DISPLAY_PRODUCT_VERSION_INFO>
+#endif
+#RexxVar @@ProductName = ^<$ProdInfo.ProductName>^
+#evaluate ^^ ^@@ProductNameLng = length(@@ProductName)^
+#if [@@ProductNameLng > <$MAKEMSI_MAXLNG_PRODUCTNAME>]
+    #(
+        #error ^The product name is <??@@ProductNameLng> characters long
+                (max allowed is <$MAKEMSI_MAXLNG_PRODUCTNAME>):{NL}{NL}    "<??@@ProductName>"^
+    #)
+#endif
+
+;--- Make sure we record details about this header --------------------------
+<$SourceFile Version="<$MAKEMSI_VERSION>">
+
+
+;--- Record details about the main ".MM" file -------------------------------
+<$SourceFile Type="Source" FileName=^<?InputFile>^ Version="?">
+
+;--- Add date/time details about the main input file to the summary ---------
+#if    ['<$MAKEMSI_INPUTFILE_DATE_TIME_SUMMARY_FORMAT>' <> '']
+   #evaluate ^^ ^call Summary "<$MAKEMSI_INPUTFILE_DATE_TIME_SUMMARY_TITLE>", FileQueryDateTime('<?InputFile>', '<$MAKEMSI_INPUTFILE_DATE_TIME_SUMMARY_FORMAT>')^
+#endif
+
+;--- User wish to remove some standard(or other)  PPWIZARD summary lines? ---
+#if ['<$MAKEMSI_SUMMARY_LINES_TO_DROP>' <> '']
+   ;--- Supplied as a semicolon delimitered list ----------------------------
+   #{ set ^@@TITLE={;}<$MAKEMSI_SUMMARY_LINES_TO_DROP>^
+      #evaluate ^^ ^call Summary "<??SET_@@TITLE>",, 'DROP'^
+   #}
+#endif
+
+;**      CommentBlock  /* (Saturday 08/02/2003, 12:38:15, by USER "Dennis") */
+;**+--------------------------------------------------------------------------
+;**|;--- Probably end up removing this ------------------------------------------
+;**|#define PopulateStandardTables \
+;**|        #include "Populate.MMH"
+;**+--------------------------------------------------------------------------
+;**                    /* (Saturday 08/02/2003, 12:38:15, by USER "Dennis") */
+
+#DefineRexx 'Rexx4MmDebug'
+     ;say '-------------------------------PAUSED----------------------------';
+     ;say 'PartialLine(' || length(PartialLine) ') =' ;;|| PartialLine;
+     say '---------------------------';
+     say 'LineQueued(' || length(LineQueued) ') =' ;;|| LineQueued;
+     say '---------------------------';
+     fred = linein();
+#DefineRexx
+#(
+    #define MmDebug
+    ;#evaluate ^^ ^<$Rexx4MmDebug>^
+#)

@@ -1,0 +1,280 @@
+;----------------------------------------------------------------------------
+;
+;    MODULE NAME:   SELFREG.MMH
+;
+;        $Author:   USER "Dennis"  $
+;      $Revision:   1.8  $
+;          $Date:   21 Feb 2018 19:12:22  $
+;       $Logfile:   D:/DBAREIS/Projects.PVCS/Win32/MakeMsi/SelfReg.mmh.pvcs  $
+;      COPYRIGHT:   (C)opyright Dennis Bareis, Australia, 2003
+;                   All rights reserved.
+;
+;    DESCRIPTION:   Do not include this header directly, use 'MAKEMSI.MMH'
+;                   instead.
+;----------------------------------------------------------------------------
+#NextId
+#NextId LOCK "SELFREG"
+
+
+;----------------------------------------------------------------------------
+;--- OPTIONS ----------------------------------------------------------------
+;----------------------------------------------------------------------------
+;[4DocoMainSelfRegRelatedOptions]
+#define? SELFREG_REGISTER_BY_SEQ                      RegisterComPlus      ;;All Ordered Registrations must be complete before this action
+#define? SELFREG_UNREGISTER_FROM_SEQ                  UnregisterComPlus    ;;No ordered unregistration at or before here
+#define? SELFREG_ORDERED_CA_TYPE                      &H0C22               ;;Regsvr32.exe does return meaningful RC
+#define? SELFREG_ORDERED_CA_TYPE_PU                   &H0C22               ;;Regsvr32.exe does return meaningful RC
+#define? SELFREG_ORDERED_REXXEXP_REGISTRATION         '"[SystemFolder]regsvr32.exe" /s "[#' || {$FileKeyVar} || ']"'
+#define? SELFREG_ORDERED_REXXEXP_UNREGISTRATION       '"[SystemFolder]regsvr32.exe" /s /u "[#' || {$FileKeyVar} || ']"'
+#define? SELFREG_ORDERED_REXXEXP_REGISTRATION_PU      '"[SystemFolder]regsvr32.exe" /s /n /i:user "[#' || {$FileKeyVar} || ']"'     ;;Only "regsvr32.exe" will allow per-user installation...
+#define? SELFREG_ORDERED_REXXEXP_UNREGISTRATION_PU    '"[SystemFolder]regsvr32.exe" /s /u /n /i:user "[#' || {$FileKeyVar} || ']"'  ;;Only "regsvr32.exe" will allow per-user uninstallation...
+#define? SELFREG_ORDERED_KEY_PREFIX_REGISTRATION      SelfReg.I.PM        ;;Start of Custom Action Name (per-machine install)
+#define? SELFREG_ORDERED_KEY_PREFIX_UNREGISTRATION    SelfReg.U.PM        ;;Start of Custom Action Name (per-machine un-install)
+#define? SELFREG_ORDERED_KEY_PREFIX_REGISTRATION_PU   SelfReg.I.PU        ;;Start of Custom Action Name (per-user install)
+#define? SELFREG_ORDERED_KEY_PREFIX_UNREGISTRATION_PU SelfReg.U.PU        ;;Start of Custom Action Name (per-user un-install)
+;[4DocoMainSelfRegRelatedOptions]
+
+
+;----------------------------------------------------------------------------
+;--- SELF REGISTRATION MACRO ------------------------------------------------
+;----------------------------------------------------------------------------
+#define  SELFREG_P1RET_PREFIX SelfRegister
+#define? SELFREG_P1RET_YES    "yes"
+#define? SELFREG_P1RET_NO     "no"
+#RexxVar @@OrderedListCnt = 0
+#RexxVar @@HighestOrder   = 0       ;;If "?" Used for order then increment this!
+;[4Doco-SelfRegMinMax]
+#define  SelfRegOrderMIN        0           ;;Minimum ordering value
+#define  SelfRegOrderMAX        99999       ;;Maximum ordering value
+;[4Doco-SelfRegMinMax]
+#( ''
+   #define SelfRegister
+
+   ;--- Validate parameters -------------------------------------------------
+   {$!KEYWORDS}             ;;Don't Expect any keywords!
+   {$!:#1,ORDER}            ;;List all valid parameters
+   ;{$!:#1,ORDER,COST}       ;;List all valid parameters
+
+   ;--- Save the information away for later (can't order until all known!) ---
+   #evaluate ^^ ^<$@@Rexx4OrderedSelfRef {$?ResetUsed}{$?}>^
+;**    [CommentBlockStart     (7 April 2015 12:16:01 PM, Dennis)
+;**+----------------------------------------------------------------------
+;**|   #if  ['{$Order=^^}' = '']
+;**|        ;--- No ordering so just use "SelfReg" table! -----------------------
+;**|        <$Table "SelfReg">
+;**|            <$Row File_=^{$#1}^ Cost="{$Cost=^0^}">
+;**|       <$/Table>
+;**|   #elseif
+;**|        ;--- Save the information away for later (can't order until all known!) ---
+;**|        #evaluate ^^ ^<$@@Rexx4OrderedSelfRef {$?ResetUsed}{$?}>^
+;**|   #endif
+;**|
+;**+----------------------------------------------------------------------
+;**    CommentBlockEnd]       (7 April 2015 12:16:01 PM, Dennis)
+
+   ;--- Return info to PPWIZARD (for any reporting etc) ---------------------
+   VbsReturnMacro "<$SELFREG_P1RET_PREFIX>.{$#1}", <$SELFREG_P1RET_YES><?NewLine>
+#)
+#DefineRexx '@@Rexx4OrderedSelfRef' NOPACK
+    ;--- Get order parameter ------------------------------------------------
+    @@Order    = '{$Order=^^}';
+    if  translate(@@Order) = "NEXT" then
+    do
+        ;--- User wants next available --------------------------------------
+        @@HighestOrder = @@HighestOrder + 1;
+        @@Order        = @@HighestOrder;
+    end;
+
+    ;--- Validate the value and create a sortable string --------------------
+    if  @@Order = '' then
+        @@Sortable = '';
+    else
+    do
+        ;--- Create sortable string -----------------------------------------
+        @@Sortable = right(@@Order, length('<$SelfRegOrderMAX>'), '0');
+
+        ;--- Validate the value ---------------------------------------------
+        @@Problem = ''
+        if  \datatype(@@Order, 'W') then
+            @@Problem = 'not an integer';
+        else
+        do
+            if  @@Order < <$SelfRegOrderMIN> | @@Order > <$SelfRegOrderMAX> then
+                @@Problem = 'value not between <$SelfRegOrderMin>-<$SelfRegOrderMAX>'
+        end;
+        if  @@Problem <> '' then
+            error('The sort order of "' || @@Order || '" is invalid (' || @@Problem || ')!');
+
+        ;--- Make sure this order value value hasn't been duplicated ---------
+        @@UsedKey = '@@SrN_' || @@Order;
+        if  symbol(@@UsedKey) = 'VAR' then
+            error('Can''t use the order value of "' || @@Order || '" for the file "{$#1}".', 'It was already used for "' || value(@@UsedKey) || '"!');
+        else
+            call value @@UsedKey, '{$#1}';      ;;Remember which file key used it
+    end
+    @@Sortable = @@Sortable || '00'x || '{$#1}';
+
+    ;--- Remember the highest value used ------------------------------------
+    if  @@Order > @@HighestOrder then
+        @@HighestOrder = @@Order;
+
+    ;--- Store request and sort later ---------------------------------------
+    @@OrderedListCnt               = @@OrderedListCnt + 1;
+    @@OrderedList.@@OrderedListCnt = @@Sortable;
+    @@OrderedList.0                = @@OrderedListCnt;
+#DefineRexx
+
+;--- At the end of the build ------------------------------------------------
+#(
+    #define SELFREG_GENERATED_ORDERED_SELF_REGISTRATION_CODE
+
+    ;--- Sort the list into the self registration order ---------------------
+    #if [@@OrderedListCnt <> 0]
+        #evaluate ^^ ^<$@@Rexx4SELFREG_GENERATED_ORDERED_SELF_REGISTRATION_CODE>^
+        <??@@C><?RestartLine>
+    #endif
+#)
+#DefineRexx '@@Rexx4SELFREG_GENERATED_ORDERED_SELF_REGISTRATION_CODE'
+    ;--- Sort the array -----------------------------------------------------
+    call SortArray '@@OrderedList'
+
+    ;--- Process each item --------------------------------------------------
+    @@C = '';
+    do  @@x = 1 to @@OrderedListCnt
+        ;--- Split up the components ----------------------------------------
+        parse var @@OrderedList.@@x @@Order '00'x @@FileKey;
+        if  @@Order = '' then
+            @@Order = 'unordered';
+
+        ;--- It may have been a condition self registration ("?") -----------
+        @@C = @@C || 'if SelfRegPossibleForFile("' || @@FileKey || '") then<?NewLine>';
+            ;--- Work out which component and Directory this file is in ---------
+            @@C = @@C || 'GetComponentDirectoryKeys "' || @@FileKey || '"<?NewLine>';
+
+            ;--- Define Custom Actions ------------------------------------------
+            @@NamePmR = '<$SELFREG_ORDERED_KEY_PREFIX_REGISTRATION>.'      || @@Order || '.' || @@FileKey;
+            @@NamePmU = '<$SELFREG_ORDERED_KEY_PREFIX_UNREGISTRATION>.'    || @@Order || '.' || @@FileKey;
+            @@CmdPmR  = <$SELFREG_ORDERED_REXXEXP_REGISTRATION                FileKeyVar=^@@FileKey^>
+            @@CmdPmU  = <$SELFREG_ORDERED_REXXEXP_UNREGISTRATION              FileKeyVar=^@@FileKey^>
+            @@NamePuR = '<$SELFREG_ORDERED_KEY_PREFIX_REGISTRATION_PU>.'   || @@Order || '.' || @@FileKey;
+            @@NamePuU = '<$SELFREG_ORDERED_KEY_PREFIX_UNREGISTRATION_PU>.' || @@Order || '.' || @@FileKey;
+            @@CmdPuR  = <$SELFREG_ORDERED_REXXEXP_REGISTRATION_PU             FileKeyVar=^@@FileKey^>
+            @@CmdPuU  = <$SELFREG_ORDERED_REXXEXP_UNREGISTRATION_PU           FileKeyVar=^@@FileKey^>
+            @@C = @@C || '<' || '$Table "CustomAction">'
+                ;--- Per machine (un)registrations ------------------------------
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePmR || '^'
+                @@C = @@C ||     ' *Type=^<$SELFREG_ORDERED_CA_TYPE>^'
+                @@C = @@C ||     ' *Source=^SrDirectory^'
+                @@C = @@C ||     ' Target=^' || @@CmdPmR || '^'
+                @@C = @@C || '>'
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePmU || '^'
+                @@C = @@C ||     ' *Type=^<$SELFREG_ORDERED_CA_TYPE>^'
+                @@C = @@C ||     ' *Source=^SrDirectory^'
+                @@C = @@C ||     ' Target=^' || @@CmdPmU || '^'
+                @@C = @@C || '>'
+
+                ;--- Per user (un)registrations ---------------------------------
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePuR || '^'
+                @@C = @@C ||     ' *Type=^<$SELFREG_ORDERED_CA_TYPE_PU>^'
+                @@C = @@C ||     ' *Source=^SrDirectory^'
+                @@C = @@C ||     ' Target=^' || @@CmdPuR || '^'
+                @@C = @@C || '>'
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePuU || '^'
+                @@C = @@C ||     ' *Type=^<$SELFREG_ORDERED_CA_TYPE_PU>^'
+                @@C = @@C ||     ' *Source=^SrDirectory^'
+                @@C = @@C ||     ' Target=^' || @@CmdPuU || '^'
+                @@C = @@C || '>'
+            @@C = @@C || '<' || '$/Table>'
+
+            ;--- Sequence the custom actions ------------------------------------
+            @@C = @@C || '<' || '$Table "InstallExecuteSequence">'
+                ;--- Per machine (un)registrations ------------------------------
+                @@C = @@C || 'SeqNo = GetSeqNumber("InstallExecuteSequence", "SelfRegModules-<$SELFREG_REGISTER_BY_SEQ>", 1)<?NewLine>'
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePmR || '^'
+                @@C = @@C ||     ' *Condition=^"$" & SrComponent & ">2 and (<$CONDITION_PER_MACHINE>)"^'
+                @@C = @@C ||     ' *Sequence=^SeqNo^'
+                @@C = @@C || '>'
+                @@C = @@C || 'SeqNo = GetSeqNumber("InstallExecuteSequence", "< <$SELFREG_UNREGISTER_FROM_SEQ>-SelfUnregModules", 1)<?NewLine>'  ;;Sequence in reverse!
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePmU || '^'
+                @@C = @@C ||     ' *Condition=^"$" & SrComponent & "=2 and (<$CONDITION_PER_MACHINE>)"^'
+                @@C = @@C ||     ' *Sequence=^SeqNo^'
+                @@C = @@C || '>'
+
+                ;--- Per user (un)registrations ---------------------------------
+                @@C = @@C || 'SeqNo = GetSeqNumber("InstallExecuteSequence", "SelfRegModules-<$SELFREG_REGISTER_BY_SEQ>", 1)<?NewLine>'
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePuR || '^'
+                @@C = @@C ||     ' *Condition=^"$" & SrComponent & ">2 and (<$CONDITION_PER_USER>)"^'
+                @@C = @@C ||     ' *Sequence=^SeqNo^'
+                @@C = @@C || '>'
+                @@C = @@C || 'SeqNo = GetSeqNumber("InstallExecuteSequence", "< <$SELFREG_UNREGISTER_FROM_SEQ>-SelfUnregModules", 1)<?NewLine>'  ;;Sequence in reverse!
+                @@C = @@C || '<' || '$Row'
+                @@C = @@C ||     ' Action=^' || @@NamePuU || '^'
+                @@C = @@C ||     ' *Condition=^"$" & SrComponent & "=2 and (<$CONDITION_PER_USER>)"^'
+                @@C = @@C ||     ' *Sequence=^SeqNo^'
+                @@C = @@C || '>'
+            @@C = @@C || '<' || '$/Table>'
+        @@C = @@C || "end if  'SelfRegPossibleForFile()<?NewLine>";
+    end;
+#DefineRexx
+
+
+
+;----------------------------------------------------------------------------
+;--- VB variables/functions -------------------------------------------------
+;----------------------------------------------------------------------------
+#( '<?NewLine>'
+   #define SelfRegVbInitialization
+   dim SrComponent, SrDirectory     'Used by "SELFREG.MMH"
+#)
+#( '<?NewLine>'
+   #define SelfRegVbFunctions
+
+   <?NewLine>
+   '=========================================================================
+   function GetComponentDirectoryKeys(ByVal FileKey)
+   '=========================================================================
+       ;--- Perform a query for the file key --------------------------------
+        on error resume next
+        SqlOpenExec "SELECT Component, Directory FROM File,Component,Directory WHERE File='" & FileKey & "' and Component=Component_ and Directory=Directory_"
+
+        ;--- Get the record and extract the values --------------------------
+        dim oRecord
+        set oRecord = SqlViewFetch()
+        if  oRecord is Nothing then
+            error("To perform an ordered self registration on """ & FileKey & """ we need to know its Component and Directory information. We could not obtain this from the database.")
+        else
+            ;--- Update the global variables --------------------------------
+            SrComponent = oRecord.StringData(1)
+            SrDirectory = oRecord.StringData(2)
+        end if
+        set oRecord = Nothing
+        SqlViewClose()
+   end function
+
+   <?NewLine>
+   '=========================================================================
+   function SelfRegPossibleForFile(FileKey)
+   '=========================================================================
+        '--- This *MAY* have been conditional, if so do we still want to do it? ---
+        on error resume next
+        if  oCancelSelfReg.exists(FileKey) then
+            '--- Key exists so SelfReg was conditional and registration can't be performed ---
+            SelfRegPossibleForFile = false
+        else
+            SelfRegPossibleForFile = true
+        end if
+   end function
+#)
+
+
+
+#NextId UNLOCK "SELFREG"
+
+
