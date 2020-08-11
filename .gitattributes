@@ -3,8 +3,11 @@
 
 # This is really text
 *.cs text
-*.po text
 
 # This is Windows-specific
 *.sln text eol=crlf
 *.resx text eol=crlf
+
+# Ignore MakeMsi config files
+*.mm linguist-detectable=false
+*.mmh linguist-detectable=false
