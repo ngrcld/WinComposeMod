@@ -8,6 +8,5 @@
 *.sln text eol=crlf
 *.resx text eol=crlf
 
-# Ignore MakeMsi config files
-*.mm linguist-detectable=false
-*.mmh linguist-detectable=false
+# Exclude from language statistics MakeMsi files
+BuildMsi/* linguist-vendored
