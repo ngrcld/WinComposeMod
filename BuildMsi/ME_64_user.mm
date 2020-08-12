@@ -14,7 +14,7 @@
 
 ; define default location where file should install and add files
 <$DirectoryTree Key="INSTALLDIR" Dir="[AppDataFolder]\WinComposeMod" Change="\" PrimaryFolder="Y">
-<$FilesExclude "..\bin\Release\SequencesUser.txt" ExList="NotThese">  ;; Don't include these
+<$FilesExclude "..\bin\Release\*.pdb;..\bin\Release\SequencesUser.txt" ExList="NotThese">  ;; Don't include these files
 <$Files "..\bin\Release\*" SubDir="TREE" DestDir="INSTALLDIR" ExList="NotThese">
 
 ; === Before Install ===
