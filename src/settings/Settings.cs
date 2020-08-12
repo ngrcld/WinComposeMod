@@ -284,7 +284,7 @@ namespace WinCompose
         /// </summary>
         public static void EditCustomRulesFile()
         {
-            string user_file = Path.Combine(Utils.DataDir, "SequencesUser.txt");
+            string user_file = '"' + Path.Combine(Utils.DataDir, "SequencesUser.txt") + '"';
 
             // Find the preferred application for .txt files
             HRESULT ret;

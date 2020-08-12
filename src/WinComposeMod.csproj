@@ -216,7 +216,9 @@
     <Resource Include="res\decal_disabled.png" />
     <Resource Include="res\decal_idle.png" />
     <Resource Include="res\decal_update.png" />
+    <Resource Include="res\icon_sequences.ico" />
     <Resource Include="res\icon_sequences.png" />
+    <Resource Include="res\icon_settings.ico" />
     <Resource Include="res\icon_settings.png" />
     <Resource Include="res\key_compose.png" />
     <Resource Include="res\key_empty.png" />
@@ -226,7 +228,7 @@
   <ItemGroup>
     <Resource Include="rules\SequencesEmoji.txt" />
     <Resource Include="rules\SequencesWinCompose.txt" />
-    <Resource Include="rules\SequencesUser.txt" />
+    <Resource Include="rules\SequencesDefault.txt" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="language.csproj">
@@ -244,10 +246,6 @@
       <Install>true</Install>
     </BootstrapperPackage>
   </ItemGroup>
-  <ItemGroup>
-    <Resource Include="res\icon_sequences.ico" />
-    <Resource Include="res\icon_settings.ico" />
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
@@ -258,5 +256,6 @@
     <Exec Command="..\bin_InsertIcons\$(Configuration)\InsertIcons.exe $(OutputPath)\$(TargetName).exe &quot;res\icon_normal.ico;res\icon_sequences.ico;res\icon_settings.ico&quot;" />
     <Exec Command="del $(OutputPath)\*.pdb" />
     <Exec Command="copy rules\* $(OutputPath)\" />
+    <Exec Command="copy $(OutputPath)\SequencesDefault.txt $(OutputPath)\SequencesUser.txt" />
   </Target>
 </Project>

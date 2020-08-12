@@ -14,7 +14,8 @@
 
 ; define default location where file should install and add files
 <$DirectoryTree Key="INSTALLDIR" Dir="[AppDataFolder]\WinComposeMod" Change="\" PrimaryFolder="Y">
-<$Files "..\bin\Release\*" SubDir="TREE" DestDir="INSTALLDIR">
+<$FilesExclude "..\bin\Release\SequencesUser.txt" ExList="NotThese">  ;; Don't include these
+<$Files "..\bin\Release\*" SubDir="TREE" DestDir="INSTALLDIR" ExList="NotThese">
 
 ; === Before Install ===
 ; create the batch file
@@ -53,6 +54,8 @@
   #define OurBatchFile_Aft_Inst <$MAKEMSI_OTHER_DIR>\<$OurBatchFile_Aft_Inst_SN>
   <$FileMake "<$OurBatchFile_Aft_Inst>">
     @echo off
+    rem Copy SequencesDefault.txt to SequencesUser.txt without overwriting
+    if not exist SequencesUser.txt copy SequencesDefault.txt SequencesUser.txt
     rem Run WinComposeMod
     start "" .\WinCompose.exe
     del <$OurBatchFile_Aft_Inst_SN>
