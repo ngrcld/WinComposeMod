@@ -37,6 +37,7 @@ namespace WinCompose
         Download,
         Disable,
         Restart,
+        RestartElevated,
         Exit,
     }
 
@@ -169,6 +170,18 @@ namespace WinCompose
                     // in WinCompose that we need to fix.
                     Visibility = Visibility.Collapsed;
                     Application.Current.Exit += (s, e) => Process.Start(Application.ResourceAssembly.Location);
+                    Application.Current.Shutdown();
+                    break;
+
+                case MenuCommand.RestartElevated:
+                    // FIXME: there might be more cleanup to do here; but it’s probably
+                    // not worth it, because restarting the app is a hack and whatever
+                    // reason the user may have, it’s because of a bug or a limitation
+                    // in WinCompose that we need to fix.
+                    Visibility = Visibility.Collapsed;
+                    ProcessStartInfo startInfo = new ProcessStartInfo(Application.ResourceAssembly.Location);
+                    startInfo.Verb = "runas";
+                    Application.Current.Exit += (s, e) => Process.Start(startInfo);
                     Application.Current.Shutdown();
                     break;
 

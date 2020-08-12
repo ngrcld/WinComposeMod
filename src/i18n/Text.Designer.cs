@@ -880,6 +880,15 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Restart Elevated.
+        /// </summary>
+        public static string RestartElevated {
+            get {
+                return ResourceManager.GetString("RestartElevated", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Search Filter:.
         /// </summary>
         public static string Search {

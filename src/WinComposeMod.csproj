@@ -254,7 +254,6 @@
   -->
   <Target Name="AfterBuild">
     <Exec Command="..\bin_InsertIcons\$(Configuration)\InsertIcons.exe $(OutputPath)\$(TargetName).exe &quot;res\icon_normal.ico;res\icon_sequences.ico;res\icon_settings.ico&quot;" />
-    <Exec Command="del $(OutputPath)\*.pdb" />
     <Exec Command="copy rules\* $(OutputPath)\" />
     <Exec Command="copy $(OutputPath)\SequencesDefault.txt $(OutputPath)\SequencesUser.txt" />
   </Target>

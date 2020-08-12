@@ -103,6 +103,9 @@
             <MenuItem Header="{x:Static i18n:Text.Restart}" Command="{Binding MenuItemCommand}"
                       Icon="{StaticResource RestartEmoji}" CommandParameter="{x:Static wc:MenuCommand.Restart}"/>
 
+            <MenuItem Header="{x:Static i18n:Text.RestartElevated}" Command="{Binding MenuItemCommand}"
+                      CommandParameter="{x:Static wc:MenuCommand.RestartElevated}"/>
+
             <MenuItem Header="{x:Static i18n:Text.Exit}" Command="{Binding MenuItemCommand}"
                       Icon="{StaticResource ExitEmoji}" CommandParameter="{x:Static wc:MenuCommand.Exit}"/>
 
