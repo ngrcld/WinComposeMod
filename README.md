@@ -9,22 +9,18 @@ A **compose key** allows to easily write special characters (such as: **É**, **
 * The <kbd>⎄ Compose</kbd> key must be kept pressed to initiate a compose sequence (this key defaults to <kbd>Right Alt</kbd>);
 * Combinations are optimized for the Italian keyboard.
 
-### Releases ###
-* WinComposeMod_x.x.x_Setup_64.msi
-  * MSI package for **normal** installation;
-  * Requires administrator privileges and runs with high privileges;
-  * Necessary to inject keyboard events into other high level processes, such as cmd.exe run as Administrator.
+### Release ###
 * WinComposeMod_x.x.x_Setup_64_user.msi
   * MSI package for **user** installation;
   * Doesn't require administrator privileges;
-  * Can't inject keyboard events into high level processes, such as cmd.exe run as Administrator.
+  * Can't inject keyboard events into high level processes, such as cmd.exe run as Administrator;
+  * Application can be restarted with elevated privileges, necessary to inject keyboard events into other high level processes, such as cmd.exe run as Administrator.
 
 ### Development ###
 Written in C#, compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free).
 
 Installer created with:
 * MAKEMSI (v19.089) - https://dennisbareis.com/makemsi.htm
-* fnr.exe (v1.8.1) - Find And Replace Tool - https://github.com/zzzprojects/findandreplace
 
 ### Default special characters and strings ###
 
