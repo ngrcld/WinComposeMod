@@ -11,7 +11,7 @@ In this modified version, the <kbd>⎄ Compose</kbd> key must be kept pressed to
 
 This modified version is optimized for the Italian keyboard.
 
-Written in C#, compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free)
+Written in C#, compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free).
 
 Default special characters and strings:
 
@@ -58,3 +58,7 @@ Default special characters and strings:
 
     <Multi_key> <b> <h> : "Hello world!"
     <Multi_key> <b> <b> : "Bye bye!"
+
+Installer created with:
+* MAKEMSI (v19.089) - https://dennisbareis.com/makemsi.htm
+* fnr.exe (v1.8.1) - Find And Replace Tool - https://github.com/zzzprojects/findandreplace
