@@ -3,6 +3,16 @@
 
 
 ;############################################################################
+VERSION : 1.0.3
+DATE    : 12 Aug 2020
+CHANGES : This is another release of WinComposeMod.
+        : A modified version of WinCompose
+        : (https://github.com/samhocevar/wincompose)
+        : a compose key for Windows, free and opensource,
+        : created by Sam Hocevar with the help of dozens of contributors.
+
+
+;############################################################################
 VERSION : 1.0.2
 DATE    : 12 Aug 2020
 CHANGES : This is another release of WinComposeMod.
