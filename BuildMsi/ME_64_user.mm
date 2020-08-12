@@ -1,9 +1,9 @@
 #define COMPANY_SUMMARY_TEMPLATE x64;0
-#define COMPANY_PACKAGE_REQUIRES_ELEVATED_PRIVLEDGES Y
-#define COMPANY_ALLUSERS_CREATE_PROPERTY Y
-#define BATCH_ACCOUNT System
-#define ProdInfo.ProductName WinComposeMod
-#define ProdInfo.Default.MsiName WinComposeMod_<$ProductVersion>_Setup_64
+#define COMPANY_PACKAGE_REQUIRES_ELEVATED_PRIVLEDGES N
+#define COMPANY_ALLUSERS_CREATE_PROPERTY N
+#define BATCH_ACCOUNT Impersonate
+#define ProdInfo.ProductName WinComposeMod user
+#define ProdInfo.Default.MsiName WinComposeMod_<$ProductVersion>_Setup_64_user
 
 #define VER_FILENAME.VER ME.Ver  ;; I only want one VER file
 
@@ -13,9 +13,8 @@
 #include "ME.MMH"
 
 ; define default location where file should install and add files
-<$DirectoryTree Key="INSTALLDIR" Dir="[ProgramFiles64Folder]\WinComposeMod" Change="\" PrimaryFolder="Y">
+<$DirectoryTree Key="INSTALLDIR" Dir="[AppDataFolder]\WinComposeMod" Change="\" PrimaryFolder="Y">
 <$Files "..\bin\Release\*" SubDir="TREE" DestDir="INSTALLDIR">
-<$Files "Files\*" SubDir="TREE" DestDir="INSTALLDIR">
 
 ; === Before Install ===
 ; create the batch file
@@ -24,8 +23,6 @@
   #define OurBatchFile_Bef_Inst <$MAKEMSI_OTHER_DIR>\<$OurBatchFile_Bef_Inst_SN>
   <$FileMake "<$OurBatchFile_Bef_Inst>">
     @echo off
-    rem Delete WinComposeMod scheduled task
-    %windir%\system32\schtasks.exe /delete /f /tn WinComposeMod
     rem Stop the process WinCompose.exe
     %windir%\system32\taskkill.exe /f /im WinCompose.exe
     rem Delete generated configuration files
@@ -56,12 +53,8 @@
   #define OurBatchFile_Aft_Inst <$MAKEMSI_OTHER_DIR>\<$OurBatchFile_Aft_Inst_SN>
   <$FileMake "<$OurBatchFile_Aft_Inst>">
     @echo off
-    rem Write installed path in scheduled task xml file
-    echo | .\fnr.exe --cl --find "[INSTALLDIR]" --replace "%CD%" --dir "." --fileMask "WinComposeModTask.xml"
-    rem Add WinComposeMod scheduled task
-    %windir%\system32\schtasks.exe /create /f /tn WinComposeMod /xml WinComposeModTask.xml
-    rem Run WinComposeMod scheduled task
-    %windir%\system32\schtasks.exe /run /tn WinComposeMod
+    rem Run WinComposeMod
+    start "" .\WinCompose.exe
     del <$OurBatchFile_Aft_Inst_SN>
   <$/FileMake>
   ; add the batch file
@@ -87,8 +80,6 @@
   #define OurBatchFile_Bef_Uninst <$MAKEMSI_OTHER_DIR>\<$OurBatchFile_Bef_Uninst_SN>
   <$FileMake "<$OurBatchFile_Bef_Uninst>">
     @echo off
-    rem Delete WinComposeMod scheduled task
-    %windir%\system32\schtasks.exe /delete /f /tn WinComposeMod
     rem Stop the process WinCompose.exe
     %windir%\system32\taskkill.exe /f /im WinCompose.exe
     rem Delete generated configuration files
@@ -113,3 +104,13 @@
 #)
 
 <$Icon "..\src\res\icon_normal.ico" Key="WinCompose.exe" Product="Y">
+
+<$Component "NonAdvertisedShortcut" Create="Y" Directory_="INSTALLDIR">
+  #(
+    <$Shortcut
+           Target="[INSTALLDIR]WinCompose.exe"
+            Title="WinComposeMod"
+             Icon="WinCompose.exe"
+    >
+  #)
+<$/Component>
