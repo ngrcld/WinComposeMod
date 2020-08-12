@@ -7,7 +7,7 @@ A **compose key** allows to easily write special characters (such as: **É**, **
 
 ### My modifications ###
 * The <kbd>⎄ Compose</kbd> key must be kept pressed to initiate a compose sequence (this key defaults to <kbd>Right Alt</kbd>);
-* Combinations optimized for the Italian keyboard.
+* Combinations are optimized for the Italian keyboard.
 
 ### Releases ###
 * WinComposeMod_x.x.x_Setup_64.msi
