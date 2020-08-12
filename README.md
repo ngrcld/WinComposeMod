@@ -5,11 +5,9 @@ A modified version of [WinCompose (0.9.4)](https://github.com/samhocevar/wincomp
 
 A **compose key** allows to easily write special characters (such as: **É**, **È**, **~** (tilde), **\`** (backtick)) using short and often very intuitive key combinations.
 
----
-
-In this modified version, the <kbd>⎄ Compose</kbd> key must be kept pressed to initiate a compose sequence (this key defaults to <kbd>Right Alt</kbd>).
-
-This modified version is optimized for the Italian keyboard.
+### My modifications ###
+* The <kbd>⎄ Compose</kbd> key must be kept pressed to initiate a compose sequence (this key defaults to <kbd>Right Alt</kbd>);
+* Combinations optimized for the Italian keyboard.
 
 ### Releases ###
 * WinComposeMod_x.x.x_Setup_64.msi
