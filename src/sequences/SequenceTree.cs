@@ -1,7 +1,7 @@
 ﻿//
 //  WinCompose — a compose key for Windows — http://wincompose.info/
 //
-//  Copyright © 2013—2018 Sam Hocevar <sam@hocevar.net>
+//  Copyright © 2013—2020 Sam Hocevar <sam@hocevar.net>
 //
 //  This program is free software. It comes without any warranty, to
 //  the extent permitted by applicable law. You can redistribute it
@@ -120,11 +120,8 @@ public class SequenceTree : SequenceNode
             Key k = Key.FromKeySymOrChar(keysyms[i]);
             if (k == null)
             {
-                if (!m_invalid_keys.ContainsKey(keysyms[i]))
-                {
-                    m_invalid_keys[keysyms[i]] = true;
+                if (m_invalid_keys.Add(keysyms[i]))
                     Log.Debug($"Unknown key name <{keysyms[i]}>, ignoring sequence");
-                }
                 return; // Unknown key name! Better bail out
             }
 
@@ -204,7 +201,7 @@ public class SequenceTree : SequenceNode
     }
 
     private readonly IList<string> m_loaded_files = new List<string>();
-    private readonly IDictionary<string, bool> m_invalid_keys = new Dictionary<string, bool>();
+    private readonly HashSet<string> m_invalid_keys = new HashSet<string>();
 }
 
 /// <summary>
@@ -228,7 +225,12 @@ public class SequenceNode
     {
         if (path.Count == 0)
         {
-            m_results.Add(item);
+            // If this is a conflict, warn about it
+            if (m_results.Count > 0 && m_results[0].Result != item.Result)
+                Log.Debug($"Conflicting sequence for {item.Sequence.FriendlyName}: had {m_results[0].Result}, got {item.Result}");
+
+            // Insert sequence at index 0 to give precedence to user sequences
+            m_results.Insert(0, item);
             return;
         }
 

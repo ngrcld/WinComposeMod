@@ -1,7 +1,7 @@
 ﻿//
 //  WinCompose — a compose key for Windows — http://wincompose.info/
 //
-//  Copyright © 2013—2019 Sam Hocevar <sam@hocevar.net>
+//  Copyright © 2013—2020 Sam Hocevar <sam@hocevar.net>
 //              2014—2015 Benjamin Litzelmann
 //
 //  This program is free software. It comes without any warranty, to
@@ -34,30 +34,39 @@ class InputSequence
     }
 
     public void AddInput(ScanCodeShort sc)
-    {
-        AddInput((VirtualKeyShort)0, sc);
-    }
+        => AddInput(VK.NONE, sc, Mode.Press);
 
-    public void AddInput(VirtualKeyShort vk)
-    {
-        AddInput(vk, (ScanCodeShort)0);
-    }
+    public void KeyPress(VK vk)
+        => AddInput(vk, (ScanCodeShort)0, Mode.Press);
+
+    public void KeyDown(VK vk)
+        => AddInput(vk, (ScanCodeShort)0, Mode.Down);
+
+    public void KeyUp(VK vk)
+        => AddInput(vk, (ScanCodeShort)0, Mode.Up);
+
+    private enum Mode { Up, Down, Press }
 
     private readonly List<INPUT> m_input = new List<INPUT>();
 
-    private void AddInput(VirtualKeyShort vk, ScanCodeShort sc)
+    private void AddInput(VK vk, ScanCodeShort sc, Mode mode)
     {
         INPUT tmp = new INPUT();
         tmp.type = EINPUT.KEYBOARD;
-        tmp.U.ki.wVk = vk;
+        tmp.U.ki.wVk = (VirtualKeyShort)vk;
         tmp.U.ki.wScan = sc;
         tmp.U.ki.time = 0;
         tmp.U.ki.dwFlags = KEYEVENTF.UNICODE;
         tmp.U.ki.dwExtraInfo = UIntPtr.Zero;
-        m_input.Add(tmp);
 
-        tmp.U.ki.dwFlags |= KEYEVENTF.KEYUP;
-        m_input.Add(tmp);
+        if (mode != Mode.Up)
+            m_input.Add(tmp);
+
+        if (mode != Mode.Down)
+        {
+            tmp.U.ki.dwFlags |= KEYEVENTF.KEYUP;
+            m_input.Add(tmp);
+        }
     }
 }
 
@@ -96,10 +105,6 @@ static class Composer
     {
         // Remember when the user touched a key for the last time
         // m_last_key_time = DateTime.Now;
-
-        // Do nothing if we are disabled; NOTE: this disables stats, too
-        if (Settings.Disabled.Value)
-            return false;
 
         // We need to check the keyboard layout before we save the dead
         // key, otherwise we may be saving garbage.
@@ -152,7 +157,7 @@ static class Composer
                 if (Settings.ComposeKeys.Value.Contains(new Key(VK.RMENU)))
                     goto exit_discard_key;
 
-                // Otherwise ignore the keypress, it’s not for us
+                // Otherwise the keypress is not for us, ignore it
                 goto exit_forward_key;
             }
         }
@@ -188,7 +193,7 @@ static class Composer
         {
             if (is_keyup)
                 Captured.Invoke(key);
-            return true;
+            goto exit_discard_key;
         }
 
 //        // Update statistics
@@ -208,6 +213,9 @@ static class Composer
 //            m_last_key_time = DateTime.Now;
 //            m_last_key = key;
 //        }
+        // Do nothing if we are disabled
+        if (Settings.Disabled.Value)
+            goto exit_forward_key;
 
         // If the special Synergy window has focus, we’re actually sending
         // keystrokes to another computer; disable WinCompose. Same if it is
@@ -550,26 +558,7 @@ exit_forward_key:
         // FIXME: At this point we know the key can’t be part of a valid
         // sequence, but this should not be a hard error if the key is a
         // modifier key.
-
-        // Unknown characters for sequence, print them if necessary
-        if (!Settings.DiscardOnInvalid.Value)
-        {
-            string tosend = "";
-            foreach (Key k in m_sequence)
-                if (k.IsPrintable) // FIXME: what if the key is e.g. left arrow?
-                    tosend += k.PrintableResult;
-
-            if (!string.IsNullOrEmpty(tosend))
-            {
-                SendString(tosend);
-                Log.Debug("Invalid sequence! Sent “{0}”", tosend);
-            }
-        }
-
-        if (Settings.BeepOnInvalid.Value)
-            SystemSounds.Beep.Play();
-
-        ResetSequence();
+        OnInvalidSequence();
         return true;
     }
 
@@ -577,13 +566,13 @@ exit_forward_key:
     {
         List<VK> modifiers = new List<VK>();
 
-        /* HACK: GTK+ applications behave differently with Unicode, and some
-         * applications such as XChat for Windows rename their own top-level
-         * window, so we parse through the names we know in order to detect
-         * a GTK+ application. */
-        // bool use_gtk_hack = KeyboardLayout.Window.IsGtk;
+        // HACK: GTK+ applications will crash when receiving surrogate pairs through VK.PACKET,
+        // so we use the Ctrl-Shift-u special sequence.
         // Claudio ############################################################
         bool use_gtk_hack = false;
+//        foreach (var ch in str)
+//            use_gtk_hack |= char.IsSurrogate(ch);
+//        use_gtk_hack &= KeyboardLayout.Window.IsGtk;
         // Claudio ############################################################
 
         /* HACK: in MS Office, some symbol insertions change the text font
@@ -595,7 +584,9 @@ exit_forward_key:
         bool use_office_hack = KeyboardLayout.Window.IsOffice
                                 && Settings.InsertZwsp.Value;
 
-        /* Clear keyboard modifiers if we need one of our custom hacks */
+        InputSequence seq = new InputSequence();
+
+        // Clear keyboard modifiers if we need one of our custom hacks
         if (use_gtk_hack || use_office_hack)
         {
             VK[] all_modifiers =
@@ -614,78 +605,67 @@ exit_forward_key:
                     modifiers.Add(vk);
 
             foreach (VK vk in modifiers)
-                SendKeyUp(vk);
+                seq.KeyUp(vk);
         }
 
-        if (use_gtk_hack)
+        if (use_office_hack)
         {
-            /* XXX: We need to disable caps lock because GTK’s Shift-Ctrl-U
-             * input mode (see below) doesn’t work when Caps Lock is on. */
-            bool has_capslock = NativeMethods.GetKeyState(VK.CAPITAL) != 0;
-            if (has_capslock)
-                SendKeyPress(VK.CAPITAL);
-
-            foreach (var ch in str)
-            {
-                if (false)
-                {
-                    /* FIXME: there is a possible optimisation here where we do
-                     * not have to send the whole unicode sequence for regular
-                     * ASCII characters. However, SendKeyPress() needs a VK, so
-                     * we need an ASCII to VK conversion method, together with
-                     * the proper keyboard modifiers. Maybe not worth it.
-                     * Also, we cannot use KeySequence because GTK+ seems to
-                     * ignore SendInput(). */
-                    //SendKeyPress((VK)char.ToUpper(ch));
-                }
-                else
-                {
-                    /* Wikipedia says Ctrl+Shift+u, release, then type the four
-                     * hex digits, and press Enter.
-                     * (http://en.wikipedia.org/wiki/Unicode_input). */
-                    SendKeyDown(VK.LCONTROL);
-                    SendKeyDown(VK.LSHIFT);
-                    SendKeyPress((VK)'U');
-                    SendKeyUp(VK.LSHIFT);
-                    SendKeyUp(VK.LCONTROL);
-
-                    foreach (var key in $"{(short)ch:X04} ")
-                        SendKeyPress((VK)key);
-                }
-            }
-
-            if (has_capslock)
-                SendKeyPress(VK.CAPITAL);
+            seq.AddInput((ScanCodeShort)'\u200b');
+            seq.KeyPress(VK.LEFT);
         }
-        else
+
+        for (int i = 0; i < str.Length; ++i)
         {
-            InputSequence seq = new InputSequence();
+            char ch = str[i];
 
-            if (use_office_hack)
+            if (use_gtk_hack && char.IsSurrogate(ch))
             {
-                seq.AddInput((ScanCodeShort)'\u200b');
-                seq.AddInput((VirtualKeyShort)VK.LEFT);
-            }
+                // Sanity check
+                if (i + 1 >= str.Length || !char.IsHighSurrogate(ch) || !char.IsLowSurrogate(str, i + 1))
+                    continue;
 
-            foreach (char ch in str)
+                var codepoint = char.ConvertToUtf32(ch, str[++i]);
+
+                // GTK+ hack:
+                //  - We need to disable Caps Lock
+                //  - Wikipedia says Ctrl+Shift+u, release, then type the four hex digits,
+                //    and press Enter (http://en.wikipedia.org/wiki/Unicode_input).
+                //  - The Gimp accepts either Enter or Space but stops immediately in both
+                //    cases.
+                //  - Inkscape stops after Enter, but allows to chain sequences using Space.
+                bool has_capslock = NativeMethods.GetKeyState(VK.CAPITAL) != 0;
+                if (has_capslock)
+                    seq.KeyPress(VK.CAPITAL);
+
+                seq.KeyDown(VK.LCONTROL);
+                seq.KeyDown(VK.LSHIFT);
+                seq.KeyPress((VK)'U');
+                seq.KeyUp(VK.LSHIFT);
+                seq.KeyUp(VK.LCONTROL);
+                foreach (var key in $"{codepoint:X04}")
+                    seq.KeyPress((VK)key);
+                seq.KeyPress(VK.RETURN);
+
+                if (has_capslock)
+                    seq.KeyPress(VK.CAPITAL);
+            }
+            else
             {
                 seq.AddInput((ScanCodeShort)ch);
             }
-
-            if (use_office_hack)
-            {
-                seq.AddInput((VirtualKeyShort)VK.RIGHT);
-            }
-
-            seq.Send();
         }
 
-        /* Restore keyboard modifiers if we needed one of our custom hacks */
-        if (use_gtk_hack || use_office_hack)
+        if (use_office_hack)
         {
-            foreach (VK vk in modifiers)
-                SendKeyDown(vk);
+            seq.KeyPress(VK.RIGHT);
         }
+
+        // Restore keyboard modifier state if we needed one of our custom hacks
+        foreach (VK vk in modifiers)
+            seq.KeyDown(vk);
+
+        // Send the whole keyboard sequence
+        seq.Send();
     }
 
     /// <summary>
@@ -716,6 +696,32 @@ exit_forward_key:
     /// </summary>
     public static bool IsDisabled => Settings.Disabled.Value;
 
+    private static void OnInvalidSequence()
+    {
+        bool empty_sequence = true;
+
+        string printable = "";
+        foreach (Key k in m_sequence)
+        {
+            if (k.VirtualKey != VK.COMPOSE)
+                empty_sequence = false;
+            if (k.IsPrintable) // FIXME: what if the key is e.g. left arrow?
+                printable += k.PrintableResult;
+        }
+
+        // Unknown characters for sequence, print them if necessary
+        if (!Settings.DiscardOnInvalid.Value && !string.IsNullOrEmpty(printable))
+        {
+            SendString(printable);
+            Log.Debug("Invalid sequence! Sent “{0}”", printable);
+        }
+
+        if (Settings.BeepOnInvalid.Value && !empty_sequence)
+            SystemSounds.Beep.Play();
+
+        ResetSequence();
+    }
+
     private static void ResetSequence()
     {
         CurrentState = State.Idle;
@@ -739,6 +745,10 @@ exit_forward_key:
     /// The sequence being currently typed
     /// </summary>
     private static readonly KeySequence m_sequence = new KeySequence();
+    /// <summary>
+    /// The list of keys we have seen pressed and not yet released
+    /// </summary>
+    // private static HashSet<Key> m_pressed = new HashSet<Key>();
 
     // private static Key m_last_key;
     // private static DateTime m_last_key_time = DateTime.Now;

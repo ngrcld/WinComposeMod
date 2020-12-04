@@ -7,6 +7,7 @@
 # This is Windows-specific
 *.sln text eol=crlf
 *.resx text eol=crlf
+*.csproj text eol=crlf
 
 # Exclude from language statistics MakeMsi files
 BuildMsi/* linguist-vendored

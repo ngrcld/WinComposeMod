@@ -256,8 +256,8 @@ public static class KeyboardLayout
             catch {}
         }
 
-        // Match window class for standard GTK applications, with additional
-        // case for XChat and HexChat.
+        // Match window class for standard GTK+ applications. Some applications such as XChat
+        // or HexChat rename their own top-level window, so we their names to the regex.
         // private static readonly Regex m_match_gtk = new Regex("^(gdk|xchat|hexchat)WindowToplevel$");
         // Match Office applications (Word, Outlook…)
         private static readonly Regex m_match_office = new Regex("^(rctrl_renwnd32|OpusApp)$");

@@ -1,7 +1,7 @@
 ﻿//
 //  WinCompose — a compose key for Windows — http://wincompose.info/
 //
-//  Copyright © 2013—2019 Sam Hocevar <sam@hocevar.net>
+//  Copyright © 2013—2020 Sam Hocevar <sam@hocevar.net>
 //              2014—2015 Benjamin Litzelmann
 //
 //  This program is free software. It comes without any warranty, to
@@ -346,8 +346,8 @@ public partial class Key
 
     public static bool operator ==(Key a, Key b)
     {
-        bool is_a_null = a is null;
-        bool is_b_null = b is null;
+        bool is_a_null = ReferenceEquals(a, null);
+        bool is_b_null = ReferenceEquals(b, null);
         if (is_a_null || is_b_null)
             return is_a_null == is_b_null;
         return a.m_str != null ? a.m_str == b.m_str : a.m_vk == b.m_vk;
