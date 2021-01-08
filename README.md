@@ -23,6 +23,7 @@ Installer created with:
 * MAKEMSI (v19.089) - https://dennisbareis.com/makemsi.htm
 
 ### Default special characters and strings ###
+Here ``<Multi_key>`` stands for the <kbd>⎄ Compose</kbd> key (this key defaults to <kbd>Right Alt</kbd>)
 
     <Multi_key> <'> : "`"  # grave accent
     <Multi_key> <ì> : "~"  # tilde
