@@ -39,6 +39,8 @@
 # <Multi_key> <l> <f> : "( ͡° ͜ʖ ͡°)"        # Lenny face
 # <Multi_key> <s> <f> : "¯\\_(ツ)_/¯"     # Shrug face
 
+<Multi_key> <E> : "€"  # euro symbol even with capslock
+
 <Multi_key> <'> : "`"  # grave accent
 <Multi_key> <ì> : "~"  # tilde
 
