@@ -190,6 +190,14 @@ namespace WinCompose
 
                 if (alt_key.IsPrintable && alt_key.PrintableResult[0] > 0x7f)
                 {
+                    if (m_compose_key_is_altgr && (m_compose_counter & 1) != 0)
+                    {
+                        Key altgr_variant = KeyboardLayout.KeyToAltGrVariant(alt_key);
+                        if (altgr_variant != null)
+                        {
+                            alt_key = altgr_variant;
+                        }
+                    }
                     string str_upper = alt_key.PrintableResult.ToUpper();
                     string str_lower = alt_key.PrintableResult.ToLower();
 
@@ -200,7 +208,7 @@ namespace WinCompose
 
                     if (str_upper != str_lower)
                     {
-                        key = new Key(has_shift ? str_lower : str_upper);
+                        key = new Key(/*has_shift ? str_lower : */ str_upper);
                         is_capslock_hack = true;
                     }
                 }

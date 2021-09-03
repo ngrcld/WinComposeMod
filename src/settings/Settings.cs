@@ -85,9 +85,10 @@ namespace WinCompose
         public static SettingsEntry<string> Language { get; } = new SettingsEntry<string>("");
         [EntryLocation("global", "disabled")]
         public static SettingsEntry<bool> Disabled { get; } = new SettingsEntry<bool>(false);
+        /*
         [EntryLocation("global", "check_updates")]
         public static SettingsEntry<bool> CheckUpdates { get; } = new SettingsEntry<bool>(true);
-
+        */
         [EntryLocation("composing", "compose_key")]
         public static SettingsEntry<KeySequence> ComposeKeys { get; } = new SettingsEntry<KeySequence>(new KeySequence());
         [EntryLocation("composing", "led_key")]
@@ -103,7 +104,7 @@ namespace WinCompose
         [EntryLocation("composing", "unicode_input")]
         public static SettingsEntry<bool> UnicodeInput { get; } = new SettingsEntry<bool>(true);
         [EntryLocation("composing", "case_insensitive")]
-        public static SettingsEntry<bool> CaseInsensitive { get; } = new SettingsEntry<bool>(false);
+        public static SettingsEntry<bool> CaseInsensitive { get; } = new SettingsEntry<bool>(true);
         [EntryLocation("composing", "discard_on_invalid")]
         public static SettingsEntry<bool> DiscardOnInvalid { get; } = new SettingsEntry<bool>(true);
         [EntryLocation("composing", "swap_on_invalid")]
@@ -122,7 +123,7 @@ namespace WinCompose
         [EntryLocation("tweaks", "shift_disables_capslock")]
         public static SettingsEntry<bool> ShiftDisablesCapsLock { get; } = new SettingsEntry<bool>(false);
         [EntryLocation("tweaks", "capslock_capitalizes")]
-        public static SettingsEntry<bool> CapsLockCapitalizes { get; } = new SettingsEntry<bool>(false);
+        public static SettingsEntry<bool> CapsLockCapitalizes { get; } = new SettingsEntry<bool>(true);
         [EntryLocation("tweaks", "allow_injected")]
         public static SettingsEntry<bool> AllowInjected { get; } = new SettingsEntry<bool>(false);
         [EntryLocation("tweaks", "keep_icon_visible")]

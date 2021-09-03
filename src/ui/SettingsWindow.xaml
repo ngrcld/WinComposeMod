@@ -93,12 +93,14 @@
                                   SelectedValue="{Binding SelectedLanguage}"
                                   SelectedValuePath="Key" DisplayMemberPath="Value"/>
 
+                        <!--
                         <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                   Margin="8,4" VerticalAlignment="Center"
                                   IsChecked="{Binding Value, Source={x:Static wc:Settings.CheckUpdates}}"
                                   ToolTipService.ToolTip="{x:Static i18n:Text.CheckUpdatesToolTip}">
                             <TextBlock Text="{x:Static i18n:Text.CheckUpdates}" TextWrapping="Wrap"/>
                         </CheckBox>
+                        -->
 
                         <CheckBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                                   Margin="8,4" VerticalAlignment="Center"
