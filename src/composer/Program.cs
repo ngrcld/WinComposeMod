@@ -54,7 +54,7 @@ namespace WinCompose
             Settings.LoadSequences();
             Metadata.LoadDB();
             KeyboardHook.Init();
-            Updater.Init();
+            //Updater.Init();
 
             Settings.StartWatchConfigFile();
 
@@ -66,11 +66,11 @@ namespace WinCompose
             finally
             {
                 Settings.StopWatchConfigFile();
-                Updater.Fini();
+                //Updater.Fini();
                 KeyboardHook.Fini();
                 Settings.SaveConfig();
                 Metadata.SaveDB();
-                Updater.Fini();
+                //Updater.Fini();
             }
         }
     }

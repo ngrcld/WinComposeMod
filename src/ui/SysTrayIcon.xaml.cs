@@ -34,7 +34,7 @@ namespace WinCompose
         DebugWindow,
         VisitWebsite,
         DonationPage,
-        Download,
+        //Download,
         Disable,
         Restart,
         RestartElevated,
@@ -73,11 +73,11 @@ namespace WinCompose
 
             Settings.DisableIcon.ValueChanged += MarkIconDirty;
             Composer.Changed += MarkIconDirty;
-            Updater.Changed += MarkIconDirty;
+            //Updater.Changed += MarkIconDirty;
             MarkIconDirty();
 
-            Updater.Changed += UpdaterStateChanged;
-            UpdaterStateChanged();
+            //Updater.Changed += UpdaterStateChanged;
+            //UpdaterStateChanged();
 
             CompositionTarget.Rendering += UpdateNotificationIcon;
         }
@@ -94,8 +94,8 @@ namespace WinCompose
             CompositionTarget.Rendering -= UpdateNotificationIcon;
 
             Composer.Changed -= MarkIconDirty;
-            Updater.Changed -= MarkIconDirty;
-            Updater.Changed -= UpdaterStateChanged;
+            //Updater.Changed -= MarkIconDirty;
+            //Updater.Changed -= UpdaterStateChanged;
 
             Application.RemoteControl.DisableEvent -= OnDisableEvent;
             Application.RemoteControl.ExitEvent -= OnExitEvent;
@@ -144,10 +144,12 @@ namespace WinCompose
                     m_about_box.Activate();
                     break;
 
+                /*
                 case MenuCommand.Download:
                     var url = Updater.Get("Portable");
                     Process.Start(url);
                     break;
+                */
 
                 case MenuCommand.VisitWebsite:
                     Process.Start("http://wincompose.info/");
@@ -226,8 +228,8 @@ namespace WinCompose
         private System.Drawing.Icon GetCurrentIcon()
         {
             return GetIcon((Composer.IsDisabled?     0x1 : 0x0) |
-                           (Composer.IsComposing?    0x2 : 0x0) |
-                           (Updater.HasNewerVersion? 0x4 : 0x0));
+                           (Composer.IsComposing?    0x2 : 0x0)); /* |
+                           (Updater.HasNewerVersion? 0x4 : 0x0)); */
         }
 
         public static System.Drawing.Icon GetIcon(int index)
@@ -296,8 +298,10 @@ namespace WinCompose
                                     Settings.SequenceCount,
                                     Settings.Version);
 
+            /*
             if (Updater.HasNewerVersion)
                 ret += "\n" + i18n.Text.UpdatesToolTip;
+            */
 
             return ret;
         }
@@ -318,6 +322,8 @@ namespace WinCompose
         }
 
         public bool IsDisabled => Composer.IsDisabled;
+
+        /*
         public bool HasNewerVersion => Updater.HasNewerVersion;
         public string DownloadHeader => string.Format(i18n.Text.Download, Updater.Get("Latest") ?? "");
 
@@ -326,6 +332,7 @@ namespace WinCompose
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNewerVersion)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DownloadHeader)));
         }
+        */
 
         private void OnDisableEvent()
         {

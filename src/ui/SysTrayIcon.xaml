@@ -86,6 +86,7 @@
                           Icon="{StaticResource DebugEmoji}" CommandParameter="{x:Static wc:MenuCommand.DebugWindow}"/>
             </MenuItem>
 
+            <!--
             <MenuItem Command="{Binding MenuItemCommand}"
                       Visibility="{Binding Path=HasNewerVersion, Mode=OneWay, Converter={StaticResource booleanToVisibilityConverter}}"
                       CommandParameter="{x:Static wc:MenuCommand.Download}">
@@ -93,6 +94,7 @@
                     <TextBlock FontWeight="Bold" Text="{Binding DownloadHeader}"/>
                 </MenuItem.Header>
             </MenuItem>
+            -->
 
             <Separator/>
 
