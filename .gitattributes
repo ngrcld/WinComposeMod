@@ -1,8 +1,8 @@
 * linguist-vendored=true
 
 *.cs linguist-vendored=false
-*.xaml linguist-language=Xml
-*.resx linguist-language=Xml
+*.xaml linguist-language=XML
+*.resx linguist-language=XML
 
 # This is Windows-specific
 *.sln text eol=crlf
