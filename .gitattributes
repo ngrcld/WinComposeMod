@@ -1,4 +1,5 @@
 *.cs linguist-vendored=false
+*.*.Designer.cs linguist-vendored=false linguist-language=C#
 *.xaml linguist-vendored=false linguist-language=XML
 *.resx linguist-vendored=false linguist-language=XML eol=crlf
 
