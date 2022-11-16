@@ -1,9 +1,10 @@
+* linguist-vendored=true
+
 *.cs linguist-vendored=false
 *.xaml linguist-language=Xml
+*.resx linguist-language=Xml
 
 # This is Windows-specific
 *.sln text eol=crlf
 *.resx eol=crlf
 *.csproj text eol=crlf
-
-* linguist-vendored=true
