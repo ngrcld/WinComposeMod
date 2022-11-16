@@ -1,5 +1,7 @@
 * linguist-vendored
 *.cs linguist-vendored=false
+*.xaml linguist-vendored=false
+*.resx linguist-vendored=false
 
 # This is Windows-specific
 *.sln text eol=crlf
