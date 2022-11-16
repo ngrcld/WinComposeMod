@@ -1,5 +1,3 @@
-* linguist-vendored=true
-
 *.cs linguist-vendored=false
 *.xaml linguist-language=XML
 *.resx linguist-language=XML
@@ -8,3 +6,5 @@
 *.sln text eol=crlf
 *.resx eol=crlf
 *.csproj text eol=crlf
+
+* linguist-vendored=true
