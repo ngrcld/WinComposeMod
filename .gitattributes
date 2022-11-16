@@ -1,7 +1,7 @@
-*.cs linguist-vendored=false
+*.cs linguist-language=C#
 *.*.Designer.cs linguist-language=C#
-*.xaml linguist-vendored=false linguist-language=XML
-*.resx linguist-vendored=false linguist-language=XML eol=crlf
+*.xaml linguist-language=XML
+*.resx linguist-language=XML eol=crlf
 
 # This is Windows-specific
 *.sln text eol=crlf
