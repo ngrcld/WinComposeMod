@@ -1,13 +1,7 @@
-# Everything is text unless it isn’t
-* text=auto
-
-# This is really text
-*.cs text
+* linguist-vendored
+*.cs linguist-vendored=false
 
 # This is Windows-specific
 *.sln text eol=crlf
 *.resx text eol=crlf
 *.csproj text eol=crlf
-
-# Exclude from language statistics MakeMsi files
-BuildMsi/* linguist-vendored
