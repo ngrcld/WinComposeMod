@@ -1,6 +1,7 @@
-*.cs linguist-language=C#
-*.xaml linguist-language=XML
-*.resx linguist-language=XML eol=crlf
+* linguist-vendored
+*.cs -linguist-vendored linguist-language=C#
+*.xaml -linguist-vendored linguist-language=XML
+*.resx -linguist-vendored linguist-language=XML eol=crlf
 
 # This is Windows-specific
 *.sln text eol=crlf
