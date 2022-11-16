@@ -1,5 +1,4 @@
 *.cs linguist-language=C#
-*.*.Designer.cs linguist-language=C#
 *.xaml linguist-language=XML
 *.resx linguist-language=XML eol=crlf
 
