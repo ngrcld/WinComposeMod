@@ -18,6 +18,7 @@ A **compose key** allows to easily write special characters (such as: **É**, **
 
 ### Development ###
 Written in C#, compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free).
+Used NuGet packages: Emoji.Wpf 0.1.5 by Sam Hocevar, Hardcodet.NotifyIcon.Wpf 1.0.8 by Philipp Sumi
 
 Installer created with:
 * MAKEMSI (v19.089) - https://dennisbareis.com/makemsi.htm
