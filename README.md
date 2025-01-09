@@ -13,7 +13,7 @@ A **compose key** allows to easily write special characters (such as: **É**, **
 * WinComposeMod_x.x.x_Setup_64_user.msi
   * MSI package for **user** installation;
   * Doesn't require administrator privileges;
-  * Can't inject keyboard events into high level processes, such as cmd.exe run as Administrator;
+  * By default can't inject keyboard events into high level processes, such as cmd.exe run as Administrator;
   * Application can be restarted with elevated privileges, necessary to inject keyboard events into other high level processes, such as cmd.exe run as Administrator.
 
 ### Development ###
