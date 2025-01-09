@@ -32,7 +32,7 @@ Here ``<Multi_key>`` stands for the <kbd>⎄ Compose</kbd> key (this key default
     <Multi_key> <'> : "`"  # grave accent
     <Multi_key> <ì> : "~"  # tilde
 
-    <Multi_key> <,> <space>: "´"  # acute accent
+    <Multi_key> <,> <space> : "´"  # acute accent
 
     <Multi_key> <ù> <a> : "à"  # a grave
     <Multi_key> <ù> <e> : "è"  # e grave
