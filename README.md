@@ -17,11 +17,14 @@ A **compose key** allows to easily write special characters (such as: **É**, **
   * Application can be restarted with elevated privileges, necessary to inject keyboard events into other high level processes, such as cmd.exe run as Administrator.
 
 ### Development ###
-Written in C#, compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free).
-Used NuGet packages used: Emoji.Wpf 0.1.5 by Sam Hocevar, Hardcodet.NotifyIcon.Wpf 1.0.8 by Philipp Sumi
+* Written in C#
+* Compiles with Microsoft .NET Framework 3.5 and Microsoft Visual Studio Community 2019 (free).
+* Used NuGet packages:
+  * Emoji.Wpf (v 0.1.5) by Sam Hocevar
+  * Hardcodet.NotifyIcon.Wpf (v 1.0.8) by Philipp Sumi
 
 Installer created with:
-* MAKEMSI (v19.089) - https://dennisbareis.com/makemsi.htm
+* MAKEMSI (v 19.089) by Dennis Bareis - https://dennisbareis.com/makemsi.htm
 
 ### Default special characters and strings ###
 Here ``<Multi_key>`` stands for the <kbd>⎄ Compose</kbd> key (this key defaults to <kbd>Right Alt</kbd>).
