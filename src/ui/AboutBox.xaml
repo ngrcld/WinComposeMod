@@ -38,7 +38,7 @@
 
             <TabItem Header="{x:Static i18n:Text.About}">
                 <DockPanel Margin="8">
-                    <Label DockPanel.Dock="Top" HorizontalAlignment="Center" FontSize="18" Content="Wincompose"/>
+                    <Label DockPanel.Dock="Top" HorizontalAlignment="Center" FontSize="18" Content="WinComposeMod"/>
                     <Label DockPanel.Dock="Top" HorizontalAlignment="Center" FontSize="18" Content="{Binding Version}"/>
                     <Button DockPanel.Dock="Bottom" Margin="4" Content="{x:Static i18n:Text.ReportBug}" Command="{Binding OpenReportBugCommand}"/>
                     <Button DockPanel.Dock="Bottom" Margin="4" Content="{x:Static i18n:Text.VisitWebsite}" Command="{Binding OpenWebsiteCommand}"/>

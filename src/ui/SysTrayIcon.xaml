@@ -60,7 +60,7 @@
                 </MenuItem.Icon>
                 <MenuItem.Header>
                     <TextBlock Foreground="Black" FontWeight="Bold" FontSize="14"
-                               Text="WinCompose" VerticalAlignment="Center"/>
+                               Text="WinComposeMod" VerticalAlignment="Center"/>
                 </MenuItem.Header>
             </MenuItem>
 

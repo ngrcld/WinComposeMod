@@ -70,7 +70,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to About WinCompose.
+        ///   Looks up a localized string similar to About WinComposeMod.
         /// </summary>
         public static string AboutBoxTitle {
             get {
@@ -259,7 +259,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to If enabled, WinCompose will connect to the Internet at regular intervals to check for new versions. Updates are not installed automatically..
+        ///   Looks up a localized string similar to If enabled, WinComposeMod will connect to the Internet at regular intervals to check for new versions. Updates are not installed automatically..
         /// </summary>
         public static string CheckUpdatesToolTip {
             get {
@@ -340,7 +340,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to WinCompose is disabled.
+        ///   Looks up a localized string similar to WinComposeMod is disabled.
         /// </summary>
         public static string DisabledToolTip {
             get {
@@ -358,7 +358,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to If enabled, WinCompose will no longer display an icon in the notification area. The only way to open the WinCompose interface will then be through the “WinCompose Settings” and “WinCompose Sequences” entries in the startup menu..
+        ///   Looks up a localized string similar to If enabled, WinComposeMod will no longer display an icon in the notification area. The only way to open the WinComposeMod interface will then be through the “WinComposeMod Settings” and “WinComposeMod Sequences” entries in the startup menu..
         /// </summary>
         public static string DisableIconToolTip {
             get {
@@ -394,7 +394,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Download WinCompose {0}.
+        ///   Looks up a localized string similar to Download WinComposeMod {0}.
         /// </summary>
         public static string Download {
             get {
@@ -475,7 +475,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to WinCompose will be completely disabled when the current window class or window name matches this regular expression..
+        ///   Looks up a localized string similar to WinComposeMod will be completely disabled when the current window class or window name matches this regular expression..
         /// </summary>
         public static string IgnoreRegexToolTip {
             get {
@@ -547,7 +547,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to This tells WinCompose to make a best effort to retain the original key’s behaviour. For instance, the Alt-Tab shortcut will still work even if Alt is used as the compose key..
+        ///   Looks up a localized string similar to This tells WinComposeMod to make a best effort to retain the original key’s behaviour. For instance, the Alt-Tab shortcut will still work even if Alt is used as the compose key..
         /// </summary>
         public static string KeepOriginalKeyToolTip {
             get {
@@ -790,7 +790,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Select the language that WinCompose uses for the interface. By default the operating system language is used..
+        ///   Looks up a localized string similar to Select the language that WinComposeMod uses for the interface. By default the operating system language is used..
         /// </summary>
         public static string LanguageToolTip {
             get {
@@ -808,7 +808,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to WinCompose needs to be restarted for some changes to take effect..
+        ///   Looks up a localized string similar to WinComposeMod needs to be restarted for some changes to take effect..
         /// </summary>
         public static string NeedRestart {
             get {
@@ -826,7 +826,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Options — WinCompose.
+        ///   Looks up a localized string similar to Options — WinComposeMod.
         /// </summary>
         public static string Options {
             get {
@@ -880,7 +880,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Restart Elevated.
+        ///   Looks up a localized string similar to Restart with elevated privileges.
         /// </summary>
         public static string RestartElevated {
             get {
@@ -997,7 +997,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to WinCompose v{2} on {0} ({1} sequences).
+        ///   Looks up a localized string similar to WinComposeMod v{2} on {0} ({1} sequences).
         /// </summary>
         public static string TrayToolTip {
             get {
@@ -1051,7 +1051,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use WinCompose emoji sequences.
+        ///   Looks up a localized string similar to Use WinComposeMod emoji sequences.
         /// </summary>
         public static string UseEmojiRules {
             get {
@@ -1060,7 +1060,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use the compose sequences for Emoji provided by the WinCompose author and contributors..
+        ///   Looks up a localized string similar to Use the compose sequences for Emoji provided by the WinComposeMod author and contributors..
         /// </summary>
         public static string UseEmojiRulesToolTip {
             get {
@@ -1150,7 +1150,7 @@ namespace WinCompose.i18n {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Sequences — WinCompose.
+        ///   Looks up a localized string similar to Sequences — WinComposeMod.
         /// </summary>
         public static string WindowTitle {
             get {

@@ -184,10 +184,10 @@
     <value>Usa le 1000 sequenze del progetto opensource Xcompose (https://github.com/kragen/xcompose). Queste sequenze possono a volte essere in conflitto con quelle di Xorg.</value>
   </data>
   <data name="UseEmojiRules" xml:space="preserve">
-    <value>Usa le sequenze emoji di WinCompose</value>
+    <value>Usa le sequenze emoji di WinComposeMod</value>
   </data>
   <data name="UseEmojiRulesToolTip" xml:space="preserve">
-    <value>Usa le sequenze per le Emoji fornite dall'autore e dai contributori di WinCompose.</value>
+    <value>Usa le sequenze per le Emoji fornite dall'autore e dai contributori di WinComposeMod.</value>
   </data>
   <data name="DebugWindow" xml:space="preserve">
     <value>Finestra di debug</value>
@@ -262,7 +262,7 @@
     <value>Lingua dell’interfaccia:</value>
   </data>
   <data name="LanguageToolTip" xml:space="preserve">
-    <value>Seleziona la lingua utilizzata per l'interfaccia di WinCompose. Normalmente viene utilizzata la lingua del sistema operativo.</value>
+    <value>Seleziona la lingua utilizzata per l'interfaccia di WinComposeMod. Normalmente viene utilizzata la lingua del sistema operativo.</value>
   </data>
   <data name="Close" xml:space="preserve">
     <value>Chiudi</value>
@@ -280,7 +280,7 @@
     <value>Il tasto Compose mantiene il suo comportamento originale</value>
   </data>
   <data name="KeepOriginalKeyToolTip" xml:space="preserve">
-    <value>Chiede a WinCompose di fare del suo meglio per mantenere il comportamento originale del tasto. Per esempio, Alt-Tab funzionerà correttamente anche con Alt come tasto compose.</value>
+    <value>Chiede a WinComposeMod di fare del suo meglio per mantenere il comportamento originale del tasto. Per esempio, Alt-Tab funzionerà correttamente anche con Alt come tasto compose.</value>
   </data>
   <data name="InsertZwsp" xml:space="preserve">
     <value>Inserisci spazi a larghezza zero in Office</value>
@@ -304,7 +304,7 @@
     <value>Bloc Maiusc scrive sempre in maiuscolo</value>
   </data>
   <data name="CapsLockCapitalizesToolTip" xml:space="preserve">
-    <value>Tutte le lettere accentate, scritte con Bloc Maiusc attivo, sono sempre maiuscole. Per esempio, scrivere una &quot;é&quot; inserirà una &quot;É&quot;.</value>
+    <value>Tutte le lettere accentate, scritte con Bloc Maiusc attivo, sono sempre maiuscole. Per esempio, scrivere una "é" inserirà una "É".</value>
   </data>
   <data name="Categories" xml:space="preserve">
     <value>Categorie</value>
@@ -313,13 +313,13 @@
     <value>Dentro le categorie selezionate</value>
   </data>
   <data name="Options" xml:space="preserve">
-    <value>Opzioni — WinCompose</value>
+    <value>Opzioni — WinComposeMod</value>
   </data>
   <data name="ShowOptions" xml:space="preserve">
     <value>Opzioni…</value>
   </data>
   <data name="TrayToolTip" xml:space="preserve">
-    <value>WinCompose v{2} su {0} ({1} sequenze)</value>
+    <value>WinComposeMod v{2} su {0} ({1} sequenze)</value>
   </data>
   <data name="General" xml:space="preserve">
     <value>Generale</value>
@@ -328,13 +328,13 @@
     <value>Funzionamento</value>
   </data>
   <data name="WindowTitle" xml:space="preserve">
-    <value>Sequenze — WinCompose</value>
+    <value>Sequenze — WinComposeMod</value>
   </data>
   <data name="UserMacros" xml:space="preserve">
     <value>Macro personalizzate</value>
   </data>
   <data name="DisabledToolTip" xml:space="preserve">
-    <value>WinCompose è disabilitato</value>
+    <value>WinComposeMod è disabilitato</value>
   </data>
   <data name="KeyInsert" xml:space="preserve">
     <value>Ins</value>
@@ -352,10 +352,10 @@
     <value>Informazioni</value>
   </data>
   <data name="Download" xml:space="preserve">
-    <value>Scarica Wincompose {0}</value>
+    <value>Scarica WincomposeMod {0}</value>
   </data>
   <data name="AboutBoxTitle" xml:space="preserve">
-    <value>Informazinoi su — WinCompose</value>
+    <value>Informazioni su — WinComposeMod</value>
   </data>
   <data name="Programming" xml:space="preserve">
     <value>Programmazione</value>
@@ -370,7 +370,7 @@
     <value>Licenza</value>
   </data>
   <data name="NeedRestart" xml:space="preserve">
-    <value>WinCompose deve essere riavviato per applicare i cambiamenti.</value>
+    <value>WinComposeMod deve essere riavviato per applicare i cambiamenti.</value>
   </data>
   <data name="ReportBug" xml:space="preserve">
     <value>Segnala un problema</value>
@@ -406,7 +406,7 @@
     <value>Controlla automaticamente se ci sono aggiornamenti</value>
   </data>
   <data name="CheckUpdatesToolTip" xml:space="preserve">
-    <value>Se abilitato, WinCompose si collegherà ad Internet ad intervalli regolari per verificare la presenza di nuove versioni. Gli aggiornamenti non saranno installati automaticamente.</value>
+    <value>Se abilitato, WinComposeMod si collegherà ad Internet ad intervalli regolari per verificare la presenza di nuove versioni. Gli aggiornamenti non saranno installati automaticamente.</value>
   </data>
   <data name="KeepIconVisible" xml:space="preserve">
     <value>Prova a tenere l'icona nell'area di notifica sempre visibile</value>
@@ -427,7 +427,7 @@
     <value>Disabilita l'icona nell'area di notifica</value>
   </data>
   <data name="DisableIconToolTip" xml:space="preserve">
-    <value>Se abilitato, WinCompose non mosterà più un icona nella barra notifiche. L'unico modo per aprire l'interfaccia di WnCompose sarà allora attraverso le applicazioni &quot;Impostazioni WinCompose&quot; (&quot;WinCompose Settings&quot;) e &quot;Sequenze di WinCompose&quot; (&quot;WinCompose Sequences&quot;) nel menu Start.</value>
+    <value>Se abilitato, WinComposeMod non mosterà più un icona nella barra notifiche. L'unico modo per aprire l'interfaccia di WnCompose sarà allora attraverso le applicazioni "Impostazioni WinComposeMod" ("WinComposeMod Settings") e "Sequenze di WinComposeMod" ("WinComposeMod Sequences") nel menu Start.</value>
   </data>
   <data name="KeyHome" xml:space="preserve">
     <value>Home</value>
@@ -448,7 +448,7 @@
     <value>Ignora finestre che vengono comprese in questa espressione regolare (regex):</value>
   </data>
   <data name="IgnoreRegexToolTip" xml:space="preserve">
-    <value>WinCompose verra completamente disabilitato quando il nome o la classe della finestra in primo piano è compreso in questa espressione regolare.</value>
+    <value>WinComposeMod verra completamente disabilitato quando il nome o la classe della finestra in primo piano è compreso in questa espressione regolare.</value>
   </data>
   <data name="AlwaysCompose" xml:space="preserve">
     <value>Il tasto Compose alternativo vale sempre come Compose</value>
@@ -467,5 +467,8 @@
   </data>
   <data name="KeyCompose" xml:space="preserve">
     <value>Tasto Compose</value>
+  </data>
+  <data name="RestartElevated" xml:space="preserve">
+    <value>Riavvia con privilegi elevati</value>
   </data>
 </root>

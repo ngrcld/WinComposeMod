@@ -143,7 +143,7 @@ namespace WinCompose
             new Key(VK.COMPOSE),
             new Key(VK.CAPITAL),
             new Key(VK.NUMLOCK),
-            new Key(VK.PAUSE),
+            new Key(VK.SCROLL),  // merged https://github.com/samhocevar/wincompose/commit/cd81b47f2202fe2e3f3da1bf69a6c2cab679e40f
         };
 
         public static void StartWatchConfigFile()

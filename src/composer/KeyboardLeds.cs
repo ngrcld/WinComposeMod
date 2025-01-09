@@ -66,7 +66,7 @@ public static class KeyboardLeds
     {
         { VK.CAPITAL, KEYBOARD.CAPS_LOCK_ON },
         { VK.NUMLOCK, KEYBOARD.NUM_LOCK_ON },
-        { VK.PAUSE,   KEYBOARD.SCROLL_LOCK_ON },
+        { VK.SCROLL,   KEYBOARD.SCROLL_LOCK_ON },  // merged https://github.com/samhocevar/wincompose/commit/cd81b47f2202fe2e3f3da1bf69a6c2cab679e40f
     };
 
     private static void Refresh(object o)
